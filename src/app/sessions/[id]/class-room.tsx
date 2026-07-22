@@ -57,10 +57,12 @@ export function ClassRoom({
   const [tab, setTab] = useState<'video' | 'board'>('video');
   const [questions, setQuestions] = useState<BuzzerQuestion[]>([]);
   const [selectedQuestion, setSelectedQuestion] = useState('');
+  const [screenGrants, setScreenGrants] = useState<Set<string>>(new Set());
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const isInstructor = me.role === 'INSTRUCTOR';
   const myHandRaised = hands.some((h) => h.userId === me.userId);
+  const iMayScreenShare = isInstructor || screenGrants.has(me.userId);
 
   useEffect(() => {
     const socket: RoomSocket = io(API_URL, {
@@ -89,6 +91,16 @@ export function ClassRoom({
       setPicked(p.user);
       setTimeout(() => setPicked(null), 6000);
     });
+    socket.on('screen-share:granted', (p) =>
+      setScreenGrants((prev) => new Set(prev).add(p.userId)),
+    );
+    socket.on('screen-share:revoked', (p) =>
+      setScreenGrants((prev) => {
+        const next = new Set(prev);
+        next.delete(p.userId);
+        return next;
+      }),
+    );
     socket.on('error', (e) => {
       setNotice(e.message);
       setTimeout(() => setNotice(null), 4000);
@@ -151,7 +163,11 @@ export function ClassRoom({
 
         {/* Both stay mounted so switching tabs never drops the call or board. */}
         <div className={tab === 'video' ? '' : 'hidden'}>
-          <VideoStage sessionId={sessionId} isInstructor={isInstructor} />
+          <VideoStage
+            sessionId={sessionId}
+            isInstructor={isInstructor}
+            canScreenShare={iMayScreenShare}
+          />
         </div>
         <div className={tab === 'board' ? '' : 'hidden'}>
           <BoardTldraw sessionId={sessionId} canDraw={isInstructor} />
@@ -308,12 +324,31 @@ export function ClassRoom({
             In class ({users.length})
           </h2>
           <ul className="mt-2 space-y-1 text-sm text-slate-600">
-            {users.map((u) => (
-              <li key={u.userId}>
-                {u.role === 'INSTRUCTOR' ? '🎓' : '👤'} {u.name}
-                {hands.some((h) => h.userId === u.userId) && ' ✋'}
-              </li>
-            ))}
+            {users.map((u) => {
+              const granted = screenGrants.has(u.userId);
+              return (
+                <li key={u.userId} className="flex items-center justify-between">
+                  <span>
+                    {u.role === 'INSTRUCTOR' ? '🎓' : '👤'} {u.name}
+                    {hands.some((h) => h.userId === u.userId) && ' ✋'}
+                    {granted && ' 🖥'}
+                  </span>
+                  {isInstructor && u.role === 'STUDENT' && (
+                    <button
+                      onClick={() =>
+                        socketRef.current?.emit(
+                          granted ? 'screen-share:revoke' : 'screen-share:grant',
+                          { sessionId, userId: u.userId },
+                        )
+                      }
+                      className="rounded border border-slate-300 px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100"
+                    >
+                      {granted ? 'Revoke share' : 'Allow share'}
+                    </button>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </section>
 

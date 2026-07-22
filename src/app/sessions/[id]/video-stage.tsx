@@ -139,9 +139,12 @@ function ParticipantTile({ tile }: { tile: Tile }) {
 export function VideoStage({
   sessionId,
   isInstructor,
+  canScreenShare,
 }: {
   sessionId: string;
   isInstructor: boolean;
+  /** Instructor (always) or a student the instructor granted screen-share. */
+  canScreenShare: boolean;
 }) {
   const roomRef = useRef<Room | null>(null);
   const [tiles, setTiles] = useState<Tile[]>([]);
@@ -241,6 +244,15 @@ export function VideoStage({
     setScreenOn(next);
   };
 
+  // A student whose screen-share grant was revoked must stop publishing.
+  useEffect(() => {
+    if (isInstructor || canScreenShare) return;
+    const room = roomRef.current;
+    if (!room || !screenOn) return;
+    void room.localParticipant.setScreenShareEnabled(false);
+    setScreenOn(false);
+  }, [canScreenShare, isInstructor, screenOn]);
+
   if (status === 'error') {
     return (
       <div className="flex aspect-video items-center justify-center rounded-lg bg-slate-900 text-center text-sm text-slate-400">
@@ -277,28 +289,32 @@ export function VideoStage({
         </p>
       )}
 
-      {isInstructor && status === 'live' && (
+      {status === 'live' && (isInstructor || canScreenShare) && (
         <div className="flex flex-wrap justify-center gap-2">
-          <button
-            onClick={toggleCam}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-              camOn
-                ? 'bg-indigo-600 text-white hover:bg-indigo-500'
-                : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            {camOn ? '📹 Camera on' : '📷 Start camera'}
-          </button>
-          <button
-            onClick={toggleMic}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-              micOn
-                ? 'bg-indigo-600 text-white hover:bg-indigo-500'
-                : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            {micOn ? '🎙 Mic on' : '🔇 Start mic'}
-          </button>
+          {isInstructor && (
+            <>
+              <button
+                onClick={toggleCam}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+                  camOn
+                    ? 'bg-indigo-600 text-white hover:bg-indigo-500'
+                    : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                {camOn ? '📹 Camera on' : '📷 Start camera'}
+              </button>
+              <button
+                onClick={toggleMic}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+                  micOn
+                    ? 'bg-indigo-600 text-white hover:bg-indigo-500'
+                    : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                {micOn ? '🎙 Mic on' : '🔇 Start mic'}
+              </button>
+            </>
+          )}
           <button
             onClick={toggleScreen}
             className={`rounded-md px-3 py-1.5 text-sm font-medium ${
@@ -309,6 +325,11 @@ export function VideoStage({
           >
             {screenOn ? '🖥 Sharing screen' : '🖥 Share screen'}
           </button>
+          {!isInstructor && (
+            <span className="self-center text-xs text-slate-500">
+              You may share your screen
+            </span>
+          )}
         </div>
       )}
     </div>
