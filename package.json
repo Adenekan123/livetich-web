@@ -15,6 +15,7 @@
     "react-dom": "19.2.4",
     "server-only": "^0.0.1",
     "socket.io-client": "^4.8.0",
+    "tldraw": "^5.2.5",
     "yjs": "^13.6.31"
   },
   "devDependencies": {

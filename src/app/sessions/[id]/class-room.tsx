@@ -12,8 +12,21 @@ import type {
   RoomUser,
   ServerToClientEvents,
 } from '@/lib/realtime-contract';
-import { BoardPanel } from './board-panel';
+import dynamic from 'next/dynamic';
 import { VideoStage } from './video-stage';
+
+// tldraw touches browser-only APIs, so it must not render on the server.
+const BoardTldraw = dynamic(
+  () => import('./board-tldraw').then((m) => m.BoardTldraw),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-[520px] items-center justify-center rounded-lg border border-slate-300 bg-slate-50 text-sm text-slate-400">
+        Loading board…
+      </div>
+    ),
+  },
+);
 
 type RoomSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -141,7 +154,7 @@ export function ClassRoom({
           <VideoStage sessionId={sessionId} isInstructor={isInstructor} />
         </div>
         <div className={tab === 'board' ? '' : 'hidden'}>
-          <BoardPanel sessionId={sessionId} canDraw={isInstructor} />
+          <BoardTldraw sessionId={sessionId} canDraw={isInstructor} />
         </div>
 
         {picked && (
