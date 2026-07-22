@@ -12,8 +12,15 @@ import type {
   RoomUser,
   ServerToClientEvents,
 } from '@/lib/realtime-contract';
+import { BoardPanel } from './board-panel';
 
 type RoomSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
+
+interface BuzzerQuestion {
+  id: string;
+  body: string;
+  timeLimitSec: number;
+}
 
 export function ClassRoom({
   sessionId,
@@ -33,6 +40,9 @@ export function ClassRoom({
   const [picked, setPicked] = useState<RoomUser | null>(null);
   const [answerResult, setAnswerResult] = useState<boolean | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [tab, setTab] = useState<'video' | 'board'>('video');
+  const [questions, setQuestions] = useState<BuzzerQuestion[]>([]);
+  const [selectedQuestion, setSelectedQuestion] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const isInstructor = me.role === 'INSTRUCTOR';
@@ -51,6 +61,7 @@ export function ClassRoom({
     });
     socket.on('disconnect', () => setConnected(false));
     socket.on('room:presence', (p) => setUsers(p.users));
+    socket.on('chat:history', (p) => setMessages(p.messages));
     socket.on('chat:message', (m) => setMessages((prev) => [...prev, m]));
     socket.on('chat:locked', (p) => setLocked(p.locked));
     socket.on('hands:update', (p) => setHands(p.raised));
@@ -79,6 +90,23 @@ export function ClassRoom({
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Buzzer questions for this session (instructor-only endpoint).
+  useEffect(() => {
+    if (!isInstructor) return;
+    fetch(`${API_URL}/quizzes?sessionId=${sessionId}`, {
+      headers: { Authorization: `Bearer ${getClientToken() ?? ''}` },
+    })
+      .then((res) => (res.ok ? res.json() : []))
+      .then(
+        (quizzes: { questions: { id: string; body: string; timeLimitSec: number }[] }[]) => {
+          const qs = quizzes.flatMap((q) => q.questions);
+          setQuestions(qs);
+          if (qs.length > 0) setSelectedQuestion(qs[0].id);
+        },
+      )
+      .catch(() => setQuestions([]));
+  }, [isInstructor, sessionId]);
+
   const send = (form: HTMLFormElement) => {
     const input = form.elements.namedItem('body') as HTMLInputElement;
     const body = input.value.trim();
@@ -91,18 +119,38 @@ export function ClassRoom({
     <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
       {/* ---------- Main column ---------- */}
       <div className="space-y-4">
-        <div className="flex aspect-video items-center justify-center rounded-lg bg-slate-900 text-center text-slate-400">
-          <div>
-            <p className="text-3xl">🎥</p>
-            <p className="mt-2 text-sm">
-              Live video joins here once LiveKit credentials are configured.
-            </p>
-            <p className="mt-1 text-xs">
-              {connected ? 'Realtime connected' : 'Connecting…'} ·{' '}
-              {users.length} in class
-            </p>
-          </div>
+        <div className="flex gap-1 rounded-lg bg-slate-200 p-1 text-sm font-medium">
+          {(['video', 'board'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`flex-1 rounded-md px-3 py-1.5 ${
+                tab === t
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              {t === 'video' ? '🎥 Video' : '🧑‍🏫 Chalkboard'}
+            </button>
+          ))}
         </div>
+
+        {tab === 'video' ? (
+          <div className="flex aspect-video items-center justify-center rounded-lg bg-slate-900 text-center text-slate-400">
+            <div>
+              <p className="text-3xl">🎥</p>
+              <p className="mt-2 text-sm">
+                Live video joins here once LiveKit credentials are configured.
+              </p>
+              <p className="mt-1 text-xs">
+                {connected ? 'Realtime connected' : 'Connecting…'} ·{' '}
+                {users.length} in class
+              </p>
+            </div>
+          </div>
+        ) : (
+          <BoardPanel sessionId={sessionId} canDraw={isInstructor} />
+        )}
 
         {picked && (
           <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -202,6 +250,38 @@ export function ClassRoom({
             </>
           )}
         </div>
+
+        {isInstructor && questions.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-3">
+            <span className="text-xs font-semibold uppercase text-indigo-500">
+              Buzzer
+            </span>
+            <select
+              value={selectedQuestion}
+              onChange={(e) => setSelectedQuestion(e.target.value)}
+              className="min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+            >
+              {questions.map((q) => (
+                <option key={q.id} value={q.id}>
+                  {q.body} ({q.timeLimitSec}s)
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() =>
+                socketRef.current?.emit('buzzer:start', {
+                  sessionId,
+                  questionId: selectedQuestion,
+                })
+              }
+              disabled={hands.length === 0 || buzzer?.phase === 'QUESTION_OPEN'}
+              title={hands.length === 0 ? 'Needs raised hands' : undefined}
+              className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+            >
+              ⚡ Start round
+            </button>
+          </div>
+        )}
 
         {notice && (
           <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
