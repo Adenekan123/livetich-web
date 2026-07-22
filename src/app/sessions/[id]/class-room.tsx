@@ -13,6 +13,7 @@ import type {
   ServerToClientEvents,
 } from '@/lib/realtime-contract';
 import { BoardPanel } from './board-panel';
+import { VideoStage } from './video-stage';
 
 type RoomSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -135,22 +136,13 @@ export function ClassRoom({
           ))}
         </div>
 
-        {tab === 'video' ? (
-          <div className="flex aspect-video items-center justify-center rounded-lg bg-slate-900 text-center text-slate-400">
-            <div>
-              <p className="text-3xl">🎥</p>
-              <p className="mt-2 text-sm">
-                Live video joins here once LiveKit credentials are configured.
-              </p>
-              <p className="mt-1 text-xs">
-                {connected ? 'Realtime connected' : 'Connecting…'} ·{' '}
-                {users.length} in class
-              </p>
-            </div>
-          </div>
-        ) : (
+        {/* Both stay mounted so switching tabs never drops the call or board. */}
+        <div className={tab === 'video' ? '' : 'hidden'}>
+          <VideoStage sessionId={sessionId} isInstructor={isInstructor} />
+        </div>
+        <div className={tab === 'board' ? '' : 'hidden'}>
           <BoardPanel sessionId={sessionId} canDraw={isInstructor} />
-        )}
+        </div>
 
         {picked && (
           <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -293,7 +285,13 @@ export function ClassRoom({
       {/* ---------- Sidebar ---------- */}
       <div className="space-y-4">
         <section className="rounded-lg border border-slate-200 bg-white p-4">
-          <h2 className="text-sm font-semibold text-slate-700">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <span
+              className={`inline-block h-2 w-2 rounded-full ${
+                connected ? 'bg-emerald-500' : 'bg-slate-300'
+              }`}
+              title={connected ? 'Realtime connected' : 'Connecting…'}
+            />
             In class ({users.length})
           </h2>
           <ul className="mt-2 space-y-1 text-sm text-slate-600">
