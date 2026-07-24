@@ -9,7 +9,7 @@ import type { Certificate, CourseListItem, Enrollment } from '@/lib/types';
 import { CertificateDownload } from './certificate-download';
 import { CreateCourseForm } from './create-course-form';
 
-export const metadata = { title: 'Dashboard — livetich' };
+export const metadata = { title: 'Dashboard - livetich' };
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
@@ -155,7 +155,7 @@ async function StudentDashboard({ token }: { token: string }) {
         <SectionHeading title="Certificates" count={certificates.length} />
         {certificates.length === 0 ? (
           <EmptyState>
-            None yet — finish a course to earn a verifiable certificate.
+            None yet. Finish a course to earn a verifiable certificate.
           </EmptyState>
         ) : (
           <div className="mt-4 grid gap-4">

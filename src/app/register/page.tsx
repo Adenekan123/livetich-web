@@ -4,7 +4,7 @@ import { AuthShell } from '@/components/auth-shell';
 import { getCurrentUser } from '@/lib/auth';
 import { RegisterForm } from './register-form';
 
-export const metadata = { title: 'Sign up — livetich' };
+export const metadata = { title: 'Sign up - livetich' };
 
 export default async function RegisterPage() {
   if (await getCurrentUser().catch(() => null)) redirect('/dashboard');

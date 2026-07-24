@@ -233,7 +233,7 @@ export function ClassRoom({
                   </div>
                 ) : (
                   <div className="mt-4 flex items-center gap-2 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                    ⏱ Time&apos;s up — nobody got it.
+                    ⏱ Time&apos;s up. Nobody got it.
                   </div>
                 )}
                 {answerResult !== null && buzzer.phase === 'QUESTION_OPEN' && (
@@ -445,7 +445,7 @@ export function ClassRoom({
           <div className="flex-1 space-y-2.5 overflow-y-auto px-4 py-3 text-sm">
             {messages.length === 0 && (
               <p className="py-6 text-center text-xs text-slate-400">
-                No messages yet — say hello 👋
+                No messages yet. Say hello 👋
               </p>
             )}
             {messages.map((m) => (

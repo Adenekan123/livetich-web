@@ -4,7 +4,7 @@ import { AuthShell } from '@/components/auth-shell';
 import { getCurrentUser } from '@/lib/auth';
 import { LoginForm } from './login-form';
 
-export const metadata = { title: 'Log in — livetich' };
+export const metadata = { title: 'Log in - livetich' };
 
 export default async function LoginPage() {
   if (await getCurrentUser().catch(() => null)) redirect('/dashboard');

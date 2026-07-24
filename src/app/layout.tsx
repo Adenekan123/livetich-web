@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "livetich",
-  description: "Learn skills live — interactive classes with chat, quizzes, and certificates",
+  description: "Learn skills live. Interactive classes with video, chat, quizzes, and certificates.",
 };
 
 export default function RootLayout({

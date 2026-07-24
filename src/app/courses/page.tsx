@@ -4,7 +4,7 @@ import { CourseCard } from '@/components/course-card';
 import { api } from '@/lib/api';
 import type { CourseListItem } from '@/lib/types';
 
-export const metadata = { title: 'Courses — livetich' };
+export const metadata = { title: 'Courses - livetich' };
 
 export default async function CoursesPage() {
   const courses = await api<CourseListItem[]>('/courses');
@@ -17,7 +17,7 @@ export default async function CoursesPage() {
             Live courses
           </h1>
           <p className="mt-1.5 text-slate-500">
-            Cohort-based classes taught live — join a room, participate, and earn
+            Cohort-based classes taught live. Join a room, participate, and earn
             your place on the leaderboard.
           </p>
         </div>

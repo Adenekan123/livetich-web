@@ -56,7 +56,7 @@ export function AuthShell({
           </ul>
         </div>
         <p className="relative text-sm text-indigo-100/40">
-          Live and interactive — not another passive video library.
+          Live and interactive, not another passive video library.
         </p>
       </aside>
 
