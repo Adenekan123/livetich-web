@@ -1,26 +1,30 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Header } from '@/components/header';
+import { AuthShell } from '@/components/auth-shell';
 import { getCurrentUser } from '@/lib/auth';
 import { RegisterForm } from './register-form';
 
 export const metadata = { title: 'Sign up — livetich' };
 
 export default async function RegisterPage() {
-  if (await getCurrentUser()) redirect('/dashboard');
+  if (await getCurrentUser().catch(() => null)) redirect('/dashboard');
   return (
-    <>
-      <Header />
-      <main className="mx-auto w-full max-w-sm flex-1 px-4 py-16">
-        <h1 className="text-2xl font-bold">Create an account</h1>
-        <RegisterForm />
-        <p className="mt-4 text-sm text-slate-600">
-          Already registered?{' '}
-          <Link href="/login" className="text-indigo-600 hover:underline">
+    <AuthShell
+      title="Create your account"
+      subtitle="Start teaching live classes or join one as a student."
+      footer={
+        <p className="mt-6 text-sm text-slate-500">
+          Already have an account?{' '}
+          <Link
+            href="/login"
+            className="font-medium text-indigo-600 hover:text-indigo-500"
+          >
             Log in
           </Link>
         </p>
-      </main>
-    </>
+      }
+    >
+      <RegisterForm />
+    </AuthShell>
   );
 }

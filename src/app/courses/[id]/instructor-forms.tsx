@@ -8,34 +8,24 @@ import {
   type ActionState,
 } from '@/app/actions/courses';
 import { SubmitButton } from '@/components/submit-button';
-import type { Section } from '@/lib/types';
+import { FormError } from '@/components/form-error';
+import { inputClass } from '@/lib/ui';
 
 const initial: ActionState = { error: null };
-
-const inputCls = 'mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm';
-const smallSubmit =
-  'rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50';
-
-function ErrorNote({ error }: { error: string | null }) {
-  if (!error) return null;
-  return (
-    <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-  );
-}
 
 export function AddSectionForm({ courseId }: { courseId: string }) {
   const [state, action] = useActionState(addSection, initial);
   return (
-    <form action={action} className="mt-2 space-y-2">
-      <ErrorNote error={state.error} />
+    <form action={action} className="mt-3 space-y-2.5">
+      <FormError message={state.error} />
       <input type="hidden" name="courseId" value={courseId} />
       <input
         name="title"
         required
         placeholder="Section title"
-        className={inputCls}
+        className={inputClass}
       />
-      <SubmitButton className={smallSubmit}>Add section</SubmitButton>
+      <SubmitButton size="sm">Add section</SubmitButton>
     </form>
   );
 }
@@ -45,21 +35,21 @@ export function ScheduleSessionForm({
   sections,
 }: {
   courseId: string;
-  sections: Section[];
+  sections: { id: string; order: number; title: string }[];
 }) {
   const [state, action] = useActionState(scheduleSession, initial);
   return (
-    <form action={action} className="mt-2 space-y-2">
-      <ErrorNote error={state.error} />
+    <form action={action} className="mt-3 space-y-2.5">
+      <FormError message={state.error} />
       <input type="hidden" name="courseId" value={courseId} />
       <input
         name="scheduledAt"
         type="datetime-local"
         required
-        className={inputCls}
+        className={inputClass}
       />
       {sections.length > 0 && (
-        <select name="sectionId" className={inputCls} defaultValue="">
+        <select name="sectionId" className={inputClass} defaultValue="">
           <option value="">No specific section</option>
           {sections.map((s) => (
             <option key={s.id} value={s.id}>
@@ -68,7 +58,7 @@ export function ScheduleSessionForm({
           ))}
         </select>
       )}
-      <SubmitButton className={smallSubmit}>Schedule</SubmitButton>
+      <SubmitButton size="sm">Schedule session</SubmitButton>
     </form>
   );
 }
@@ -82,17 +72,17 @@ export function IssueCertificateForm({
 }) {
   const [state, action] = useActionState(issueCertificate, initial);
   return (
-    <form action={action} className="mt-2 space-y-2">
-      <ErrorNote error={state.error} />
+    <form action={action} className="mt-3 space-y-2.5">
+      <FormError message={state.error} />
       <input type="hidden" name="courseId" value={courseId} />
-      <select name="studentId" required className={inputCls}>
+      <select name="studentId" required className={inputClass}>
         {students.map((s) => (
           <option key={s.id} value={s.id}>
             {s.name}
           </option>
         ))}
       </select>
-      <SubmitButton className={smallSubmit}>Issue certificate</SubmitButton>
+      <SubmitButton size="sm">Issue certificate</SubmitButton>
     </form>
   );
 }

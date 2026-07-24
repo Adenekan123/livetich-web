@@ -1,26 +1,30 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Header } from '@/components/header';
+import { AuthShell } from '@/components/auth-shell';
 import { getCurrentUser } from '@/lib/auth';
 import { LoginForm } from './login-form';
 
 export const metadata = { title: 'Log in — livetich' };
 
 export default async function LoginPage() {
-  if (await getCurrentUser()) redirect('/dashboard');
+  if (await getCurrentUser().catch(() => null)) redirect('/dashboard');
   return (
-    <>
-      <Header />
-      <main className="mx-auto w-full max-w-sm flex-1 px-4 py-16">
-        <h1 className="text-2xl font-bold">Log in</h1>
-        <LoginForm />
-        <p className="mt-4 text-sm text-slate-600">
-          No account?{' '}
-          <Link href="/register" className="text-indigo-600 hover:underline">
-            Sign up
+    <AuthShell
+      title="Welcome back"
+      subtitle="Log in to run your class or join a live session."
+      footer={
+        <p className="mt-6 text-sm text-slate-500">
+          New to livetich?{' '}
+          <Link
+            href="/register"
+            className="font-medium text-indigo-600 hover:text-indigo-500"
+          >
+            Create an account
           </Link>
         </p>
-      </main>
-    </>
+      }
+    >
+      <LoginForm />
+    </AuthShell>
   );
 }

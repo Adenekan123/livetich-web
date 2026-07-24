@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { API_URL } from '@/lib/api';
 import { getClientToken } from '@/lib/client-token';
+import { avatarColor, btn, cardClass, cn, initials } from '@/lib/ui';
 import type {
   BuzzerState,
   ChatMessage,
@@ -21,7 +22,7 @@ const BoardTldraw = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="flex h-[520px] items-center justify-center rounded-lg border border-slate-300 bg-slate-50 text-sm text-slate-400">
+      <div className="flex h-[520px] items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-400">
         Loading board…
       </div>
     ),
@@ -35,6 +36,8 @@ interface BuzzerQuestion {
   body: string;
   timeLimitSec: number;
 }
+
+const MEDALS = ['🥇', '🥈', '🥉'];
 
 export function ClassRoom({
   sessionId,
@@ -141,20 +144,23 @@ export function ClassRoom({
     input.value = '';
   };
 
+  const chatLockedForMe = locked && !isInstructor;
+
   return (
-    <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+    <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
       {/* ---------- Main column ---------- */}
       <div className="space-y-4">
-        <div className="flex gap-1 rounded-lg bg-slate-200 p-1 text-sm font-medium">
+        <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-1 text-sm font-medium">
           {(['video', 'board'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`flex-1 rounded-md px-3 py-1.5 ${
+              className={cn(
+                'rounded-md px-4 py-1.5 transition',
                 tab === t
                   ? 'bg-white text-slate-900 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
+                  : 'text-slate-500 hover:text-slate-800',
+              )}
             >
               {t === 'video' ? '🎥 Video' : '🧑‍🏫 Chalkboard'}
             </button>
@@ -174,8 +180,12 @@ export function ClassRoom({
         </div>
 
         {picked && (
-          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            🎤 <strong>{picked.name}</strong> was picked to speak!
+          <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <span className="text-lg leading-none">🎤</span>
+            <span>
+              <strong className="font-semibold">{picked.name}</strong> was picked
+              to speak!
+            </span>
           </div>
         )}
 
@@ -183,51 +193,64 @@ export function ClassRoom({
           (buzzer.phase === 'QUESTION_OPEN' ||
             buzzer.phase === 'WINNER' ||
             buzzer.phase === 'TIMEOUT') && (
-            <div className="rounded-lg border border-indigo-200 bg-white p-5">
-              <p className="text-xs font-semibold uppercase text-indigo-500">
-                Buzzer round
-              </p>
-              <p className="mt-1 font-medium">{buzzer.question.body}</p>
-              {buzzer.phase === 'QUESTION_OPEN' ? (
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {buzzer.question.options.map((opt, i) => (
-                    <button
-                      key={i}
-                      disabled={
-                        isInstructor ||
-                        answerResult !== null ||
-                        !buzzer.eligibleUserIds.includes(me.userId)
-                      }
-                      onClick={() =>
-                        socketRef.current?.emit('quiz:answer', {
-                          sessionId,
-                          questionId: buzzer.question!.questionId,
-                          answerIndex: i,
-                        })
-                      }
-                      className="rounded-md border border-slate-300 bg-white px-3 py-2 text-left text-sm hover:border-indigo-400 disabled:opacity-50"
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-              ) : buzzer.phase === 'WINNER' ? (
-                <p className="mt-3 text-sm text-emerald-700">
-                  🏆 {buzzer.winner?.name} answered first and earns the mic!
-                </p>
-              ) : (
-                <p className="mt-3 text-sm text-slate-500">
-                  ⏱ Time&apos;s up — nobody got it.
-                </p>
-              )}
-              {answerResult !== null && buzzer.phase === 'QUESTION_OPEN' && (
-                <p className="mt-3 text-sm">
-                  {answerResult ? '✅ Correct!' : '❌ Not quite.'}
-                </p>
-              )}
+            <div className={cn(cardClass, 'overflow-hidden')}>
+              <div className="flex items-center gap-2 border-b border-slate-100 bg-indigo-50 px-5 py-2.5">
+                <span className="text-sm font-semibold text-indigo-700">
+                  ⚡ Buzzer round
+                </span>
+              </div>
+              <div className="p-5">
+                <p className="font-medium text-slate-900">{buzzer.question.body}</p>
+                {buzzer.phase === 'QUESTION_OPEN' ? (
+                  <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
+                    {buzzer.question.options.map((opt, i) => (
+                      <button
+                        key={i}
+                        disabled={
+                          isInstructor ||
+                          answerResult !== null ||
+                          !buzzer.eligibleUserIds.includes(me.userId)
+                        }
+                        onClick={() =>
+                          socketRef.current?.emit('quiz:answer', {
+                            sessionId,
+                            questionId: buzzer.question!.questionId,
+                            answerIndex: i,
+                          })
+                        }
+                        className="flex items-center gap-3 rounded-xl border border-slate-300 bg-white px-4 py-3 text-left text-sm font-medium text-slate-800 transition hover:border-indigo-400 disabled:opacity-50 disabled:hover:border-slate-300"
+                      >
+                        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-slate-100 text-xs font-semibold text-slate-500">
+                          {String.fromCharCode(65 + i)}
+                        </span>
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                ) : buzzer.phase === 'WINNER' ? (
+                  <div className="mt-4 flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+                    🏆 {buzzer.winner?.name} answered first and earns the mic!
+                  </div>
+                ) : (
+                  <div className="mt-4 flex items-center gap-2 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                    ⏱ Time&apos;s up — nobody got it.
+                  </div>
+                )}
+                {answerResult !== null && buzzer.phase === 'QUESTION_OPEN' && (
+                  <p
+                    className={cn(
+                      'mt-3 text-sm font-medium',
+                      answerResult ? 'text-emerald-600' : 'text-rose-600',
+                    )}
+                  >
+                    {answerResult ? '✅ Correct!' : '❌ Not quite.'}
+                  </p>
+                )}
+              </div>
             </div>
           )}
 
+        {/* Controls */}
         <div className="flex flex-wrap items-center gap-2">
           {!isInstructor && (
             <button
@@ -237,11 +260,15 @@ export function ClassRoom({
                   { sessionId },
                 )
               }
-              className={`rounded-md px-4 py-2 text-sm font-medium ${
+              className={
                 myHandRaised
-                  ? 'bg-amber-500 text-white hover:bg-amber-400'
-                  : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-              }`}
+                  ? btn(
+                      'primary',
+                      'md',
+                      'bg-amber-500 shadow-amber-500/20 hover:bg-amber-400 focus-visible:ring-amber-500',
+                    )
+                  : btn('secondary')
+              }
             >
               {myHandRaised ? '✋ Lower hand' : '✋ Raise hand'}
             </button>
@@ -255,7 +282,7 @@ export function ClassRoom({
                     locked: !locked,
                   })
                 }
-                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                className={btn('secondary')}
               >
                 {locked ? '🔓 Unlock chat' : '🔒 Lock chat'}
               </button>
@@ -264,7 +291,7 @@ export function ClassRoom({
                   socketRef.current?.emit('student:pick-random', { sessionId })
                 }
                 disabled={hands.length === 0}
-                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                className={btn('secondary')}
               >
                 🎲 Pick a raised hand ({hands.length})
               </button>
@@ -273,14 +300,12 @@ export function ClassRoom({
         </div>
 
         {isInstructor && questions.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-3">
-            <span className="text-xs font-semibold uppercase text-indigo-500">
-              Buzzer
-            </span>
+          <div className={cn(cardClass, 'flex flex-wrap items-center gap-2 p-3')}>
+            <span className="text-sm font-semibold text-indigo-600">⚡ Buzzer</span>
             <select
               value={selectedQuestion}
               onChange={(e) => setSelectedQuestion(e.target.value)}
-              className="min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+              className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
             >
               {questions.map((q) => (
                 <option key={q.id} value={q.id}>
@@ -297,42 +322,56 @@ export function ClassRoom({
               }
               disabled={hands.length === 0 || buzzer?.phase === 'QUESTION_OPEN'}
               title={hands.length === 0 ? 'Needs raised hands' : undefined}
-              className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+              className={btn('primary', 'sm')}
             >
-              ⚡ Start round
+              Start round
             </button>
           </div>
-        )}
-
-        {notice && (
-          <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-            {notice}
-          </p>
         )}
       </div>
 
       {/* ---------- Sidebar ---------- */}
       <div className="space-y-4">
-        <section className="rounded-lg border border-slate-200 bg-white p-4">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+        {/* Participants */}
+        <section className={cn(cardClass, 'p-4')}>
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
             <span
-              className={`inline-block h-2 w-2 rounded-full ${
-                connected ? 'bg-emerald-500' : 'bg-slate-300'
-              }`}
+              className={cn(
+                'inline-block h-2 w-2 rounded-full',
+                connected ? 'animate-live bg-emerald-500' : 'bg-slate-300',
+              )}
               title={connected ? 'Realtime connected' : 'Connecting…'}
             />
-            In class ({users.length})
+            In class
+            <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+              {users.length}
+            </span>
           </h2>
-          <ul className="mt-2 space-y-1 text-sm text-slate-600">
+          <ul className="mt-3 space-y-1.5">
             {users.map((u) => {
               const granted = screenGrants.has(u.userId);
+              const handUp = hands.some((h) => h.userId === u.userId);
               return (
-                <li key={u.userId} className="flex items-center justify-between">
-                  <span>
-                    {u.role === 'INSTRUCTOR' ? '🎓' : '👤'} {u.name}
-                    {hands.some((h) => h.userId === u.userId) && ' ✋'}
-                    {granted && ' 🖥'}
+                <li key={u.userId} className="flex items-center gap-2.5">
+                  <span
+                    className={cn(
+                      'grid h-7 w-7 shrink-0 place-items-center rounded-full text-[11px] font-semibold text-white',
+                      avatarColor(u.userId),
+                    )}
+                    aria-hidden
+                  >
+                    {initials(u.name)}
                   </span>
+                  <span className="min-w-0 flex-1 truncate text-sm text-slate-700">
+                    {u.name}
+                    {u.role === 'INSTRUCTOR' && (
+                      <span className="ml-1.5 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-indigo-600">
+                        host
+                      </span>
+                    )}
+                  </span>
+                  {handUp && <span title="Hand raised">✋</span>}
+                  {granted && <span title="Can screen-share">🖥</span>}
                   {isInstructor && u.role === 'STUDENT' && (
                     <button
                       onClick={() =>
@@ -341,9 +380,9 @@ export function ClassRoom({
                           { sessionId, userId: u.userId },
                         )
                       }
-                      className="rounded border border-slate-300 px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100"
+                      className="rounded-md px-1.5 py-0.5 text-xs font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                     >
-                      {granted ? 'Revoke share' : 'Allow share'}
+                      {granted ? 'Revoke' : 'Allow share'}
                     </button>
                   )}
                 </li>
@@ -352,46 +391,82 @@ export function ClassRoom({
           </ul>
         </section>
 
+        {/* Leaderboard */}
         {leaderboard.length > 0 && (
-          <section className="rounded-lg border border-slate-200 bg-white p-4">
-            <h2 className="text-sm font-semibold text-slate-700">Leaderboard</h2>
-            <ol className="mt-2 space-y-1 text-sm">
-              {leaderboard.slice(0, 10).map((row) => (
-                <li key={row.userId} className="flex justify-between">
-                  <span>
-                    {row.rank}. {row.name}
-                    {row.userId === me.userId && ' (you)'}
-                  </span>
-                  <span className="font-mono text-indigo-600">{row.points}</span>
-                </li>
-              ))}
+          <section className={cn(cardClass, 'p-4')}>
+            <h2 className="text-sm font-semibold text-slate-900">Leaderboard</h2>
+            <ol className="mt-2 space-y-0.5">
+              {leaderboard.slice(0, 10).map((row) => {
+                const isMe = row.userId === me.userId;
+                return (
+                  <li
+                    key={row.userId}
+                    className={cn(
+                      'flex items-center justify-between rounded-lg px-2 py-1.5',
+                      isMe && 'bg-indigo-50',
+                    )}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="w-5 text-center text-sm">
+                        {row.rank <= 3 ? MEDALS[row.rank - 1] : row.rank}
+                      </span>
+                      <span
+                        className={cn(
+                          'text-sm',
+                          isMe
+                            ? 'font-semibold text-indigo-700'
+                            : 'text-slate-700',
+                        )}
+                      >
+                        {row.name}
+                        {isMe && ' (you)'}
+                      </span>
+                    </span>
+                    <span className="font-mono text-sm font-semibold text-slate-700">
+                      {row.points}
+                    </span>
+                  </li>
+                );
+              })}
             </ol>
           </section>
         )}
 
-        <section className="flex h-80 flex-col rounded-lg border border-slate-200 bg-white">
-          <h2 className="border-b border-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">
-            Chat {locked && <span className="ml-1 text-xs text-amber-600">🔒 locked</span>}
+        {/* Chat */}
+        <section className={cn(cardClass, 'flex h-96 flex-col')}>
+          <h2 className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-900">
+            Chat
+            {locked && (
+              <span className="flex items-center gap-1 text-xs font-medium text-amber-600">
+                🔒 locked
+              </span>
+            )}
           </h2>
-          <div className="flex-1 space-y-2 overflow-y-auto px-4 py-2 text-sm">
+          <div className="flex-1 space-y-2.5 overflow-y-auto px-4 py-3 text-sm">
+            {messages.length === 0 && (
+              <p className="py-6 text-center text-xs text-slate-400">
+                No messages yet — say hello 👋
+              </p>
+            )}
             {messages.map((m) => (
-              <p key={m.id}>
+              <p key={m.id} className="leading-relaxed">
                 <span
-                  className={
+                  className={cn(
+                    'font-semibold',
                     m.user.role === 'INSTRUCTOR'
-                      ? 'font-semibold text-indigo-700'
-                      : 'font-semibold'
-                  }
+                      ? 'text-indigo-600'
+                      : 'text-slate-900',
+                  )}
                 >
-                  {m.user.name}:
-                </span>{' '}
-                {m.body}
+                  {m.user.name}
+                </span>
+                <span className="text-slate-600"> {m.body}</span>
               </p>
             ))}
             <div ref={chatEndRef} />
           </div>
           <form
-            className="flex gap-2 border-t border-slate-100 p-2"
+            className="flex gap-2 border-t border-slate-100 p-2.5"
             onSubmit={(e) => {
               e.preventDefault();
               send(e.currentTarget);
@@ -399,22 +474,28 @@ export function ClassRoom({
           >
             <input
               name="body"
-              placeholder={
-                locked && !isInstructor ? 'Chat is locked' : 'Say something…'
-              }
-              disabled={locked && !isInstructor}
+              placeholder={chatLockedForMe ? 'Chat is locked' : 'Say something…'}
+              disabled={chatLockedForMe}
               autoComplete="off"
-              className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm disabled:bg-slate-50"
+              className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 disabled:bg-slate-50 disabled:text-slate-400"
             />
             <button
-              disabled={locked && !isInstructor}
-              className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+              disabled={chatLockedForMe}
+              className={btn('primary', 'sm')}
+              aria-label="Send message"
             >
               Send
             </button>
           </form>
         </section>
       </div>
+
+      {/* Transient error toast */}
+      {notice && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-medium text-rose-700 shadow-lg">
+          {notice}
+        </div>
+      )}
     </div>
   );
 }

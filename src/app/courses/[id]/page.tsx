@@ -2,15 +2,16 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { enroll, unenroll } from '@/app/actions/courses';
 import { Header } from '@/components/header';
+import { SubmitButton } from '@/components/submit-button';
 import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
+import { btn } from '@/lib/ui';
 import type {
   Certificate,
   CourseDetail,
   Enrollment,
   LiveSession,
 } from '@/lib/types';
-import { SubmitButton } from '@/components/submit-button';
 import { InstructorPanel } from './instructor-panel';
 import { SessionList } from './session-list';
 
@@ -42,85 +43,112 @@ export default async function CoursePage(props: {
     myCertificate = certs.find((c) => c.courseId === id);
   }
 
+  const liveNow = sessions.some((s) => s.status === 'LIVE');
+
   return (
     <>
       <Header />
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold">{course.title}</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Taught by {course.instructor.name} · {course._count.enrollments}{' '}
-              enrolled
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10 sm:px-6">
+        {/* Course header */}
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <div className="max-w-2xl">
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <Link href="/courses" className="hover:text-slate-700">
+                Courses
+              </Link>
+              <span className="text-slate-300">/</span>
+              <span className="text-slate-400">Course</span>
+            </div>
+            <h1 className="mt-2 flex items-center gap-3 text-3xl font-semibold tracking-tight text-slate-900">
+              {course.title}
+              {liveNow && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-600">
+                  <span className="animate-live h-1.5 w-1.5 rounded-full bg-rose-500" />
+                  LIVE NOW
+                </span>
+              )}
+            </h1>
+            <p className="mt-2 text-sm text-slate-500">
+              Taught by{' '}
+              <span className="font-medium text-slate-700">
+                {course.instructor.name}
+              </span>{' '}
+              · {course._count.enrollments} enrolled
             </p>
             {course.description && (
-              <p className="mt-3 max-w-2xl text-slate-700">
-                {course.description}
-              </p>
+              <p className="mt-4 text-slate-700">{course.description}</p>
             )}
           </div>
-          {user?.role === 'STUDENT' && (
-            <form action={isEnrolled ? unenroll.bind(null, id) : enroll.bind(null, id)}>
-              <SubmitButton
-                className={
-                  isEnrolled
-                    ? 'rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50'
-                    : undefined
+
+          <div className="shrink-0">
+            {user?.role === 'STUDENT' && (
+              <form
+                action={
+                  isEnrolled ? unenroll.bind(null, id) : enroll.bind(null, id)
                 }
               >
-                {isEnrolled ? 'Unenroll' : 'Enroll'}
-              </SubmitButton>
-            </form>
-          )}
-          {!user && (
-            <Link
-              href="/login"
-              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
-            >
-              Log in to enroll
-            </Link>
-          )}
+                <SubmitButton
+                  variant={isEnrolled ? 'secondary' : 'primary'}
+                  size="lg"
+                  pendingLabel={isEnrolled ? 'Leaving…' : 'Enrolling…'}
+                >
+                  {isEnrolled ? 'Enrolled ✓' : 'Enroll now'}
+                </SubmitButton>
+              </form>
+            )}
+            {!user && (
+              <Link href="/login" className={btn('primary', 'lg')}>
+                Log in to enroll
+              </Link>
+            )}
+          </div>
         </div>
 
         {myCertificate && (
-          <p className="mt-4 rounded-md bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-            🎓 You hold a certificate for this course (code{' '}
-            <span className="font-mono">{myCertificate.verificationCode}</span>
-            ). See your{' '}
-            <Link href="/dashboard" className="underline">
-              dashboard
-            </Link>{' '}
-            to download it.
-          </p>
+          <div className="mt-6 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3.5 text-sm text-emerald-800">
+            <span className="text-lg leading-none">🎓</span>
+            <p>
+              You hold a certificate for this course (code{' '}
+              <span className="font-mono">{myCertificate.verificationCode}</span>
+              ). Download it from your{' '}
+              <Link href="/dashboard" className="font-medium underline">
+                dashboard
+              </Link>
+              .
+            </p>
+          </div>
         )}
 
+        {/* Live sessions */}
         <section className="mt-10">
-          <h2 className="text-lg font-semibold">Sections</h2>
-          {course.sections.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-600">No sections yet.</p>
-          ) : (
-            <ol className="mt-3 space-y-2">
-              {course.sections.map((s) => (
-                <li
-                  key={s.id}
-                  className="rounded-md border border-slate-200 bg-white px-4 py-2.5 text-sm"
-                >
-                  <span className="mr-2 text-slate-400">{s.order}.</span>
-                  {s.title}
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
-
-        <section className="mt-10">
-          <h2 className="text-lg font-semibold">Live sessions</h2>
+          <h2 className="text-lg font-semibold text-slate-900">Live sessions</h2>
           <SessionList
             sessions={sessions}
             courseId={id}
             isOwner={isOwner}
             canJoin={isOwner || isEnrolled}
           />
+        </section>
+
+        {/* Curriculum */}
+        <section className="mt-10">
+          <h2 className="text-lg font-semibold text-slate-900">Curriculum</h2>
+          {course.sections.length === 0 ? (
+            <p className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-5 py-6 text-sm text-slate-500">
+              No sections yet.
+            </p>
+          ) : (
+            <ol className="mt-4 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
+              {course.sections.map((s) => (
+                <li key={s.id} className="flex items-center gap-4 px-5 py-3.5">
+                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-slate-100 text-xs font-semibold text-slate-500">
+                    {s.order}
+                  </span>
+                  <span className="text-sm text-slate-800">{s.title}</span>
+                </li>
+              ))}
+            </ol>
+          )}
         </section>
 
         {isOwner && <InstructorPanel course={course} />}

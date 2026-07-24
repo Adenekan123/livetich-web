@@ -1,56 +1,62 @@
 import Link from 'next/link';
 import { logout } from '@/app/actions/auth';
 import { getCurrentUser } from '@/lib/auth';
+import { avatarColor, btn, initials } from '@/lib/ui';
+import { Logo } from './logo';
+import { NavLinks } from './nav-links';
 
 export async function Header() {
-  const user = await getCurrentUser();
+  const user = await getCurrentUser().catch(() => null);
   return (
-    <header className="border-b border-slate-200 bg-white">
-      <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
+    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/80 backdrop-blur-md">
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
         <div className="flex items-center gap-6">
-          <Link href="/" className="text-lg font-bold text-indigo-600">
-            livetich
+          <Link
+            href="/"
+            className="flex items-center gap-2 rounded-lg transition hover:opacity-80"
+          >
+            <Logo className="h-8 w-8" />
+            <span className="text-lg font-semibold tracking-tight text-slate-900">
+              livetich
+            </span>
           </Link>
-          <nav className="flex items-center gap-4 text-sm text-slate-600">
-            <Link href="/courses" className="hover:text-slate-900">
-              Courses
-            </Link>
-            {user && (
-              <Link href="/dashboard" className="hover:text-slate-900">
-                Dashboard
-              </Link>
-            )}
-          </nav>
+          <div className="hidden sm:block">
+            <NavLinks showDashboard={Boolean(user)} />
+          </div>
         </div>
-        <div className="flex items-center gap-3 text-sm">
-          {user ? (
-            <>
-              <span className="text-slate-500">
+
+        {user ? (
+          <div className="flex items-center gap-3">
+            <div className="hidden items-center gap-2.5 sm:flex">
+              <span
+                className={`grid h-8 w-8 place-items-center rounded-full text-xs font-semibold text-white ${avatarColor(
+                  user.sub,
+                )}`}
+                aria-hidden
+              >
+                {initials(user.name)}
+              </span>
+              <span className="text-sm font-medium text-slate-700">
                 {user.name}
-                <span className="ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-xs uppercase text-slate-500">
+                <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">
                   {user.role.toLowerCase()}
                 </span>
               </span>
-              <form action={logout}>
-                <button className="text-slate-500 hover:text-slate-900">
-                  Log out
-                </button>
-              </form>
-            </>
-          ) : (
-            <>
-              <Link href="/login" className="text-slate-600 hover:text-slate-900">
-                Log in
-              </Link>
-              <Link
-                href="/register"
-                className="rounded-md bg-indigo-600 px-3 py-1.5 font-medium text-white hover:bg-indigo-500"
-              >
-                Sign up
-              </Link>
-            </>
-          )}
-        </div>
+            </div>
+            <form action={logout}>
+              <button className={btn('secondary', 'sm')}>Log out</button>
+            </form>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Link href="/login" className={btn('ghost', 'sm')}>
+              Log in
+            </Link>
+            <Link href="/register" className={btn('primary', 'sm')}>
+              Get started
+            </Link>
+          </div>
+        )}
       </div>
     </header>
   );

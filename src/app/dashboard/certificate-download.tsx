@@ -14,7 +14,12 @@ export function CertificateDownload({
 }) {
   const [busy, setBusy] = useState(false);
   if (!ready) {
-    return <span className="text-slate-400">PDF being generated…</span>;
+    return (
+      <span className="flex items-center gap-1.5 text-slate-400">
+        <span className="h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-transparent" />
+        Generating PDF…
+      </span>
+    );
   }
 
   const download = async () => {
@@ -39,8 +44,11 @@ export function CertificateDownload({
     <button
       onClick={download}
       disabled={busy}
-      className="text-indigo-600 hover:underline disabled:opacity-50"
+      className="flex items-center gap-1.5 text-indigo-600 transition hover:text-indigo-500 disabled:opacity-50"
     >
+      {busy && (
+        <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+      )}
       {busy ? 'Downloading…' : 'Download PDF'}
     </button>
   );
