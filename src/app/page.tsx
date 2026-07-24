@@ -138,10 +138,9 @@ export default async function Home() {
               Teach skills <span className="text-indigo-300">live</span>, to a room
               that actually shows up.
             </h1>
-            <p className="mt-6 max-w-xl text-lg leading-relaxed text-indigo-100/70">
-              livetich puts a real classroom online: live video, a shared
-              chalkboard, buzzer quizzes, a points leaderboard, and verifiable
-              certificates. One room, built for cohorts of up to 500.
+            <p className="mt-6 max-w-lg text-lg leading-relaxed text-indigo-100/70">
+              One live room for your whole cohort: video, a chalkboard, quizzes,
+              and a leaderboard that keeps everyone in it.
             </p>
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
               <Link
@@ -160,15 +159,6 @@ export default async function Home() {
               >
                 Browse courses
               </Link>
-            </div>
-            <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-indigo-100/60">
-              {['No downloads, runs in the browser', 'Up to 500 students per room'].map(
-                (t) => (
-                  <span key={t} className="flex items-center gap-1.5">
-                    <Check className="h-4 w-4 text-emerald-400" aria-hidden /> {t}
-                  </span>
-                ),
-              )}
             </div>
           </div>
 
