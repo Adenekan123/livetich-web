@@ -4,9 +4,9 @@ import { api, ApiError } from './api';
 import type { SessionUser } from './types';
 
 /**
- * The API JWT lives in a readable (non-httpOnly) cookie because the
- * socket.io clients need it in the browser for the realtime handshake.
- * Revisit (httpOnly + token endpoint) before production hardening.
+ * The API JWT lives in an httpOnly cookie (server-readable only). Realtime
+ * clients that need the token in the browser fetch it from the same-origin
+ * /api/realtime-token route, which reads this cookie server-side.
  */
 export const TOKEN_COOKIE = 'lt_token';
 

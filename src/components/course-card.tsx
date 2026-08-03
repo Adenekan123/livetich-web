@@ -20,23 +20,23 @@ export function CourseCard({
       href={href}
       className={cn(
         cardClass,
-        'group flex h-full flex-col p-5 transition duration-200 ease-out hover:-translate-y-0.5 hover:border-indigo-300 hover:shadow-md',
+        'group flex h-full flex-col p-5 transition duration-200 ease-out hover:-translate-y-0.5 hover:border-neutral-400 hover:shadow-md',
       )}
     >
       <div className="flex items-start justify-between gap-3">
-        <h3 className="font-semibold text-slate-900 transition group-hover:text-indigo-700">
+        <h3 className="font-semibold tracking-tight text-neutral-950">
           {title}
         </h3>
         {badge}
       </div>
       {description ? (
-        <p className="mt-1.5 line-clamp-2 text-sm text-slate-500">{description}</p>
+        <p className="mt-1.5 line-clamp-2 text-sm text-neutral-500">{description}</p>
       ) : null}
       {meta && meta.length > 0 ? (
-        <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-4 text-xs text-slate-500">
+        <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-4 text-xs text-neutral-500">
           {meta.map((m, i) => (
             <span key={m} className="flex items-center gap-1.5">
-              {i > 0 && <span className="text-slate-300">·</span>}
+              {i > 0 && <span className="text-neutral-300">·</span>}
               {m}
             </span>
           ))}

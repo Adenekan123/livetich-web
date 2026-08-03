@@ -1,12 +1,8 @@
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { avatarColor, initials } from '@/lib/ui';
-import type { Certificate, CourseDetail, Enrollment } from '@/lib/types';
-import {
-  AddSectionForm,
-  IssueCertificateForm,
-  ScheduleSessionForm,
-} from './instructor-forms';
+import type { CourseDetail, Enrollment } from '@/lib/types';
+import { AddSectionForm } from './instructor-forms';
 
 type StudentRow = Pick<Enrollment, 'id'> & {
   student: { id: string; name: string; email: string };
@@ -14,25 +10,24 @@ type StudentRow = Pick<Enrollment, 'id'> & {
 
 function ToolHeading({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="text-sm font-semibold text-slate-900">{children}</h3>
+    <h3 className="text-sm font-semibold text-neutral-900">{children}</h3>
   );
 }
 
-/** Owner-only management: sections, scheduling, students, certificates. */
+/** Owner-only management: sections and the enrolled roster. Live classes now
+ *  run off the program cadence — nothing to schedule here. */
 export async function InstructorPanel({ course }: { course: CourseDetail }) {
   const token = (await getToken())!;
-  const [students, certificates] = await Promise.all([
-    api<StudentRow[]>(`/courses/${course.id}/students`, { token }),
-    api<Certificate[]>(`/certificates/course/${course.id}`, { token }),
-  ]);
-  const certifiedIds = new Set(certificates.map((c) => c.studentId));
-  const uncertified = students.filter((s) => !certifiedIds.has(s.student.id));
+  const students = await api<StudentRow[]>(
+    `/courses/${course.id}/students`,
+    { token },
+  );
 
   return (
-    <section className="mt-12 rounded-2xl border border-slate-200 bg-slate-50 p-6 sm:p-8">
+    <section className="mt-12 rounded-2xl border border-neutral-200 bg-neutral-50 p-6 sm:p-8">
       <div className="flex items-center gap-2">
-        <h2 className="text-lg font-semibold text-slate-900">Instructor tools</h2>
-        <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+        <h2 className="text-lg font-semibold text-neutral-900">Instructor tools</h2>
+        <span className="rounded-full bg-signal-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-signal-700">
           Owner
         </span>
       </div>
@@ -43,20 +38,13 @@ export async function InstructorPanel({ course }: { course: CourseDetail }) {
             <ToolHeading>Add a section</ToolHeading>
             <AddSectionForm courseId={course.id} />
           </div>
-          <div>
-            <ToolHeading>Schedule a live session</ToolHeading>
-            <ScheduleSessionForm
-              courseId={course.id}
-              sections={course.sections}
-            />
-          </div>
         </div>
 
         <div className="space-y-7">
           <div>
             <ToolHeading>Students ({students.length})</ToolHeading>
             {students.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-500">Nobody enrolled yet.</p>
+              <p className="mt-3 text-sm text-neutral-500">Nobody enrolled yet.</p>
             ) : (
               <ul className="mt-3 space-y-2">
                 {students.map((s) => (
@@ -70,33 +58,18 @@ export async function InstructorPanel({ course }: { course: CourseDetail }) {
                       {initials(s.student.name)}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-slate-800">
+                      <span className="block truncate text-sm font-medium text-neutral-800">
                         {s.student.name}
                       </span>
-                      <span className="block truncate text-xs text-slate-400">
+                      <span className="block truncate text-xs text-neutral-400">
                         {s.student.email}
                       </span>
                     </span>
-                    {certifiedIds.has(s.student.id) && (
-                      <span title="Certified" className="text-base">
-                        🎓
-                      </span>
-                    )}
                   </li>
                 ))}
               </ul>
             )}
           </div>
-
-          {uncertified.length > 0 && (
-            <div>
-              <ToolHeading>Issue a certificate</ToolHeading>
-              <IssueCertificateForm
-                courseId={course.id}
-                students={uncertified.map((s) => s.student)}
-              />
-            </div>
-          )}
         </div>
       </div>
     </section>

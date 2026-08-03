@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { API_URL } from '@/lib/api';
-import { getClientToken } from '@/lib/client-token';
+import { getRealtimeToken } from '@/lib/client-token';
 
 /** Authorized PDF download — needs the Bearer header, so a plain <a> won't do. */
 export function CertificateDownload({
@@ -15,8 +15,8 @@ export function CertificateDownload({
   const [busy, setBusy] = useState(false);
   if (!ready) {
     return (
-      <span className="flex items-center gap-1.5 text-slate-400">
-        <span className="h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-transparent" />
+      <span className="flex items-center gap-1.5 text-neutral-400">
+        <span className="h-3 w-3 animate-spin rounded-full border-2 border-neutral-300 border-t-transparent" />
         Generating PDF…
       </span>
     );
@@ -25,8 +25,9 @@ export function CertificateDownload({
   const download = async () => {
     setBusy(true);
     try {
+      const token = await getRealtimeToken();
       const res = await fetch(`${API_URL}/certificates/${certificateId}/download`, {
-        headers: { Authorization: `Bearer ${getClientToken() ?? ''}` },
+        headers: { Authorization: `Bearer ${token ?? ''}` },
       });
       if (!res.ok) throw new Error(`download failed (${res.status})`);
       const url = URL.createObjectURL(await res.blob());
@@ -44,7 +45,7 @@ export function CertificateDownload({
     <button
       onClick={download}
       disabled={busy}
-      className="flex items-center gap-1.5 text-indigo-600 transition hover:text-indigo-500 disabled:opacity-50"
+      className="flex items-center gap-1.5 text-signal-600 transition hover:text-signal-500 disabled:opacity-50"
     >
       {busy && (
         <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />

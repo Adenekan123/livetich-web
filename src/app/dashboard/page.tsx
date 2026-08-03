@@ -1,26 +1,94 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import type { IconType } from 'react-icons';
+import {
+  PiBooks,
+  PiCertificate,
+  PiPlus,
+  PiUsers,
+} from 'react-icons/pi';
 import { Header } from '@/components/header';
 import { CourseCard } from '@/components/course-card';
 import { api } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
 import { avatarColor, cardClass, cn, initials } from '@/lib/ui';
-import type { Certificate, CourseListItem, Enrollment } from '@/lib/types';
+import type {
+  CatalogCourse,
+  Certificate,
+  Enrollment,
+  OrgMember,
+  StudentStat,
+} from '@/lib/types';
+import {
+  deriveCohort,
+  formatCadence,
+  formatDuration,
+  type CohortStatus,
+} from '../courses/catalog-lib';
+import { StudentPerformanceTable } from '../account/student-performance-table';
 import { CertificateDownload } from './certificate-download';
-import { CreateCourseForm } from './create-course-form';
 
 export const metadata = { title: 'Dashboard - livetich' };
+
+/* Compact cohort badge for dashboard cards (monochrome). */
+function CohortBadge({ status, label }: { status: CohortStatus; label: string }) {
+  const styles: Record<CohortStatus, string> = {
+    LIVE: 'bg-neutral-950 text-white',
+    STARTING_SOON: 'bg-neutral-950 text-white',
+    ENROLLING: 'border border-neutral-300 text-neutral-700',
+    OPEN: 'border border-neutral-300 text-neutral-700',
+    IN_PROGRESS: 'bg-neutral-100 text-neutral-700',
+    COMPLETED: 'bg-neutral-100 text-neutral-400',
+  };
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-semibold',
+        styles[status],
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+function SectionHeading({ title, count }: { title: string; count?: number }) {
+  return (
+    <h2 className="flex items-center gap-2 text-sm font-bold tracking-tight text-neutral-950">
+      {title}
+      {count !== undefined && (
+        <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-500">
+          {count}
+        </span>
+      )}
+    </h2>
+  );
+}
+
+function EmptyState({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mt-3 rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 px-5 py-8 text-center text-sm text-neutral-500">
+      {children}
+    </div>
+  );
+}
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
   if (!user) redirect('/login');
   const token = (await getToken())!;
-  const isInstructor = user.role === 'INSTRUCTOR';
+
+  const roleLabel =
+    user.role === 'ORG_ADMIN'
+      ? 'Manage your programs, instructors, and students.'
+      : user.role === 'INSTRUCTOR'
+        ? 'Your assigned programs and the students in them.'
+        : 'Jump back into a class or enroll in a new one.';
 
   return (
     <>
       <Header />
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-10 sm:px-6">
+      <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-10 sm:px-6">
         <div className="flex items-center gap-4">
           <span
             className={cn(
@@ -32,19 +100,17 @@ export default async function DashboardPage() {
             {initials(user.name)}
           </span>
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+            <h1 className="text-2xl font-semibold tracking-tight text-neutral-950">
               Welcome back, {user.name.split(' ')[0]}
             </h1>
-            <p className="text-sm text-slate-500">
-              {isInstructor
-                ? 'Manage your courses and go live with your cohort.'
-                : 'Jump back into a class or find something new to learn.'}
-            </p>
+            <p className="text-sm text-neutral-500">{roleLabel}</p>
           </div>
         </div>
 
-        {isInstructor ? (
-          <InstructorDashboard instructorId={user.sub} />
+        {user.role === 'ORG_ADMIN' ? (
+          <AdminConsole token={token} />
+        ) : user.role === 'INSTRUCTOR' ? (
+          <InstructorDashboard token={token} />
         ) : (
           <StudentDashboard token={token} />
         )}
@@ -53,71 +119,177 @@ export default async function DashboardPage() {
   );
 }
 
-function SectionHeading({
-  title,
-  count,
+/* ---------------- Org admin ---------------- */
+
+function StatTile({
+  label,
+  value,
+  href,
+  live,
 }: {
-  title: string;
-  count?: number;
+  label: string;
+  value: number;
+  href: string;
+  live?: boolean;
 }) {
   return (
-    <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-      {title}
-      {count !== undefined && (
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
-          {count}
-        </span>
+    <Link
+      href={href}
+      className={cn(
+        cardClass,
+        'p-5 transition hover:border-neutral-300 hover:shadow-sm',
       )}
-    </h2>
+    >
+      <dt className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+        {live && (
+          <span className="animate-live h-1.5 w-1.5 rounded-full bg-signal-500" />
+        )}
+        {label}
+      </dt>
+      <dd className="mt-2 text-3xl font-bold tracking-tight text-neutral-950">
+        {value}
+      </dd>
+    </Link>
   );
 }
 
-function EmptyState({ children }: { children: React.ReactNode }) {
+function ShortcutCard({
+  icon: Icon,
+  title,
+  desc,
+  href,
+}: {
+  icon: IconType;
+  title: string;
+  desc: string;
+  href: string;
+}) {
   return (
-    <div className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-5 py-8 text-center text-sm text-slate-500">
-      {children}
+    <Link
+      href={href}
+      className={cn(
+        cardClass,
+        'flex items-start gap-4 p-5 transition hover:border-neutral-300 hover:shadow-sm',
+      )}
+    >
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-neutral-900 text-white">
+        <Icon className="h-5 w-5" />
+      </span>
+      <div className="min-w-0">
+        <p className="font-semibold text-neutral-950">{title} →</p>
+        <p className="mt-0.5 text-sm text-neutral-500">{desc}</p>
+      </div>
+    </Link>
+  );
+}
+
+async function AdminConsole({ token }: { token: string }) {
+  const [courses, instructors, students] = await Promise.all([
+    api<CatalogCourse[]>('/courses', { token }),
+    api<OrgMember[]>('/organizations/instructors', { token }),
+    api<OrgMember[]>('/organizations/students', { token }),
+  ]);
+
+  const enrollments = courses.reduce((n, c) => n + c._count.enrollments, 0);
+  const liveNow = courses.filter((c) => Boolean(c.liveSessionId)).length;
+
+  return (
+    <div className="mt-10 space-y-8">
+      {/* Stats */}
+      <div>
+        <SectionHeading title="Overview" />
+        <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+          <StatTile label="Programs" value={courses.length} href="/courses" />
+          <StatTile label="Live now" value={liveNow} href="/courses" live={liveNow > 0} />
+          <StatTile label="Enrollments" value={enrollments} href="/courses" />
+          <StatTile label="Instructors" value={instructors.length} href="/account" />
+          <StatTile label="Students" value={students.length} href="/account" />
+        </dl>
+      </div>
+
+      {/* Shortcuts */}
+      <div>
+        <SectionHeading title="Quick actions" />
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <ShortcutCard
+            icon={PiPlus}
+            title="New program"
+            desc="Create a cohort and set its weekly schedule."
+            href="/courses"
+          />
+          <ShortcutCard
+            icon={PiBooks}
+            title="Programs"
+            desc="Browse programs, assign instructors, manage rosters."
+            href="/courses"
+          />
+          <ShortcutCard
+            icon={PiUsers}
+            title="People & brand"
+            desc="Invite instructors and students, edit your brand."
+            href="/account"
+          />
+        </div>
+      </div>
     </div>
   );
 }
 
-async function InstructorDashboard({ instructorId }: { instructorId: string }) {
-  const all = await api<CourseListItem[]>('/courses');
-  const mine = all.filter((c) => c.instructorId === instructorId);
+/* ---------------- Instructor ---------------- */
+
+async function InstructorDashboard({ token }: { token: string }) {
+  const [courses, students] = await Promise.all([
+    api<CatalogCourse[]>('/courses', { token }),
+    api<StudentStat[]>('/courses/students/stats', { token }),
+  ]);
+
   return (
-    <div className="mt-10 grid gap-10 lg:grid-cols-[1.9fr_1fr]">
+    <div className="mt-10 space-y-10">
       <section>
-        <SectionHeading title="Your courses" count={mine.length} />
-        {mine.length === 0 ? (
+        <SectionHeading title="Your programs" count={courses.length} />
+        {courses.length === 0 ? (
           <EmptyState>
-            You haven&apos;t created a course yet. Use the panel on the right to
-            launch your first one.
+            No programs are assigned to you yet. Your company admin assigns the
+            courses you&apos;ll teach.
           </EmptyState>
         ) : (
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            {mine.map((c) => (
-              <CourseCard
-                key={c.id}
-                href={`/courses/${c.id}`}
-                title={c.title}
-                description={c.description}
-                meta={[
-                  `${c._count.sections} sections`,
-                  `${c._count.enrollments} enrolled`,
-                ]}
-              />
-            ))}
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {courses.map((c) => {
+              const cohort = deriveCohort(
+                c.startDate,
+                c.durationWeeks,
+                Boolean(c.liveSessionId),
+              );
+              return (
+                <CourseCard
+                  key={c.id}
+                  href={`/courses/${c.id}`}
+                  title={c.title}
+                  description={c.description}
+                  badge={<CohortBadge status={cohort.status} label={cohort.label} />}
+                  meta={[
+                    formatCadence(c.meetingDays, c.meetingTime) ?? 'Schedule TBA',
+                    formatDuration(c.durationWeeks) ?? '',
+                    `${c._count.enrollments} students`,
+                  ].filter((m): m is string => Boolean(m))}
+                />
+              );
+            })}
           </div>
         )}
       </section>
       <section>
-        <SectionHeading title="New course" />
-        <div className={cn(cardClass, 'mt-4 p-5')}>
-          <CreateCourseForm />
-        </div>
+        <SectionHeading title="Your students" count={students.length} />
+        <StudentPerformanceTable
+          students={students}
+          emptyLabel="No students enrolled in your programs yet."
+        />
       </section>
     </div>
   );
 }
+
+/* ---------------- Student ---------------- */
 
 async function StudentDashboard({ token }: { token: string }) {
   const [enrollments, certificates] = await Promise.all([
@@ -127,27 +299,49 @@ async function StudentDashboard({ token }: { token: string }) {
   return (
     <div className="mt-10 grid gap-10 lg:grid-cols-2">
       <section>
-        <SectionHeading title="Your courses" count={enrollments.length} />
+        <div className="flex items-center justify-between">
+          <SectionHeading title="Your programs" count={enrollments.length} />
+          <Link
+            href="/courses"
+            className="text-sm font-semibold text-signal-700 hover:text-signal-600"
+          >
+            Browse catalog →
+          </Link>
+        </div>
         {enrollments.length === 0 ? (
           <EmptyState>
             You&apos;re not enrolled in anything yet.{' '}
             <Link
               href="/courses"
-              className="font-medium text-indigo-600 hover:text-indigo-500"
+              className="font-semibold text-signal-700 hover:text-signal-600"
             >
-              Browse courses →
+              Browse your company&apos;s programs →
             </Link>
           </EmptyState>
         ) : (
           <div className="mt-4 grid gap-4">
-            {enrollments.map((e) => (
-              <CourseCard
-                key={e.id}
-                href={`/courses/${e.courseId}`}
-                title={e.course.title}
-                meta={[`Taught by ${e.course.instructor.name}`]}
-              />
-            ))}
+            {enrollments.map((e) => {
+              const c = e.course;
+              const cohort = deriveCohort(
+                c.startDate ?? null,
+                c.durationWeeks ?? null,
+                false,
+              );
+              const cadence = formatCadence(c.meetingDays, c.meetingTime);
+              return (
+                <CourseCard
+                  key={e.id}
+                  href={`/courses/${e.courseId}`}
+                  title={c.title}
+                  badge={<CohortBadge status={cohort.status} label={cohort.label} />}
+                  meta={[
+                    `Taught by ${c.instructor?.name ?? 'TBA'}`,
+                    cadence,
+                    formatDuration(c.durationWeeks),
+                  ].filter((m): m is string => Boolean(m))}
+                />
+              );
+            })}
           </div>
         )}
       </section>
@@ -155,23 +349,23 @@ async function StudentDashboard({ token }: { token: string }) {
         <SectionHeading title="Certificates" count={certificates.length} />
         {certificates.length === 0 ? (
           <EmptyState>
-            None yet. Finish a course to earn a verifiable certificate.
+            None yet. Finish a program to earn a verifiable certificate.
           </EmptyState>
         ) : (
           <div className="mt-4 grid gap-4">
             {certificates.map((c) => (
               <div key={c.id} className={cn(cardClass, 'p-5')}>
                 <div className="flex items-center gap-3">
-                  <span className="grid h-9 w-9 place-items-center rounded-lg bg-indigo-600 text-base text-white">
-                    🎓
+                  <span className="grid h-9 w-9 place-items-center rounded-xl bg-neutral-900 text-white">
+                    <PiCertificate className="h-5 w-5" />
                   </span>
-                  <p className="font-semibold text-slate-900">
+                  <p className="font-semibold text-neutral-950">
                     {c.course?.title ?? 'Certificate'}
                   </p>
                 </div>
-                <p className="mt-3 text-xs text-slate-500">
+                <p className="mt-3 text-xs text-neutral-500">
                   Issued {new Date(c.issuedAt).toLocaleDateString()} · code{' '}
-                  <span className="font-mono text-slate-700">
+                  <span className="font-mono text-neutral-700">
                     {c.verificationCode}
                   </span>
                 </p>
@@ -181,7 +375,7 @@ async function StudentDashboard({ token }: { token: string }) {
                     ready={Boolean(c.pdfUrl)}
                   />
                   <a
-                    className="text-slate-500 hover:text-slate-900"
+                    className="text-neutral-500 hover:text-neutral-950"
                     href={`${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000'}/certificates/verify/${c.verificationCode}`}
                     target="_blank"
                     rel="noreferrer"

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Room,
   RoomEvent,
@@ -8,8 +8,23 @@ import {
   type Participant,
   type Track as LKTrack,
 } from 'livekit-client';
+import { PiMicrophone, PiMicrophoneSlash, PiVideoCameraSlash } from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
-import { getClientToken } from '@/lib/client-token';
+import { getRealtimeToken } from '@/lib/client-token';
+
+/** Media controls lifted up to the classroom's bottom bar. */
+export interface VideoControls {
+  camOn: boolean;
+  micOn: boolean;
+  screenOn: boolean;
+  toggleCam: () => void;
+  toggleMic: () => void;
+  toggleScreen: () => void;
+  /** Camera + mic (instructor only). */
+  canPublishMedia: boolean;
+  /** Screen share (instructor, or a student the instructor granted). */
+  canShareScreen: boolean;
+}
 
 interface Tile {
   sid: string;
@@ -83,13 +98,7 @@ function VideoBox({
   }, [track]);
   if (!track) return null;
   return (
-    <video
-      ref={ref}
-      autoPlay
-      playsInline
-      muted={muted}
-      className={className}
-    />
+    <video ref={ref} autoPlay playsInline muted={muted} className={className} />
   );
 }
 
@@ -110,21 +119,19 @@ function AudioSink({ track }: { track?: LKTrack }) {
 
 function ParticipantTile({ tile }: { tile: Tile }) {
   return (
-    <div className="relative aspect-video overflow-hidden rounded-lg bg-slate-800">
-      {tile.camera ? (
-        <VideoBox
-          track={tile.camera}
-          muted={tile.isLocal}
-          className="h-full w-full object-cover"
-        />
-      ) : (
-        <div className="flex h-full items-center justify-center text-2xl text-slate-500">
-          {tile.isInstructor ? '🎓' : '👤'}
-        </div>
-      )}
-      {!tile.isLocal && <AudioSink track={tile.mic} />}
+    <div className="relative aspect-video overflow-hidden rounded-xl bg-neutral-800">
+      <VideoBox
+        track={tile.camera}
+        muted={tile.isLocal}
+        className="h-full w-full object-cover"
+      />
       <div className="absolute bottom-1 left-1 flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white">
-        {tile.micMuted ? '🔇' : '🎙'} {tile.name}
+        {tile.micMuted ? (
+          <PiMicrophoneSlash className="h-3.5 w-3.5 text-neutral-300" />
+        ) : (
+          <PiMicrophone className="h-3.5 w-3.5" />
+        )}
+        {tile.name}
         {tile.isLocal && ' (you)'}
       </div>
     </div>
@@ -134,17 +141,24 @@ function ParticipantTile({ tile }: { tile: Tile }) {
 /**
  * LiveKit video for a session. Instructor publishes camera/mic/screen;
  * students subscribe (their join token is subscribe-only). Kept mounted
- * across the Video/Chalkboard tab switch so the call never drops.
+ * across the Video/Chalkboard view switch so the call never drops, and its
+ * media controls are reported up to the classroom's bottom bar via `onControls`.
  */
 export function VideoStage({
   sessionId,
   isInstructor,
   canScreenShare,
+  dataSaver,
+  onControls,
 }: {
   sessionId: string;
   isInstructor: boolean;
   /** Instructor (always) or a student the instructor granted screen-share. */
   canScreenShare: boolean;
+  /** Low-bandwidth mode: unsubscribe from all remote video, keep audio. */
+  dataSaver: boolean;
+  /** Reports the media controls (or null when not live) to the parent. */
+  onControls?: (c: VideoControls | null) => void;
 }) {
   const roomRef = useRef<Room | null>(null);
   const [tiles, setTiles] = useState<Tile[]>([]);
@@ -171,9 +185,10 @@ export function VideoStage({
     (async () => {
       let token: string, url: string;
       try {
+        const authToken = await getRealtimeToken();
         const res = await fetch(`${API_URL}/sessions/${sessionId}/token`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${getClientToken() ?? ''}` },
+          headers: { Authorization: `Bearer ${authToken ?? ''}` },
         });
         if (!res.ok) throw new Error(`token request failed (${res.status})`);
         ({ token, url } = await res.json());
@@ -189,13 +204,18 @@ export function VideoStage({
       room
         .on(RoomEvent.TrackSubscribed, sync)
         .on(RoomEvent.TrackUnsubscribed, sync)
+        .on(RoomEvent.TrackPublished, sync)
         .on(RoomEvent.LocalTrackPublished, sync)
         .on(RoomEvent.LocalTrackUnpublished, sync)
         .on(RoomEvent.ParticipantConnected, sync)
         .on(RoomEvent.ParticipantDisconnected, sync)
         .on(RoomEvent.TrackMuted, sync)
         .on(RoomEvent.TrackUnmuted, sync)
-        .on(RoomEvent.Disconnected, () => setStatus('error'));
+        // Ignore disconnects we triggered ourselves (effect teardown / remount in
+        // dev). Only a drop while the room is still the live one is a real error.
+        .on(RoomEvent.Disconnected, () => {
+          if (!cancelled) setStatus('error');
+        });
 
       try {
         await room.connect(url, token);
@@ -222,27 +242,59 @@ export function VideoStage({
     };
   }, [sessionId]);
 
-  const toggleCam = async () => {
+  const toggleCam = useCallback(async () => {
     const room = roomRef.current;
     if (!room) return;
-    const next = !camOn;
+    const next = !room.localParticipant.isCameraEnabled;
     await room.localParticipant.setCameraEnabled(next);
     setCamOn(next);
-  };
-  const toggleMic = async () => {
+  }, []);
+  const toggleMic = useCallback(async () => {
     const room = roomRef.current;
     if (!room) return;
-    const next = !micOn;
+    const next = !room.localParticipant.isMicrophoneEnabled;
     await room.localParticipant.setMicrophoneEnabled(next);
     setMicOn(next);
-  };
-  const toggleScreen = async () => {
+  }, []);
+  const toggleScreen = useCallback(async () => {
     const room = roomRef.current;
     if (!room) return;
-    const next = !screenOn;
+    const next = !room.localParticipant.isScreenShareEnabled;
     await room.localParticipant.setScreenShareEnabled(next);
     setScreenOn(next);
-  };
+  }, []);
+
+  // Report media controls up to the classroom bar (null while not live).
+  useEffect(() => {
+    if (!onControls) return;
+    if (status !== 'live') {
+      onControls(null);
+      return;
+    }
+    // A granted student is a co-host: mic, camera and screen, same as instructor.
+    const canPublish = isInstructor || canScreenShare;
+    onControls({
+      camOn,
+      micOn,
+      screenOn,
+      toggleCam,
+      toggleMic,
+      toggleScreen,
+      canPublishMedia: canPublish,
+      canShareScreen: canPublish,
+    });
+  }, [
+    onControls,
+    status,
+    camOn,
+    micOn,
+    screenOn,
+    isInstructor,
+    canScreenShare,
+    toggleCam,
+    toggleMic,
+    toggleScreen,
+  ]);
 
   // A student whose screen-share grant was revoked must stop publishing.
   useEffect(() => {
@@ -253,84 +305,93 @@ export function VideoStage({
     setScreenOn(false);
   }, [canScreenShare, isInstructor, screenOn]);
 
+  // Data-saver: unsubscribe from every remote video track (camera + screen) so
+  // nothing downloads; audio stays. Re-applied when toggled or tracks change.
+  useEffect(() => {
+    const room = roomRef.current;
+    if (!room) return;
+    for (const p of room.remoteParticipants.values()) {
+      for (const pub of p.trackPublications.values()) {
+        if (pub.kind === Track.Kind.Video) pub.setSubscribed(!dataSaver);
+      }
+    }
+  }, [dataSaver, tiles]);
+
   if (status === 'error') {
     return (
-      <div className="flex aspect-video items-center justify-center rounded-lg bg-slate-900 text-center text-sm text-slate-400">
+      <div className="flex h-full items-center justify-center rounded-2xl bg-neutral-900 text-center text-sm text-neutral-400">
         <div>
-          <p className="text-2xl">📵</p>
+          <PiVideoCameraSlash className="mx-auto h-8 w-8 text-neutral-500" />
           <p className="mt-2">Video unavailable</p>
-          {error && <p className="mt-1 text-xs text-slate-500">{error}</p>}
+          {error && <p className="mt-1 text-xs text-neutral-500">{error}</p>}
         </div>
       </div>
     );
   }
 
+  // Data saver: no video downloads at all — audio keeps playing, and the
+  // chalkboard (tiny) carries the teaching. The big local differentiator.
+  if (dataSaver) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 rounded-2xl bg-neutral-900 px-6 text-center">
+        {tiles
+          .filter((t) => !t.isLocal)
+          .map((t) => (
+            <AudioSink key={`${t.sid}-audio`} track={t.mic} />
+          ))}
+        <PiVideoCameraSlash className="h-8 w-8 text-neutral-500" aria-hidden />
+        <p className="text-sm font-semibold text-white">Data saver is on</p>
+        <p className="max-w-xs text-xs leading-relaxed text-neutral-400">
+          Video is off to save data — audio and the chalkboard are still live.
+          Turn it off in the controls to see video.
+        </p>
+      </div>
+    );
+  }
+
+  // Only participants actually on camera get a tile — no empty avatar boxes.
+  const camTiles = tiles.filter((t) => t.camera);
+
   return (
-    <div className="space-y-3">
+    <div className="flex h-full flex-col gap-2">
+      {/* Audio for every remote participant, independent of whether they show a
+          tile — so a camera-off speaker is still heard. */}
+      {tiles
+        .filter((t) => !t.isLocal)
+        .map((t) => (
+          <AudioSink key={`${t.sid}-audio`} track={t.mic} />
+        ))}
+
       {screen && (
-        <div className="overflow-hidden rounded-lg bg-black">
+        <div className="min-h-0 flex-1 overflow-hidden rounded-xl bg-black">
           <VideoBox
             track={screen}
             muted
-            className="max-h-[60vh] w-full object-contain"
+            className="h-full w-full object-contain"
           />
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {tiles.map((t) => (
-          <ParticipantTile key={t.sid} tile={t} />
-        ))}
-      </div>
-
-      {status === 'connecting' && (
-        <p className="text-center text-xs text-slate-500">
-          Connecting to video…
-        </p>
-      )}
-
-      {status === 'live' && (isInstructor || canScreenShare) && (
-        <div className="flex flex-wrap justify-center gap-2">
-          {isInstructor && (
-            <>
-              <button
-                onClick={toggleCam}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-                  camOn
-                    ? 'bg-indigo-600 text-white hover:bg-indigo-500'
-                    : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-                }`}
-              >
-                {camOn ? '📹 Camera on' : '📷 Start camera'}
-              </button>
-              <button
-                onClick={toggleMic}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-                  micOn
-                    ? 'bg-indigo-600 text-white hover:bg-indigo-500'
-                    : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-                }`}
-              >
-                {micOn ? '🎙 Mic on' : '🔇 Start mic'}
-              </button>
-            </>
-          )}
-          <button
-            onClick={toggleScreen}
-            className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-              screenOn
-                ? 'bg-indigo-600 text-white hover:bg-indigo-500'
-                : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            {screenOn ? '🖥 Sharing screen' : '🖥 Share screen'}
-          </button>
-          {!isInstructor && (
-            <span className="self-center text-xs text-slate-500">
-              You may share your screen
-            </span>
-          )}
+      {camTiles.length > 0 ? (
+        <div
+          className={
+            screen
+              ? 'grid auto-cols-[9rem] grid-flow-col gap-2 overflow-x-auto'
+              : 'grid flex-1 auto-rows-min content-start gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3'
+          }
+        >
+          {camTiles.map((t) => (
+            <ParticipantTile key={t.sid} tile={t} />
+          ))}
         </div>
+      ) : (
+        !screen && (
+          <div className="flex flex-1 items-center justify-center text-sm text-neutral-500">
+            {status === 'connecting'
+              ? 'Connecting to video…'
+              : 'No one is on camera yet.'}
+          </div>
+        )
       )}
     </div>
   );

@@ -8,8 +8,13 @@ import { cn } from '@/lib/ui';
 export function NavLinks({ showDashboard }: { showDashboard: boolean }) {
   const pathname = usePathname();
   const links = [
-    { href: '/courses', label: 'Courses' },
-    ...(showDashboard ? [{ href: '/dashboard', label: 'Dashboard' }] : []),
+    { href: '/courses', label: 'Programs' },
+    ...(showDashboard
+      ? [
+          { href: '/dashboard', label: 'Dashboard' },
+          { href: '/account', label: 'Settings' },
+        ]
+      : []),
   ];
   return (
     <nav className="flex items-center gap-1">
@@ -21,10 +26,10 @@ export function NavLinks({ showDashboard }: { showDashboard: boolean }) {
             href={href}
             aria-current={active ? 'page' : undefined}
             className={cn(
-              'rounded-lg px-3 py-1.5 text-sm font-medium transition',
+              'rounded-full px-3 py-1.5 text-sm font-medium transition',
               active
-                ? 'bg-indigo-50 text-indigo-700'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+                ? 'bg-neutral-100 text-neutral-950'
+                : 'text-neutral-500 hover:bg-neutral-100 hover:text-neutral-950',
             )}
           >
             {label}

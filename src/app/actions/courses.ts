@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { getToken } from '@/lib/auth';
-import type { CourseDetail, LiveSession } from '@/lib/types';
+import type { CourseDetail } from '@/lib/types';
 
 export interface ActionState {
   error: string | null;
@@ -33,6 +33,13 @@ export async function createCourse(
 ): Promise<ActionState> {
   const token = await getToken();
   if (!token) redirect('/login');
+  const meetingDays = formData
+    .getAll('meetingDays')
+    .map((d) => Number(d))
+    .filter((d) => !Number.isNaN(d));
+  const durationWeeks = formData.get('durationWeeks');
+  const startDate = formData.get('startDate') as string;
+
   let course: CourseDetail;
   try {
     course = await api<CourseDetail>('/courses', {
@@ -41,6 +48,13 @@ export async function createCourse(
       body: {
         title: formData.get('title'),
         description: formData.get('description') || undefined,
+        category: formData.get('category') || undefined,
+        level: formData.get('level') || undefined,
+        startDate: startDate ? new Date(startDate).toISOString() : undefined,
+        durationWeeks: durationWeeks ? Number(durationWeeks) : undefined,
+        meetingDays: meetingDays.length ? meetingDays : undefined,
+        meetingTime: formData.get('meetingTime') || undefined,
+        timezone: formData.get('timezone') || undefined,
       },
     });
   } catch (e) {
@@ -80,36 +94,60 @@ export async function unenroll(courseId: string): Promise<void> {
   );
 }
 
-export async function scheduleSession(
-  _prev: ActionState,
-  formData: FormData,
+/** Org admin adds a specific student to a program. */
+export async function addStudentToCourse(
+  courseId: string,
+  studentId: string,
 ): Promise<ActionState> {
-  const courseId = formData.get('courseId') as string;
-  const sectionId = formData.get('sectionId') as string;
-  const scheduledAt = formData.get('scheduledAt') as string;
-  return run(
+  const state = await run(
     (token) =>
-      api<LiveSession>('/sessions', {
+      api(`/courses/${courseId}/students`, {
         method: 'POST',
         token,
-        body: {
-          courseId,
-          sectionId: sectionId || undefined,
-          scheduledAt: new Date(scheduledAt).toISOString(),
-        },
+        body: { studentId },
       }),
     `/courses/${courseId}`,
   );
+  revalidatePath('/account/students');
+  return state;
 }
 
-export async function startSession(
-  sessionId: string,
+/** Org admin removes a specific student from a program. */
+export async function removeStudentFromCourse(
   courseId: string,
-): Promise<void> {
-  await run(
-    (token) => api(`/sessions/${sessionId}/start`, { method: 'POST', token }),
+  studentId: string,
+): Promise<ActionState> {
+  const state = await run(
+    (token) =>
+      api(`/courses/${courseId}/students/${studentId}`, {
+        method: 'DELETE',
+        token,
+      }),
     `/courses/${courseId}`,
   );
+  revalidatePath('/account/students');
+  return state;
+}
+
+/**
+ * Enter today's live session for a course. The backend materialises the
+ * occurrence, then we route the user into the classroom. Only reachable on a
+ * scheduled meeting day (the button is disabled otherwise).
+ */
+export async function joinLiveSession(courseId: string): Promise<ActionState> {
+  const token = await getToken();
+  if (!token) redirect('/login');
+  let res: { sessionId: string };
+  try {
+    res = await api<{ sessionId: string }>(`/sessions/course/${courseId}/join`, {
+      method: 'POST',
+      token,
+    });
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.message };
+    throw e;
+  }
+  redirect(`/sessions/${res.sessionId}`);
 }
 
 export async function endSession(
@@ -122,17 +160,17 @@ export async function endSession(
   );
 }
 
-export async function issueCertificate(
-  _prev: ActionState,
-  formData: FormData,
+/** Admin issues a certificate to one enrolled student, straight from the roster. */
+export async function issueCertificateFor(
+  courseId: string,
+  studentId: string,
 ): Promise<ActionState> {
-  const courseId = formData.get('courseId') as string;
   return run(
     (token) =>
       api('/certificates', {
         method: 'POST',
         token,
-        body: { courseId, studentId: formData.get('studentId') },
+        body: { courseId, studentId },
       }),
     `/courses/${courseId}`,
   );

@@ -6,7 +6,7 @@ import { Tldraw, createTLStore, type Editor, type TLRecord } from 'tldraw';
 import { io, type Socket } from 'socket.io-client';
 import * as Y from 'yjs';
 import { API_URL } from '@/lib/api';
-import { getClientToken } from '@/lib/client-token';
+import { getRealtimeToken } from '@/lib/client-token';
 import type {
   BoardClientToServerEvents,
   BoardServerToClientEvents,
@@ -58,7 +58,9 @@ export function BoardTldraw({
     let initialized = false;
 
     const socket: BoardSocket = io(`${API_URL}/board`, {
-      auth: { token: getClientToken() },
+      // Async auth: the httpOnly cookie is fetched from a same-origin route.
+      auth: (cb) =>
+        void getRealtimeToken().then((token) => cb({ token: token ?? '' })),
       transports: ['websocket'],
     });
     const applyRemote = (u: ArrayBuffer | Uint8Array) =>
@@ -160,7 +162,7 @@ export function BoardTldraw({
   };
 
   return (
-    <div className="relative h-[520px] overflow-hidden rounded-lg border border-slate-300">
+    <div className="relative h-full min-h-[320px] overflow-hidden rounded-xl border border-neutral-300 bg-white">
       <Tldraw store={store} onMount={handleMount} />
     </div>
   );

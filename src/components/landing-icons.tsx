@@ -13,4 +13,8 @@ export {
   ArrowRight,
   SealCheck,
   NotePencil,
+  CalendarCheck,
+  UsersThree,
+  Monitor,
+  GraduationCap,
 } from '@phosphor-icons/react';

@@ -13,11 +13,11 @@ export default async function LoginPage() {
       title="Welcome back"
       subtitle="Log in to run your class or join a live session."
       footer={
-        <p className="mt-6 text-sm text-slate-500">
+        <p className="mt-6 text-sm text-neutral-500">
           New to livetich?{' '}
           <Link
             href="/register"
-            className="font-medium text-indigo-600 hover:text-indigo-500"
+            className="font-semibold text-signal-700 hover:text-signal-600"
           >
             Create an account
           </Link>

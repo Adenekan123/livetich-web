@@ -1,7 +1,17 @@
 'use client';
 
-/** Browser-side read of the auth cookie (see TOKEN_COOKIE in lib/auth.ts). */
-export function getClientToken(): string | null {
-  const match = document.cookie.match(/(?:^|;\s*)lt_token=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
+/**
+ * The session cookie is httpOnly, so JS can't read it directly. Realtime
+ * handshakes (Socket.IO, LiveKit) fetch the bearer token from a same-origin
+ * route that reads the cookie server-side.
+ */
+export async function getRealtimeToken(): Promise<string | null> {
+  try {
+    const res = await fetch('/api/realtime-token', { cache: 'no-store' });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { token: string | null };
+    return data.token;
+  } catch {
+    return null;
+  }
 }
