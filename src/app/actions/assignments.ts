@@ -24,6 +24,7 @@ export async function createAssignment(
   const token = await tokenOrLogin();
   const maxPoints = formData.get('maxPoints');
   const dueAt = formData.get('dueAt') as string;
+  const groupId = formData.get('groupId') as string;
   try {
     await api(`/courses/${courseId}/assignments`, {
       method: 'POST',
@@ -33,6 +34,7 @@ export async function createAssignment(
         instructions: formData.get('instructions') || undefined,
         dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
         maxPoints: maxPoints ? Number(maxPoints) : undefined,
+        groupId: groupId || undefined,
       },
     });
   } catch (e) {

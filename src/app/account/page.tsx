@@ -6,6 +6,7 @@ import {
   PiChalkboardTeacherBold,
   PiKeyBold,
   PiPaletteBold,
+  PiPuzzlePieceBold,
   PiStudentBold,
   PiUserBold,
 } from 'react-icons/pi';
@@ -83,6 +84,14 @@ export default async function AccountPage() {
               icon={PiPaletteBold}
               title="Brand kit"
               subtitle="Your workspace name, logo, and colors"
+            />
+          )}
+          {isAdmin && (
+            <SettingsRow
+              href="/account/add-ons"
+              icon={PiPuzzlePieceBold}
+              title="Add-ons"
+              subtitle="Enable niche tool packs for your instructors"
             />
           )}
         </div>

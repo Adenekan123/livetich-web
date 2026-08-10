@@ -87,11 +87,31 @@ export interface Assignment {
   id: string;
   courseId: string;
   sectionId: string | null;
+  groupId: string | null; // null = whole class; set = only this group
   title: string;
   instructions: string | null;
   dueAt: string | null;
   maxPoints: number | null;
   createdAt: string;
+  group?: { id: string; name: string } | null; // target label, when grouped
+}
+
+/** A student in a group's membership list. */
+export interface GroupMember {
+  id: string;
+  groupId: string;
+  studentId: string;
+  student: { id: string; name: string; email: string };
+}
+
+/** A named subset of a course's students (GET /courses/:id/groups). */
+export interface StudentGroup {
+  id: string;
+  courseId: string;
+  name: string;
+  createdAt: string;
+  members: GroupMember[];
+  _count: { members: number; assignments: number };
 }
 
 export interface Submission {
@@ -122,6 +142,97 @@ export interface Section {
   courseId: string;
   order: number;
   title: string;
+}
+
+// ---- Adaptive assessment (class-end quiz → remediation) ----
+
+/** A bank MC question as the instructor authors it (includes the answer key). */
+export interface AssessmentQuestion {
+  id: string;
+  courseId: string;
+  sectionId: string;
+  body: string;
+  options: string[];
+  correctIndex: number;
+  active: boolean;
+  createdAt: string;
+}
+
+/** A per-topic remediation task in the bank. */
+export interface RemediationTask {
+  id: string;
+  courseId: string;
+  sectionId: string;
+  title: string;
+  instructions: string | null;
+  active: boolean;
+  createdAt: string;
+}
+
+/** One row of GET /courses/:id/assessment/mine (student view). */
+export interface AssessmentSummary {
+  id: string;
+  createdAt: string;
+  topic: string | null;
+  questionCount: number;
+  attempt: { submittedAt: string | null; score: number | null; total: number | null } | null;
+}
+
+/** A single question presented to a student (answer key hidden until submitted). */
+export interface AssessmentTakeQuestion {
+  id: string;
+  body: string;
+  options: string[];
+  correctIndex?: number; // present only after submission
+  myAnswerIndex?: number | null; // present only after submission
+}
+
+/** GET /assessments/:id — the quiz to take, or the graded result. */
+export interface AssessmentTake {
+  id: string;
+  topic: string | null;
+  submitted: boolean;
+  score: number | null;
+  total: number | null;
+  questions: AssessmentTakeQuestion[];
+}
+
+/** POST /assessments/:id/submit result. */
+export interface AssessmentResult {
+  score: number;
+  total: number;
+  assignedRemediation: { id: string; title: string }[];
+}
+
+/** An uploaded course document used to ground AI drafting. */
+export interface CourseDocument {
+  id: string;
+  filename: string;
+  mimeType: string;
+  charCount: number;
+  createdAt: string;
+}
+
+/** POST /courses/:id/assessment/draft result — drafts to review, not yet saved. */
+export interface DraftResult {
+  sectionId: string;
+  questions: { body: string; options: string[]; correctIndex: number }[];
+  tasks: { title: string; instructions?: string }[];
+}
+
+/** A remediation task assigned to a student (GET /courses/:id/remediation/mine). */
+export interface AssignedRemediation {
+  id: string;
+  status: 'PENDING' | 'DONE';
+  sectionId: string;
+  createdAt: string;
+  completedAt: string | null;
+  task: {
+    id: string;
+    title: string;
+    instructions: string | null;
+    section: { id: string; title: string };
+  };
 }
 
 /**
@@ -156,6 +267,7 @@ export interface CourseDetail extends CohortFields {
   title: string;
   description: string | null;
   createdAt: string;
+  scheduleUpdatedAt: string | null; // bumped on schedule change → reminder stale
   instructor: { id: string; name: string } | null;
   sections: Section[];
   _count: { enrollments: number };
@@ -180,6 +292,7 @@ export interface Enrollment {
   courseId: string;
   studentId: string;
   createdAt: string;
+  reminderAddedAt: string | null; // last "Add to calendar" tap (reminder proxy)
   course: {
     id: string;
     instructorId: string;
@@ -237,4 +350,14 @@ export interface LeaderboardRow {
   name: string;
   points: number;
   rank: number;
+}
+
+/** An add-on pack from the catalog, annotated with this org's enabled state. */
+export interface PluginInfo {
+  key: string;
+  name: string;
+  summary: string;
+  features: string[];
+  priceMonthly: number | null;
+  enabled: boolean;
 }

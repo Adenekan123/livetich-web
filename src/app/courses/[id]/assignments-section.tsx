@@ -20,17 +20,19 @@ export function AssignmentsSection({
   canManage,
   isEnrolled,
   assignments,
+  groups = [],
 }: {
   courseId: string;
   canManage: boolean;
   isEnrolled: boolean;
   assignments: Row[];
+  groups?: { id: string; name: string; memberCount: number }[];
 }) {
   return (
     <section className="mt-10">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-lg font-semibold text-neutral-900">Assignments</h2>
-        {canManage && <AddAssignmentForm courseId={courseId} />}
+        {canManage && <AddAssignmentForm courseId={courseId} groups={groups} />}
       </div>
 
       {assignments.length === 0 ? (
@@ -48,7 +50,14 @@ export function AssignmentsSection({
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <h3 className="font-semibold text-neutral-950">{a.title}</h3>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-semibold text-neutral-950">{a.title}</h3>
+                      {a.group && (
+                        <span className="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-600">
+                          {a.group.name}
+                        </span>
+                      )}
+                    </div>
                     <p className="mt-0.5 text-xs text-neutral-400">
                       {due ? `Due ${due}` : 'No due date'}
                       {a.maxPoints != null && (

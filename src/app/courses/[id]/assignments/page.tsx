@@ -8,6 +8,7 @@ import type {
   Enrollment,
   ManagedAssignment,
   StudentAssignment,
+  StudentGroup,
 } from '@/lib/types';
 import { AssignmentsSection } from '../assignments-section';
 
@@ -40,6 +41,13 @@ export default async function AssignmentsPage(props: {
     { token },
   );
 
+  // Managers can target an assignment at a group; students never see this.
+  const groups = canManage
+    ? (await api<StudentGroup[]>(`/courses/${id}/groups`, { token })).map(
+        (g) => ({ id: g.id, name: g.name, memberCount: g._count.members }),
+      )
+    : [];
+
   return (
     <>
       <Header />
@@ -55,6 +63,7 @@ export default async function AssignmentsPage(props: {
           canManage={canManage}
           isEnrolled={isEnrolled}
           assignments={assignments}
+          groups={groups}
         />
       </main>
     </>

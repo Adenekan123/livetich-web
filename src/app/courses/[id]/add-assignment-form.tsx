@@ -11,8 +11,16 @@ import { btn, inputClass, labelClass } from '@/lib/ui';
 
 const initial: AssignmentActionState = { error: null };
 
+type GroupOption = { id: string; name: string; memberCount: number };
+
 /** "Add assignment" button that opens the create form in a modal. */
-export function AddAssignmentForm({ courseId }: { courseId: string }) {
+export function AddAssignmentForm({
+  courseId,
+  groups = [],
+}: {
+  courseId: string;
+  groups?: GroupOption[];
+}) {
   const [open, setOpen] = useState(false);
   const [state, action] = useActionState(createAssignment, initial);
 
@@ -124,6 +132,26 @@ export function AddAssignmentForm({ courseId }: { courseId: string }) {
                     />
                   </div>
                 </div>
+                {groups.length > 0 && (
+                  <div className="space-y-1.5">
+                    <label htmlFor="a-group" className={labelClass}>
+                      Assign to
+                    </label>
+                    <select
+                      id="a-group"
+                      name="groupId"
+                      defaultValue=""
+                      className={inputClass}
+                    >
+                      <option value="">Whole class</option>
+                      {groups.map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.name} ({g.memberCount})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div className="flex items-center gap-2 pt-1">
                   <SubmitButton size="sm" pendingLabel="Creating…">
                     Create assignment

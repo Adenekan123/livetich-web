@@ -2,9 +2,11 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { IconType } from 'react-icons';
 import {
+  PiClipboardText,
   PiClockCounterClockwise,
   PiNotePencil,
   PiUsers,
+  PiUsersThree,
 } from 'react-icons/pi';
 import { enroll, unenroll } from '@/app/actions/courses';
 import { Header } from '@/components/header';
@@ -22,6 +24,7 @@ import {
   type CohortStatus,
 } from '../catalog-lib';
 import { InstructorPanel } from './instructor-panel';
+import { ClassReminderCard } from './class-reminder-card';
 import { JoinLiveCard } from './join-live-card';
 
 /* Server-rendered cohort status pill (mirrors the catalog's monochrome styles). */
@@ -125,9 +128,12 @@ export default async function CoursePage(props: {
   const canManage = isOwner || user?.role === 'ORG_ADMIN';
   const isAdmin = user?.role === 'ORG_ADMIN';
   let isEnrolled = false;
+  let myReminderAddedAt: string | null = null;
   if (user?.role === 'STUDENT' && token) {
     const enrollments = await api<Enrollment[]>('/courses/enrolled', { token });
-    isEnrolled = enrollments.some((e) => e.courseId === id);
+    const mine = enrollments.find((e) => e.courseId === id);
+    isEnrolled = Boolean(mine);
+    myReminderAddedAt = mine?.reminderAddedAt ?? null;
   }
 
   let myCertificate: Certificate | undefined;
@@ -246,6 +252,14 @@ export default async function CoursePage(props: {
               nextAt={sessionStatus.nextAt}
               timezone={course.timezone}
             />
+            {isEnrolled && (
+              <ClassReminderCard
+                courseId={id}
+                cadence={cadence}
+                reminderAddedAt={myReminderAddedAt}
+                scheduleUpdatedAt={course.scheduleUpdatedAt}
+              />
+            )}
           </section>
         )}
 
@@ -260,12 +274,32 @@ export default async function CoursePage(props: {
                 desc={canManage ? 'Create and grade coursework' : 'View and submit coursework'}
               />
             )}
+            {(canManage || isEnrolled) && (
+              <NavCard
+                href={`/courses/${id}/assessment`}
+                icon={PiClipboardText}
+                title="Assessments"
+                desc={
+                  canManage
+                    ? 'Question bank + remediation tasks'
+                    : 'Post-class quizzes and practice'
+                }
+              />
+            )}
             <NavCard
               href={`/courses/${id}/sessions`}
               icon={PiClockCounterClockwise}
               title="Session history"
               desc="Every live session held so far"
             />
+            {canManage && (
+              <NavCard
+                href={`/courses/${id}/groups`}
+                icon={PiUsersThree}
+                title="Groups"
+                desc="Group students to target assignments"
+              />
+            )}
             {isAdmin && (
               <NavCard
                 href={`/courses/${id}/roster`}

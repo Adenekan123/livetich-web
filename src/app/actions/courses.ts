@@ -80,6 +80,15 @@ export async function addSection(
   );
 }
 
+/** Records that the student tapped "Add to calendar" for this class. */
+export async function recordReminderAdded(courseId: string): Promise<void> {
+  await run(
+    (token) =>
+      api(`/courses/${courseId}/reminder`, { method: 'POST', token }),
+    `/courses/${courseId}`,
+  );
+}
+
 export async function enroll(courseId: string): Promise<void> {
   await run(
     (token) => api(`/courses/${courseId}/enroll`, { method: 'POST', token }),

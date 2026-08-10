@@ -83,6 +83,26 @@ export async function assignInstructor(
   revalidatePath(`/courses/${courseId}`);
 }
 
+/** Admin turns an add-on pack on or off for their org. Free during the pilot. */
+export async function setPluginEnabled(
+  key: string,
+  enabled: boolean,
+): Promise<{ error: string | null }> {
+  try {
+    await withToken((token) =>
+      api(`/organizations/plugins/${key}`, {
+        method: enabled ? 'POST' : 'DELETE',
+        token,
+      }),
+    );
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.message };
+    throw e;
+  }
+  revalidatePath('/account/add-ons');
+  return { error: null };
+}
+
 export async function updateBrand(
   _prev: OrgActionState,
   formData: FormData,
