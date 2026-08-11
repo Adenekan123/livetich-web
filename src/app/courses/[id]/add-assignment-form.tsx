@@ -12,14 +12,17 @@ import { btn, inputClass, labelClass } from '@/lib/ui';
 const initial: AssignmentActionState = { error: null };
 
 type GroupOption = { id: string; name: string; memberCount: number };
+type SessionOption = { id: string; label: string };
 
 /** "Add assignment" button that opens the create form in a modal. */
 export function AddAssignmentForm({
   courseId,
   groups = [],
+  sessions = [],
 }: {
   courseId: string;
   groups?: GroupOption[];
+  sessions?: SessionOption[];
 }) {
   const [open, setOpen] = useState(false);
   const [state, action] = useActionState(createAssignment, initial);
@@ -132,26 +135,49 @@ export function AddAssignmentForm({
                     />
                   </div>
                 </div>
-                {groups.length > 0 && (
-                  <div className="space-y-1.5">
-                    <label htmlFor="a-group" className={labelClass}>
-                      Assign to
-                    </label>
-                    <select
-                      id="a-group"
-                      name="groupId"
-                      defaultValue=""
-                      className={inputClass}
-                    >
-                      <option value="">Whole class</option>
-                      {groups.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name} ({g.memberCount})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {groups.length > 0 && (
+                    <div className="space-y-1.5">
+                      <label htmlFor="a-group" className={labelClass}>
+                        Assign to
+                      </label>
+                      <select
+                        id="a-group"
+                        name="groupId"
+                        defaultValue=""
+                        className={inputClass}
+                      >
+                        <option value="">Whole class</option>
+                        {groups.map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.name} ({g.memberCount})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {sessions.length > 0 && (
+                    <div className="space-y-1.5">
+                      <label htmlFor="a-session" className={labelClass}>
+                        From session{' '}
+                        <span className="text-neutral-400">(optional)</span>
+                      </label>
+                      <select
+                        id="a-session"
+                        name="sessionId"
+                        defaultValue=""
+                        className={inputClass}
+                      >
+                        <option value="">Not tied to a session</option>
+                        {sessions.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
                 <div className="flex items-center gap-2 pt-1">
                   <SubmitButton size="sm" pendingLabel="Creating…">
                     Create assignment

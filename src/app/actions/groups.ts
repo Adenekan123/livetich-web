@@ -29,6 +29,7 @@ async function run(
     throw e;
   }
   revalidatePath(`/courses/${courseId}/groups`);
+  revalidatePath(`/courses/${courseId}/assignments`);
   revalidatePath(`/courses/${courseId}`);
   return { error: null, ok: true };
 }

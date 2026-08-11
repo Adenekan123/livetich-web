@@ -25,6 +25,7 @@ export async function createAssignment(
   const maxPoints = formData.get('maxPoints');
   const dueAt = formData.get('dueAt') as string;
   const groupId = formData.get('groupId') as string;
+  const sessionId = formData.get('sessionId') as string;
   try {
     await api(`/courses/${courseId}/assignments`, {
       method: 'POST',
@@ -35,13 +36,14 @@ export async function createAssignment(
         dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
         maxPoints: maxPoints ? Number(maxPoints) : undefined,
         groupId: groupId || undefined,
+        sessionId: sessionId || undefined,
       },
     });
   } catch (e) {
     if (e instanceof ApiError) return { error: e.message };
     throw e;
   }
-  revalidatePath(`/courses/${courseId}`);
+  revalidatePath(`/courses/${courseId}/assignments`);
   return { error: null, ok: true };
 }
 
@@ -65,7 +67,7 @@ export async function submitAssignment(
     if (e instanceof ApiError) return { error: e.message };
     throw e;
   }
-  revalidatePath(`/courses/${courseId}`);
+  revalidatePath(`/courses/${courseId}/assignments`);
   return { error: null, ok: true };
 }
 
@@ -91,5 +93,6 @@ export async function gradeSubmission(
     throw e;
   }
   revalidatePath(`/courses/${courseId}/assignments/${assignmentId}`);
+  revalidatePath(`/courses/${courseId}/assignments`);
   return { error: null, ok: true };
 }

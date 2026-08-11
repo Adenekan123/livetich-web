@@ -4,13 +4,31 @@ import { Header } from '@/components/header';
 import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
 import type {
+  AssignmentTracking,
   CourseDetail,
   Enrollment,
-  ManagedAssignment,
+  LiveSession,
   StudentAssignment,
   StudentGroup,
+  StudentRef,
 } from '@/lib/types';
 import { AssignmentsSection } from '../assignments-section';
+import { AssignmentLab } from '../assignment-lab';
+
+export const metadata = { title: 'Assignment lab — livetich' };
+
+/** A session, labelled for the "attach to session" picker. */
+function sessionLabel(s: LiveSession): string {
+  const when = new Date(s.scheduledAt).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  const status =
+    s.status === 'ENDED' ? 'Ended' : s.status === 'LIVE' ? 'Live' : 'Scheduled';
+  return `${when} · ${status}`;
+}
 
 export default async function AssignmentsPage(props: {
   params: Promise<{ id: string }>;
@@ -27,26 +45,8 @@ export default async function AssignmentsPage(props: {
     throw e;
   }
 
-  const isOwner =
-    user.role === 'INSTRUCTOR' && user.sub === course.instructorId;
+  const isOwner = user.role === 'INSTRUCTOR' && user.sub === course.instructorId;
   const canManage = isOwner || user.role === 'ORG_ADMIN';
-  let isEnrolled = false;
-  if (user.role === 'STUDENT') {
-    const enrollments = await api<Enrollment[]>('/courses/enrolled', { token });
-    isEnrolled = enrollments.some((e) => e.courseId === id);
-  }
-
-  const assignments = await api<(StudentAssignment | ManagedAssignment)[]>(
-    `/courses/${id}/assignments`,
-    { token },
-  );
-
-  // Managers can target an assignment at a group; students never see this.
-  const groups = canManage
-    ? (await api<StudentGroup[]>(`/courses/${id}/groups`, { token })).map(
-        (g) => ({ id: g.id, name: g.name, memberCount: g._count.members }),
-      )
-    : [];
 
   return (
     <>
@@ -58,14 +58,72 @@ export default async function AssignmentsPage(props: {
         >
           ← {course.title}
         </Link>
-        <AssignmentsSection
-          courseId={id}
-          canManage={canManage}
-          isEnrolled={isEnrolled}
-          assignments={assignments}
-          groups={groups}
-        />
+
+        {canManage ? (
+          <ManagerLab courseId={id} token={token} />
+        ) : (
+          <StudentAssignments courseId={id} token={token} />
+        )}
       </main>
     </>
+  );
+}
+
+/** Instructor/admin dashboard: tracking + groups + sessions in one surface. */
+async function ManagerLab({
+  courseId,
+  token,
+}: {
+  courseId: string;
+  token: string;
+}) {
+  const [tracking, groups, students, sessions] = await Promise.all([
+    api<AssignmentTracking[]>(`/courses/${courseId}/assignments/tracking`, {
+      token,
+    }),
+    api<StudentGroup[]>(`/courses/${courseId}/groups`, { token }),
+    api<{ student: StudentRef }[]>(`/courses/${courseId}/students`, { token }),
+    api<LiveSession[]>(`/sessions?courseId=${courseId}`, { token }),
+  ]);
+
+  const roster = students.map((s) => s.student);
+  const sessionOptions = sessions.map((s) => ({
+    id: s.id,
+    label: sessionLabel(s),
+  }));
+
+  return (
+    <AssignmentLab
+      courseId={courseId}
+      tracking={tracking}
+      groups={groups}
+      roster={roster}
+      sessions={sessionOptions}
+    />
+  );
+}
+
+/** Student view: the assignments they can submit to. */
+async function StudentAssignments({
+  courseId,
+  token,
+}: {
+  courseId: string;
+  token: string;
+}) {
+  const enrollments = await api<Enrollment[]>('/courses/enrolled', { token });
+  const isEnrolled = enrollments.some((e) => e.courseId === courseId);
+  const assignments = await api<StudentAssignment[]>(
+    `/courses/${courseId}/assignments`,
+    { token },
+  );
+
+  return (
+    <AssignmentsSection
+      courseId={courseId}
+      canManage={false}
+      isEnrolled={isEnrolled}
+      assignments={assignments}
+    />
   );
 }
