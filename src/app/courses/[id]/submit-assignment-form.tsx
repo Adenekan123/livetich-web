@@ -9,6 +9,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
 import { inputClass } from '@/lib/ui';
 import type { Submission } from '@/lib/types';
+import { AudioSubmit } from './audio-submit';
 
 const initial: AssignmentActionState = { error: null };
 
@@ -48,7 +49,7 @@ export function SubmitAssignmentForm({
       />
       <input
         name="fileUrl"
-        defaultValue={submission?.fileUrl ?? ''}
+        defaultValue={submission?.fileUrl?.startsWith('/api/files/') ? '' : (submission?.fileUrl ?? '')}
         placeholder="…or paste a file link (Google Drive, GitHub, etc.)"
         className={inputClass}
       />
@@ -63,6 +64,16 @@ export function SubmitAssignmentForm({
         )}
         {state.ok && <span className="text-xs font-medium text-neutral-600">✓ Saved</span>}
       </div>
+
+      {/* Record or upload a recitation audio / file (uploads immediately). */}
+      <AudioSubmit
+        assignmentId={assignmentId}
+        existing={
+          submission
+            ? { fileUrl: submission.fileUrl, fileMimeType: submission.fileMimeType }
+            : null
+        }
+      />
     </form>
   );
 }

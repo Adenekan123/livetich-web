@@ -18,8 +18,10 @@ import type {
 } from '@/lib/realtime-contract';
 import dynamic from 'next/dynamic';
 import {
+  PiBookOpenText,
   PiChalkboardTeacher,
   PiChatCircle,
+  PiClipboardText,
   PiHandPalm,
   PiHandWaving,
   PiLightning,
@@ -39,6 +41,8 @@ import {
   PiX,
 } from 'react-icons/pi';
 import { VideoStage, type VideoControls } from './video-stage';
+import { LiveHifzPanel } from './live-hifz-panel';
+import { LiveGradingPanel } from './live-grading-panel';
 
 // tldraw touches browser-only APIs, so it must not render on the server.
 const BoardTldraw = dynamic(
@@ -124,9 +128,9 @@ export function ClassRoom({
   const [questions, setQuestions] = useState<BuzzerQuestion[]>([]);
   const [selectedQuestion, setSelectedQuestion] = useState('');
   const [screenGrants, setScreenGrants] = useState<Set<string>>(new Set());
-  const [panel, setPanel] = useState<'chat' | 'people' | 'points' | null>(
-    'chat',
-  );
+  const [panel, setPanel] = useState<
+    'chat' | 'people' | 'points' | 'hifz' | 'work' | null
+  >('chat');
   const [videoControls, setVideoControls] = useState<VideoControls | null>(null);
   const [waves, setWaves] = useState<Wave[]>([]);
   const [confirmLeave, setConfirmLeave] = useState(false);
@@ -469,6 +473,27 @@ export function ClassRoom({
                   )}
                 </button>
               ))}
+              {isInstructor &&
+                (['hifz', 'work'] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setPanel(t)}
+                    aria-label={t === 'hifz' ? 'Hifz' : 'Grade assignments'}
+                    className={cn(
+                      'grid h-8 w-9 shrink-0 place-items-center rounded-lg transition',
+                      panel === t
+                        ? 'bg-white/10 text-white'
+                        : 'text-neutral-400 hover:text-white',
+                    )}
+                    title={t === 'hifz' ? 'Hifz progress' : 'Grade assignments'}
+                  >
+                    {t === 'hifz' ? (
+                      <PiBookOpenText className="h-4 w-4" />
+                    ) : (
+                      <PiClipboardText className="h-4 w-4" />
+                    )}
+                  </button>
+                ))}
               <button
                 onClick={() => setPanel(null)}
                 aria-label="Close panel"
@@ -583,7 +608,7 @@ export function ClassRoom({
                   })}
                 </ul>
               </div>
-            ) : (
+            ) : panel === 'points' ? (
               <div className="flex-1 space-y-4 overflow-y-auto p-4">
                 {/* Points */}
                 {leaderboard.length === 0 && (
@@ -672,6 +697,10 @@ export function ClassRoom({
                   </div>
                 )}
               </div>
+            ) : panel === 'hifz' ? (
+              <LiveHifzPanel courseId={courseId} sessionId={sessionId} />
+            ) : (
+              <LiveGradingPanel courseId={courseId} sessionId={sessionId} />
             )}
           </aside>
         )}
@@ -787,6 +816,26 @@ export function ClassRoom({
           >
             <PiUsers className="h-5 w-5" />
           </button>
+          {isInstructor && (
+            <>
+              <button
+                onClick={() => setPanel(panel === 'hifz' ? null : 'hifz')}
+                className={ctrl(panel === 'hifz' ? 'on' : 'default', 'px-3')}
+                aria-label="Toggle hifz"
+                title="Hifz progress"
+              >
+                <PiBookOpenText className="h-5 w-5" />
+              </button>
+              <button
+                onClick={() => setPanel(panel === 'work' ? null : 'work')}
+                className={ctrl(panel === 'work' ? 'on' : 'default', 'px-3')}
+                aria-label="Toggle grading"
+                title="Grade assignments"
+              >
+                <PiClipboardText className="h-5 w-5" />
+              </button>
+            </>
+          )}
           <button
             onClick={() => setConfirmLeave(true)}
             disabled={ending}
