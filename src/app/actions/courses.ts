@@ -8,6 +8,8 @@ import type { CourseDetail } from '@/lib/types';
 
 export interface ActionState {
   error: string | null;
+  /** Bumped on each successful mutation so client forms can react (e.g. close a modal). */
+  ok?: number;
 }
 
 /** Wraps an API mutation into the useActionState contract. */
@@ -24,7 +26,7 @@ async function run(
     throw e;
   }
   if (revalidate) revalidatePath(revalidate);
-  return { error: null };
+  return { error: null, ok: Date.now() };
 }
 
 export async function createCourse(
@@ -69,12 +71,13 @@ export async function addSection(
   formData: FormData,
 ): Promise<ActionState> {
   const courseId = formData.get('courseId') as string;
+  const description = (formData.get('description') as string)?.trim();
   return run(
     (token) =>
       api(`/courses/${courseId}/sections`, {
         method: 'POST',
         token,
-        body: { title: formData.get('title') },
+        body: { title: formData.get('title'), description: description || undefined },
       }),
     `/courses/${courseId}`,
   );

@@ -83,10 +83,18 @@ export interface StudentStat {
   assignmentsTotal: number;
 }
 
+/** A live session an assignment is tied to (summary form). */
+export interface AssignmentSessionRef {
+  id: string;
+  scheduledAt: string;
+  status: SessionStatus;
+}
+
 export interface Assignment {
   id: string;
   courseId: string;
   sectionId: string | null;
+  sessionId: string | null; // set = tied to a live session
   groupId: string | null; // null = whole class; set = only this group
   title: string;
   instructions: string | null;
@@ -94,6 +102,48 @@ export interface Assignment {
   maxPoints: number | null;
   createdAt: string;
   group?: { id: string; name: string } | null; // target label, when grouped
+  session?: AssignmentSessionRef | null; // tied session, when set
+}
+
+/** Minimal student identity used across roster/tracking. */
+export interface StudentRef {
+  id: string;
+  name: string;
+  email: string;
+}
+
+/** One submitted entry inside an assignment's tracking row. */
+export interface TrackingSubmission {
+  submissionId: string;
+  student: StudentRef;
+  content: string | null;
+  fileUrl: string | null;
+  fileMimeType: string | null;
+  submittedAt: string;
+  grade: number | null;
+  feedback: string | null;
+}
+
+/** GET /courses/:id/assignments/tracking — one row per assignment with the
+ *  target audience split into who submitted vs. who is still missing. */
+export interface AssignmentTracking {
+  id: string;
+  courseId: string;
+  sectionId: string | null;
+  sessionId: string | null;
+  groupId: string | null;
+  title: string;
+  instructions: string | null;
+  dueAt: string | null;
+  maxPoints: number | null;
+  createdAt: string;
+  group: { id: string; name: string } | null;
+  session: AssignmentSessionRef | null;
+  audienceCount: number;
+  submittedCount: number;
+  gradedCount: number;
+  submitted: TrackingSubmission[];
+  missing: StudentRef[];
 }
 
 /** A student in a group's membership list. */
@@ -120,6 +170,7 @@ export interface Submission {
   studentId: string;
   content: string | null;
   fileUrl: string | null;
+  fileMimeType: string | null;
   submittedAt: string;
   grade: number | null;
   feedback: string | null;
@@ -142,6 +193,7 @@ export interface Section {
   courseId: string;
   order: number;
   title: string;
+  description: string | null;
 }
 
 // ---- Adaptive assessment (class-end quiz → remediation) ----
@@ -360,4 +412,71 @@ export interface PluginInfo {
   features: string[];
   priceMonthly: number | null;
   enabled: boolean;
+}
+
+// ---- Qur'an / Hifz memorization ----------------------------------------
+
+export type Revelation = 'Meccan' | 'Medinan';
+
+/** One surah in the static catalog (GET /quran/surahs). */
+export interface Surah {
+  number: number;
+  arabicName: string;
+  transliteration: string;
+  englishName: string;
+  ayahCount: number;
+  revelation: Revelation;
+}
+
+export type HifzKind = 'NEW_HIFZ' | 'REVISION';
+
+/** A memorization goal set by the instructor for one student. */
+export interface HifzTarget {
+  id: string;
+  courseId: string;
+  studentId: string;
+  surahNumber: number;
+  ayahStart: number;
+  ayahEnd: number;
+  dueAt: string | null;
+  note: string | null;
+  createdAt: string;
+}
+
+/** One logged recitation — new memorization or revision (muraja'ah). */
+export interface HifzEntry {
+  id: string;
+  courseId: string;
+  studentId: string;
+  surahNumber: number;
+  ayahStart: number;
+  ayahEnd: number;
+  kind: HifzKind;
+  rating: number | null;
+  tajweed: string | null;
+  notes: string | null;
+  sessionId: string | null; // set = logged during this live session
+  recordedAt: string;
+}
+
+/** Distinct-ayah progress summary derived from a student's NEW_HIFZ entries. */
+export interface HifzProgress {
+  ayahsMemorized: number;
+  surahsTouched: number;
+  lastRecitedAt: string | null;
+}
+
+/** One student's row in the instructor overview (GET /courses/:id/hifz). */
+export interface HifzOverviewRow {
+  student: { id: string; name: string; email: string };
+  targets: HifzTarget[];
+  entries: HifzEntry[];
+  progress: HifzProgress;
+}
+
+/** A student's own view (GET /courses/:id/hifz/mine). */
+export interface MyHifz {
+  targets: HifzTarget[];
+  entries: HifzEntry[];
+  progress: HifzProgress;
 }

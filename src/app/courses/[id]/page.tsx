@@ -2,11 +2,11 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import type { IconType } from 'react-icons';
 import {
+  PiBookOpenText,
   PiClipboardText,
   PiClockCounterClockwise,
   PiNotePencil,
   PiUsers,
-  PiUsersThree,
 } from 'react-icons/pi';
 import { enroll, unenroll } from '@/app/actions/courses';
 import { Header } from '@/components/header';
@@ -24,6 +24,7 @@ import {
   type CohortStatus,
 } from '../catalog-lib';
 import { InstructorPanel } from './instructor-panel';
+import { AddSectionButton } from './add-section-modal';
 import { ClassReminderCard } from './class-reminder-card';
 import { JoinLiveCard } from './join-live-card';
 
@@ -265,13 +266,18 @@ export default async function CoursePage(props: {
 
         {/* Program navigation — roster / assignments / session history on their own pages */}
         <section className="mt-10">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <h2 className="text-lg font-semibold text-neutral-900">Tools</h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {(canManage || isEnrolled) && (
               <NavCard
                 href={`/courses/${id}/assignments`}
                 icon={PiNotePencil}
-                title="Assignments"
-                desc={canManage ? 'Create and grade coursework' : 'View and submit coursework'}
+                title={canManage ? 'Assignment lab' : 'Assignments'}
+                desc={
+                  canManage
+                    ? 'Coursework, groups, grading & submissions'
+                    : 'View and submit coursework'
+                }
               />
             )}
             {(canManage || isEnrolled) && (
@@ -286,20 +292,24 @@ export default async function CoursePage(props: {
                 }
               />
             )}
+            {(canManage || isEnrolled) && (
+              <NavCard
+                href={`/courses/${id}/hifz`}
+                icon={PiBookOpenText}
+                title="Hifz & memorization"
+                desc={
+                  canManage
+                    ? 'Set targets, log recitations, track progress'
+                    : 'Your memorization targets and recitation log'
+                }
+              />
+            )}
             <NavCard
               href={`/courses/${id}/sessions`}
               icon={PiClockCounterClockwise}
               title="Session history"
               desc="Every live session held so far"
             />
-            {canManage && (
-              <NavCard
-                href={`/courses/${id}/groups`}
-                icon={PiUsersThree}
-                title="Groups"
-                desc="Group students to target assignments"
-              />
-            )}
             {isAdmin && (
               <NavCard
                 href={`/courses/${id}/roster`}
@@ -313,19 +323,31 @@ export default async function CoursePage(props: {
 
         {/* Curriculum */}
         <section className="mt-10">
-          <h2 className="text-lg font-semibold text-neutral-900">Curriculum</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-neutral-900">Curriculum</h2>
+            {canManage && <AddSectionButton courseId={id} />}
+          </div>
           {course.sections.length === 0 ? (
             <p className="mt-3 rounded-xl border border-dashed border-neutral-300 bg-neutral-50/50 px-5 py-6 text-sm text-neutral-500">
-              No sections yet.
+              {canManage
+                ? 'No sections yet. Add the first one to outline this program.'
+                : 'No sections yet.'}
             </p>
           ) : (
             <ol className="mt-4 divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">
               {course.sections.map((s) => (
-                <li key={s.id} className="flex items-center gap-4 px-5 py-3.5">
-                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-neutral-100 text-xs font-semibold text-neutral-500">
+                <li key={s.id} className="flex items-start gap-4 px-5 py-3.5">
+                  <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-neutral-100 text-xs font-semibold text-neutral-500">
                     {s.order}
                   </span>
-                  <span className="text-sm text-neutral-800">{s.title}</span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-neutral-800">{s.title}</span>
+                    {s.description && (
+                      <span className="mt-0.5 block text-sm text-neutral-500">
+                        {s.description}
+                      </span>
+                    )}
+                  </span>
                 </li>
               ))}
             </ol>
