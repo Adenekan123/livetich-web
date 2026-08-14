@@ -2,13 +2,19 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  DisconnectReason,
   Room,
   RoomEvent,
   Track,
   type Participant,
   type Track as LKTrack,
 } from 'livekit-client';
-import { PiMicrophone, PiMicrophoneSlash, PiVideoCameraSlash } from 'react-icons/pi';
+import {
+  PiArrowClockwise,
+  PiMicrophone,
+  PiMicrophoneSlash,
+  PiVideoCameraSlash,
+} from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
 import { getRealtimeToken } from '@/lib/client-token';
 
@@ -20,9 +26,9 @@ export interface VideoControls {
   toggleCam: () => void;
   toggleMic: () => void;
   toggleScreen: () => void;
-  /** Camera + mic (instructor only). */
+  /** Camera + mic (everyone). */
   canPublishMedia: boolean;
-  /** Screen share (instructor, or a student the instructor granted). */
+  /** Screen share (everyone). */
   canShareScreen: boolean;
 }
 
@@ -34,6 +40,27 @@ interface Tile {
   camera?: LKTrack;
   mic?: LKTrack;
   micMuted: boolean;
+}
+
+/**
+ * A LiveKit disconnect is only terminal for some reasons. Reconnect attempts
+ * emit `Reconnecting`/`Reconnected` and never reach here; a `Disconnected` means
+ * the client gave up (or was closed on purpose). We ignore our own teardown and
+ * surface the rest with a human message + a retry affordance.
+ */
+function disconnectMessage(reason?: DisconnectReason): string {
+  switch (reason) {
+    case DisconnectReason.DUPLICATE_IDENTITY:
+      return 'You joined from another tab or device.';
+    case DisconnectReason.PARTICIPANT_REMOVED:
+      return 'You were removed from the room.';
+    case DisconnectReason.SERVER_SHUTDOWN:
+    case DisconnectReason.ROOM_DELETED:
+    case DisconnectReason.ROOM_CLOSED:
+      return 'The video session was closed.';
+    default:
+      return 'Lost connection to the video server.';
+  }
 }
 
 function roleOf(p: Participant): boolean {
@@ -140,21 +167,16 @@ function ParticipantTile({ tile }: { tile: Tile }) {
 
 /**
  * LiveKit video for a session. Instructor publishes camera/mic/screen;
- * students subscribe (their join token is subscribe-only). Kept mounted
- * across the Video/Chalkboard view switch so the call never drops, and its
- * media controls are reported up to the classroom's bottom bar via `onControls`.
+ * everyone (instructor and students) can publish mic/camera/screen. Kept
+ * mounted across the Video/Chalkboard view switch so the call never drops, and
+ * its media controls are reported up to the classroom's bottom bar via `onControls`.
  */
 export function VideoStage({
   sessionId,
-  isInstructor,
-  canScreenShare,
   dataSaver,
   onControls,
 }: {
   sessionId: string;
-  isInstructor: boolean;
-  /** Instructor (always) or a student the instructor granted screen-share. */
-  canScreenShare: boolean;
   /** Low-bandwidth mode: unsubscribe from all remote video, keep audio. */
   dataSaver: boolean;
   /** Reports the media controls (or null when not live) to the parent. */
@@ -167,9 +189,20 @@ export function VideoStage({
     'connecting',
   );
   const [error, setError] = useState<string | null>(null);
+  // A brief drop LiveKit is auto-recovering from — the call stays "live" (and
+  // controls stay put), we just note it. Only a give-up flips us to `error`.
+  const [reconnecting, setReconnecting] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
   const [camOn, setCamOn] = useState(false);
   const [micOn, setMicOn] = useState(false);
   const [screenOn, setScreenOn] = useState(false);
+
+  const retry = useCallback(() => {
+    setError(null);
+    setReconnecting(false);
+    setStatus('connecting');
+    setRetryKey((k) => k + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -211,10 +244,26 @@ export function VideoStage({
         .on(RoomEvent.ParticipantDisconnected, sync)
         .on(RoomEvent.TrackMuted, sync)
         .on(RoomEvent.TrackUnmuted, sync)
-        // Ignore disconnects we triggered ourselves (effect teardown / remount in
-        // dev). Only a drop while the room is still the live one is a real error.
-        .on(RoomEvent.Disconnected, () => {
-          if (!cancelled) setStatus('error');
+        // A transient blip: LiveKit is retrying under the hood. Stay "live" so
+        // the call and controls don't vanish — just flag it.
+        .on(RoomEvent.Reconnecting, () => {
+          if (!cancelled) setReconnecting(true);
+        })
+        .on(RoomEvent.Reconnected, () => {
+          if (!cancelled) {
+            setReconnecting(false);
+            sync();
+          }
+        })
+        // A `Disconnected` is LiveKit giving up (or a deliberate close). Ignore
+        // our own teardown (StrictMode remount / leaving); everything else is a
+        // real drop the user can retry from — don't strip the whole surface for
+        // a recoverable hiccup.
+        .on(RoomEvent.Disconnected, (reason) => {
+          if (cancelled || reason === DisconnectReason.CLIENT_INITIATED) return;
+          setReconnecting(false);
+          setError(disconnectMessage(reason));
+          setStatus('error');
         });
 
       try {
@@ -231,6 +280,8 @@ export function VideoStage({
         return;
       }
       roomRef.current = room;
+      setReconnecting(false);
+      setError(null);
       setStatus('live');
       sync();
     })();
@@ -240,7 +291,7 @@ export function VideoStage({
       room?.disconnect();
       roomRef.current = null;
     };
-  }, [sessionId]);
+  }, [sessionId, retryKey]);
 
   const toggleCam = useCallback(async () => {
     const room = roomRef.current;
@@ -271,8 +322,8 @@ export function VideoStage({
       onControls(null);
       return;
     }
-    // A granted student is a co-host: mic, camera and screen, same as instructor.
-    const canPublish = isInstructor || canScreenShare;
+    // Everyone is a co-host now: mic, camera and screen share for all, each
+    // starting off. The LiveKit join token grants publish to students too.
     onControls({
       camOn,
       micOn,
@@ -280,8 +331,8 @@ export function VideoStage({
       toggleCam,
       toggleMic,
       toggleScreen,
-      canPublishMedia: canPublish,
-      canShareScreen: canPublish,
+      canPublishMedia: true,
+      canShareScreen: true,
     });
   }, [
     onControls,
@@ -289,21 +340,10 @@ export function VideoStage({
     camOn,
     micOn,
     screenOn,
-    isInstructor,
-    canScreenShare,
     toggleCam,
     toggleMic,
     toggleScreen,
   ]);
-
-  // A student whose screen-share grant was revoked must stop publishing.
-  useEffect(() => {
-    if (isInstructor || canScreenShare) return;
-    const room = roomRef.current;
-    if (!room || !screenOn) return;
-    void room.localParticipant.setScreenShareEnabled(false);
-    setScreenOn(false);
-  }, [canScreenShare, isInstructor, screenOn]);
 
   // Data-saver: unsubscribe from every remote video track (camera + screen) so
   // nothing downloads; audio stays. Re-applied when toggled or tracks change.
@@ -322,8 +362,17 @@ export function VideoStage({
       <div className="flex h-full items-center justify-center rounded-2xl bg-neutral-900 text-center text-sm text-neutral-400">
         <div>
           <PiVideoCameraSlash className="mx-auto h-8 w-8 text-neutral-500" />
-          <p className="mt-2">Video unavailable</p>
-          {error && <p className="mt-1 text-xs text-neutral-500">{error}</p>}
+          <p className="mt-2 font-semibold text-white">Video unavailable</p>
+          <p className="mt-1 text-xs text-neutral-500">
+            {error ?? 'Lost connection to the video server.'}
+          </p>
+          <button
+            onClick={retry}
+            className="mt-4 inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-medium text-neutral-100 transition hover:bg-white/20"
+          >
+            <PiArrowClockwise className="h-4 w-4" />
+            Try again
+          </button>
         </div>
       </div>
     );
@@ -353,7 +402,13 @@ export function VideoStage({
   const camTiles = tiles.filter((t) => t.camera);
 
   return (
-    <div className="flex h-full flex-col gap-2">
+    <div className="relative flex h-full flex-col gap-2">
+      {reconnecting && (
+        <div className="absolute left-1/2 top-2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-amber-500/90 px-3.5 py-1.5 text-xs font-semibold text-amber-950 shadow-lg">
+          <PiArrowClockwise className="h-3.5 w-3.5 animate-spin" />
+          Reconnecting…
+        </div>
+      )}
       {/* Audio for every remote participant, independent of whether they show a
           tile — so a camera-off speaker is still heard. */}
       {tiles

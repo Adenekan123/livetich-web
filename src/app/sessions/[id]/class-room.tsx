@@ -41,8 +41,13 @@ import {
   PiX,
 } from 'react-icons/pi';
 import { VideoStage, type VideoControls } from './video-stage';
-import { LiveHifzPanel } from './live-hifz-panel';
+import {
+  LiveHifzPanel,
+  submitHifzDraft,
+  type HifzDraft,
+} from './live-hifz-panel';
 import { LiveGradingPanel } from './live-grading-panel';
+import { QuranReader } from './quran-reader';
 
 // tldraw touches browser-only APIs, so it must not render on the server.
 const BoardTldraw = dynamic(
@@ -71,6 +76,14 @@ interface Wave {
 }
 
 const MEDALS = ['🥇', '🥈', '🥉'];
+
+/** The three shared surfaces the instructor can put the class on. */
+const VIEW_META = {
+  video: { label: 'Video', Icon: PiVideoCamera },
+  board: { label: 'Chalkboard', Icon: PiChalkboardTeacher },
+  quran: { label: 'Qur’an', Icon: PiBookOpenText },
+} as const;
+const VIEWS = ['video', 'board', 'quran'] as const;
 
 /** A pill-shaped control button for the dark bottom bar. */
 function ctrl(
@@ -111,6 +124,14 @@ export function ClassRoom({
   const [answerResult, setAnswerResult] = useState<boolean | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [view, setView] = useState<StageView>('video');
+  const [quranPos, setQuranPos] = useState<{ surah: number; ayah: number }>({
+    surah: 1,
+    ayah: 1,
+  });
+  // An in-progress recitation the instructor is logging against the mushaf. It
+  // lives here (not in the Hifz panel) so it survives panel switches and can be
+  // auto-saved when the instructor ends the class.
+  const [hifzDraft, setHifzDraft] = useState<HifzDraft | null>(null);
   // Default data-saver on when the browser/OS signals a metered or slow network.
   const [dataSaver, setDataSaver] = useState(() => {
     if (typeof navigator === 'undefined') return false;
@@ -127,7 +148,6 @@ export function ClassRoom({
   });
   const [questions, setQuestions] = useState<BuzzerQuestion[]>([]);
   const [selectedQuestion, setSelectedQuestion] = useState('');
-  const [screenGrants, setScreenGrants] = useState<Set<string>>(new Set());
   const [panel, setPanel] = useState<
     'chat' | 'people' | 'points' | 'hifz' | 'work' | null
   >('chat');
@@ -140,7 +160,6 @@ export function ClassRoom({
 
   const isInstructor = me.role === 'INSTRUCTOR';
   const myHandRaised = hands.some((h) => h.userId === me.userId);
-  const iMayScreenShare = isInstructor || screenGrants.has(me.userId);
   // Students can join before the instructor arrives; until a host is present in
   // the room, they wait rather than staring at an empty call.
   const instructorPresent = users.some((u) => u.role === 'INSTRUCTOR');
@@ -171,6 +190,9 @@ export function ClassRoom({
     socket.on('chat:message', (m) => setMessages((prev) => [...prev, m]));
     socket.on('chat:locked', (p) => setLocked(p.locked));
     socket.on('view:changed', (p) => setView(p.view));
+    socket.on('quran:position', (p) =>
+      setQuranPos({ surah: p.surah, ayah: p.ayah }),
+    );
     socket.on('hands:update', (p) => {
       // Someone newly raising a hand gets a wave popup (skip our own). The first
       // snapshot on join just seeds state — don't animate already-raised hands.
@@ -195,16 +217,6 @@ export function ClassRoom({
       setPicked(p.user);
       setTimeout(() => setPicked(null), 6000);
     });
-    socket.on('screen-share:granted', (p) =>
-      setScreenGrants((prev) => new Set(prev).add(p.userId)),
-    );
-    socket.on('screen-share:revoked', (p) =>
-      setScreenGrants((prev) => {
-        const next = new Set(prev);
-        next.delete(p.userId);
-        return next;
-      }),
-    );
     socket.on('error', (e) => {
       setNotice(e.message);
       setTimeout(() => setNotice(null), 4000);
@@ -219,6 +231,27 @@ export function ClassRoom({
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Grow the active recitation to cover wherever the mushaf goes: same surah →
+  // widen the ayah span to include the current ayah; a new surah → restart the
+  // span there. The draft's range thus tracks the whole session's reading.
+  useEffect(() => {
+    setHifzDraft((d) => {
+      if (!d) return d;
+      if (quranPos.surah !== d.surah) {
+        return {
+          ...d,
+          surah: quranPos.surah,
+          ayahStart: quranPos.ayah,
+          ayahEnd: quranPos.ayah,
+        };
+      }
+      const ayahStart = Math.min(d.ayahStart, quranPos.ayah);
+      const ayahEnd = Math.max(d.ayahEnd, quranPos.ayah);
+      if (ayahStart === d.ayahStart && ayahEnd === d.ayahEnd) return d;
+      return { ...d, ayahStart, ayahEnd };
+    });
+  }, [quranPos.surah, quranPos.ayah]);
 
   // Buzzer questions for this session (instructor-only endpoint).
   useEffect(() => {
@@ -256,9 +289,27 @@ export function ClassRoom({
     socketRef.current?.emit('view:change', { sessionId, view: next });
   };
 
+  // Instructor turns the shared mushaf; the position broadcasts to everyone.
+  const navigateQuran = (surah: number, ayah: number) => {
+    if (!isInstructor) return;
+    setQuranPos({ surah, ayah });
+    socketRef.current?.emit('quran:navigate', { sessionId, surah, ayah });
+  };
+
   const leave = () =>
     startEnding(async () => {
-      if (isInstructor) await endSession(sessionId, courseId);
+      if (isInstructor) {
+        // Auto-save any recitation still being logged before the room closes.
+        if (hifzDraft) {
+          try {
+            await submitHifzDraft(courseId, sessionId, hifzDraft);
+            setHifzDraft(null);
+          } catch {
+            // Best-effort — don't block ending class on a failed log.
+          }
+        }
+        await endSession(sessionId, courseId);
+      }
       router.push(`/courses/${courseId}`);
     });
 
@@ -285,35 +336,35 @@ export function ClassRoom({
         <div className="flex shrink-0 items-center justify-center">
           {isInstructor ? (
             <div className="inline-flex rounded-full bg-white/10 p-1">
-              {(['video', 'board'] as const).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => changeView(v)}
-                  className={cn(
-                    'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition',
-                    view === v
-                      ? 'bg-white text-neutral-950'
-                      : 'text-neutral-300 hover:text-white',
-                  )}
-                >
-                  {v === 'video' ? (
-                    <PiVideoCamera className="h-4 w-4" />
-                  ) : (
-                    <PiChalkboardTeacher className="h-4 w-4" />
-                  )}
-                  {v === 'video' ? 'Video' : 'Chalkboard'}
-                </button>
-              ))}
+              {VIEWS.map((v) => {
+                const { label, Icon } = VIEW_META[v];
+                return (
+                  <button
+                    key={v}
+                    onClick={() => changeView(v)}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition',
+                      view === v
+                        ? 'bg-white text-neutral-950'
+                        : 'text-neutral-300 hover:text-white',
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {label}
+                  </button>
+                );
+              })}
             </div>
           ) : (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3.5 py-1.5 text-sm font-medium text-neutral-200">
-              {view === 'video' ? (
-                <PiVideoCamera className="h-4 w-4" />
-              ) : (
-                <PiChalkboardTeacher className="h-4 w-4" />
-              )}
-              {view === 'video' ? 'Video' : 'Chalkboard'}
-            </span>
+            (() => {
+              const { label, Icon } = VIEW_META[view];
+              return (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3.5 py-1.5 text-sm font-medium text-neutral-200">
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </span>
+              );
+            })()
           )}
         </div>
 
@@ -332,14 +383,20 @@ export function ClassRoom({
           <div className={cn('absolute inset-3', view === 'video' ? '' : 'hidden')}>
             <VideoStage
               sessionId={sessionId}
-              isInstructor={isInstructor}
-              canScreenShare={iMayScreenShare}
               dataSaver={dataSaver}
               onControls={setVideoControls}
             />
           </div>
           <div className={cn('absolute inset-3', view === 'board' ? '' : 'hidden')}>
             <BoardTldraw sessionId={sessionId} canDraw={isInstructor} />
+          </div>
+          <div className={cn('absolute inset-3', view === 'quran' ? '' : 'hidden')}>
+            <QuranReader
+              surah={quranPos.surah}
+              ayah={quranPos.ayah}
+              isInstructor={isInstructor}
+              onNavigate={navigateQuran}
+            />
           </div>
 
           {/* Waiting for instructor — covers the whole stage for students. */}
@@ -555,7 +612,6 @@ export function ClassRoom({
               <div className="flex-1 overflow-y-auto p-4">
                 <ul className="space-y-1.5">
                   {users.map((u) => {
-                    const granted = screenGrants.has(u.userId);
                     const handUp = hands.some((h) => h.userId === u.userId);
                     return (
                       <li key={u.userId} className="flex items-center gap-2.5">
@@ -581,27 +637,6 @@ export function ClassRoom({
                             className="h-4 w-4 text-signal-400"
                             title="Hand raised"
                           />
-                        )}
-                        {granted && (
-                          <PiMicrophoneStage
-                            className="h-4 w-4 text-signal-400"
-                            title="On stage — can talk & share"
-                          />
-                        )}
-                        {isInstructor && u.role === 'STUDENT' && (
-                          <button
-                            onClick={() =>
-                              socketRef.current?.emit(
-                                granted
-                                  ? 'screen-share:revoke'
-                                  : 'screen-share:grant',
-                                { sessionId, userId: u.userId },
-                              )
-                            }
-                            className="rounded-md px-1.5 py-0.5 text-xs font-medium text-neutral-400 transition hover:bg-white/10 hover:text-white"
-                          >
-                            {granted ? 'Remove' : 'Invite on stage'}
-                          </button>
                         )}
                       </li>
                     );
@@ -698,7 +733,13 @@ export function ClassRoom({
                 )}
               </div>
             ) : panel === 'hifz' ? (
-              <LiveHifzPanel courseId={courseId} sessionId={sessionId} />
+              <LiveHifzPanel
+                courseId={courseId}
+                sessionId={sessionId}
+                quranPos={quranPos}
+                draft={hifzDraft}
+                setDraft={setHifzDraft}
+              />
             ) : (
               <LiveGradingPanel courseId={courseId} sessionId={sessionId} />
             )}

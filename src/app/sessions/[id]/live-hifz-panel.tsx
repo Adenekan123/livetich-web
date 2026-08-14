@@ -1,12 +1,31 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
 import { PiBookOpenText, PiPlus } from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
 import { getRealtimeToken } from '@/lib/client-token';
 import { cn } from '@/lib/ui';
 import { formatRef, surahIndex, HIFZ_KIND_LABEL } from '@/lib/quran';
 import type { HifzKind, HifzOverviewRow, Surah } from '@/lib/types';
+
+/** A recitation being built up live from the shared mushaf: the range grows as
+ *  the instructor turns the page, then it's saved (manually or on session end). */
+export interface HifzDraft {
+  studentId: string;
+  studentName: string;
+  surah: number;
+  ayahStart: number;
+  ayahEnd: number;
+  kind: HifzKind;
+  rating: string; // '' or '1'..'5'
+}
 
 async function authFetch(path: string, init?: RequestInit) {
   const token = await getRealtimeToken();
@@ -17,6 +36,32 @@ async function authFetch(path: string, init?: RequestInit) {
       Authorization: `Bearer ${token ?? ''}`,
     },
   });
+}
+
+/** Persist a draft as a Hifz entry attributed to this session. Shared by the
+ *  panel's Save button and the classroom's auto-save when the instructor ends. */
+export async function submitHifzDraft(
+  courseId: string,
+  sessionId: string,
+  draft: HifzDraft,
+): Promise<void> {
+  const res = await authFetch(`/courses/${courseId}/hifz/entries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      studentId: draft.studentId,
+      surahNumber: draft.surah,
+      ayahStart: draft.ayahStart,
+      ayahEnd: draft.ayahEnd,
+      kind: draft.kind,
+      rating: draft.rating ? Number(draft.rating) : undefined,
+      sessionId,
+    }),
+  });
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { message?: string };
+    throw new Error(d.message || 'Failed to log');
+  }
 }
 
 function timeAgo(iso: string | null): string {
@@ -33,15 +78,25 @@ function timeAgo(iso: string | null): string {
 export function LiveHifzPanel({
   courseId,
   sessionId,
+  quranPos,
+  draft,
+  setDraft,
 }: {
   courseId: string;
   sessionId: string;
+  /** The shared mushaf position — the draft's range grows to follow it. */
+  quranPos: { surah: number; ayah: number };
+  /** The in-progress recitation, lifted up so it survives panel switches and
+   *  the classroom can auto-save it on End class. */
+  draft: HifzDraft | null;
+  setDraft: Dispatch<SetStateAction<HifzDraft | null>>;
 }) {
   const [rows, setRows] = useState<HifzOverviewRow[] | null>(null);
   const [surahs, setSurahs] = useState<Surah[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
-  const [logFor, setLogFor] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
 
   const index = useMemo(() => surahIndex(surahs), [surahs]);
 
@@ -57,11 +112,39 @@ export function LiveHifzPanel({
 
   useEffect(() => {
     void load();
-    void fetch(`${API_URL}/quran/surahs`)
+    void authFetch('/quran/surahs')
       .then((r) => (r.ok ? r.json() : { surahs: [] }))
       .then((d: { surahs: Surah[] }) => setSurahs(d.surahs))
       .catch(() => {});
   }, [load]);
+
+  const startDraft = (row: HifzOverviewRow) => {
+    setSaveErr(null);
+    setDraft({
+      studentId: row.student.id,
+      studentName: row.student.name,
+      surah: quranPos.surah,
+      ayahStart: quranPos.ayah,
+      ayahEnd: quranPos.ayah,
+      kind: 'NEW_HIFZ',
+      rating: '',
+    });
+  };
+
+  const save = async () => {
+    if (!draft) return;
+    setBusy(true);
+    setSaveErr(null);
+    try {
+      await submitHifzDraft(courseId, sessionId, draft);
+      setDraft(null);
+      await load();
+    } catch (e) {
+      setSaveErr(e instanceof Error ? e.message : 'Failed to log');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const latestEntry = (row: HifzOverviewRow) => row.entries[0] ?? null;
 
@@ -147,21 +230,25 @@ export function LiveHifzPanel({
                     </ul>
                   )}
 
-                  {logFor === row.student.id ? (
-                    <QuickLog
-                      courseId={courseId}
-                      sessionId={sessionId}
-                      studentId={row.student.id}
-                      surahs={surahs}
-                      onDone={() => {
-                        setLogFor(null);
-                        void load();
+                  {draft?.studentId === row.student.id ? (
+                    <DraftForm
+                      draft={draft}
+                      index={index}
+                      busy={busy}
+                      err={saveErr}
+                      onKind={(k) => setDraft((d) => (d ? { ...d, kind: k } : d))}
+                      onRating={(r) =>
+                        setDraft((d) => (d ? { ...d, rating: r } : d))
+                      }
+                      onSave={save}
+                      onCancel={() => {
+                        setDraft(null);
+                        setSaveErr(null);
                       }}
-                      onCancel={() => setLogFor(null)}
                     />
                   ) : (
                     <button
-                      onClick={() => setLogFor(row.student.id)}
+                      onClick={() => startDraft(row)}
                       className="mt-2 flex items-center gap-1 text-xs font-semibold text-signal-300 hover:text-signal-200"
                     >
                       <PiPlus className="h-3 w-3" /> Log recitation
@@ -177,96 +264,50 @@ export function LiveHifzPanel({
   );
 }
 
-function QuickLog({
-  courseId,
-  sessionId,
-  studentId,
-  surahs,
-  onDone,
+/**
+ * The live recitation form. The surah + ayah range aren't typed — they mirror
+ * the shared mushaf and grow as the instructor turns the page. Only the kind
+ * and rating are entered; Save logs the whole session's span at once.
+ */
+function DraftForm({
+  draft,
+  index,
+  busy,
+  err,
+  onKind,
+  onRating,
+  onSave,
   onCancel,
 }: {
-  courseId: string;
-  sessionId: string;
-  studentId: string;
-  surahs: Surah[];
-  onDone: () => void;
+  draft: HifzDraft;
+  index: Map<number, Surah>;
+  busy: boolean;
+  err: string | null;
+  onKind: (k: HifzKind) => void;
+  onRating: (r: string) => void;
+  onSave: () => void;
   onCancel: () => void;
 }) {
-  const [surah, setSurah] = useState(1);
-  const [start, setStart] = useState(1);
-  const [end, setEnd] = useState(1);
-  const [kind, setKind] = useState<HifzKind>('NEW_HIFZ');
-  const [rating, setRating] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function submit() {
-    setBusy(true);
-    setErr(null);
-    try {
-      const res = await authFetch(`/courses/${courseId}/hifz/entries`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          studentId,
-          surahNumber: surah,
-          ayahStart: start,
-          ayahEnd: end,
-          kind,
-          rating: rating ? Number(rating) : undefined,
-          sessionId,
-        }),
-      });
-      if (!res.ok) {
-        const d = (await res.json().catch(() => ({}))) as { message?: string };
-        throw new Error(d.message || 'Failed to log');
-      }
-      onDone();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to log');
-    } finally {
-      setBusy(false);
-    }
-  }
-
   const field =
     'rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-white focus:border-signal-500 focus:outline-none';
 
   return (
-    <div className="mt-2 space-y-2 rounded-lg border border-white/10 bg-black/20 p-2">
-      <select
-        value={surah}
-        onChange={(e) => setSurah(Number(e.target.value))}
-        className={cn(field, 'w-full')}
-      >
-        {surahs.map((s) => (
-          <option key={s.number} value={s.number} className="bg-neutral-900">
-            {s.number}. {s.transliteration}
-          </option>
-        ))}
-      </select>
-      <div className="flex items-center gap-2">
-        <label className="text-[11px] text-neutral-400">Ayah</label>
-        <input
-          type="number"
-          min={1}
-          value={start}
-          onChange={(e) => setStart(Number(e.target.value))}
-          className={cn(field, 'w-16')}
-        />
-        <span className="text-neutral-500">–</span>
-        <input
-          type="number"
-          min={1}
-          value={end}
-          onChange={(e) => setEnd(Number(e.target.value))}
-          className={cn(field, 'w-16')}
-        />
-      </div>
+    <div className="mt-2 space-y-2 rounded-lg border border-signal-500/30 bg-signal-500/5 p-2.5">
+      <p className="flex items-center gap-1.5 text-[11px] font-semibold text-signal-300">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-signal-400" />
+        Recording — follows the mushaf
+      </p>
+      <p className="text-sm font-semibold text-white">
+        {formatRef(index, draft.surah, draft.ayahStart, draft.ayahEnd)}
+      </p>
+      <p className="text-[11px] leading-snug text-neutral-400">
+        Turn the page in the Qur’an view to extend the range. Saves the whole
+        span read this session.
+      </p>
       <div className="flex items-center gap-2">
         <select
-          value={kind}
-          onChange={(e) => setKind(e.target.value as HifzKind)}
+          value={draft.kind}
+          onChange={(e) => onKind(e.target.value as HifzKind)}
           className={cn(field, 'flex-1')}
         >
           <option value="NEW_HIFZ" className="bg-neutral-900">
@@ -280,8 +321,8 @@ function QuickLog({
           type="number"
           min={1}
           max={5}
-          value={rating}
-          onChange={(e) => setRating(e.target.value)}
+          value={draft.rating}
+          onChange={(e) => onRating(e.target.value)}
           placeholder="★1-5"
           className={cn(field, 'w-16')}
         />
@@ -289,11 +330,11 @@ function QuickLog({
       {err && <p className="text-[11px] text-red-400">{err}</p>}
       <div className="flex gap-2">
         <button
-          onClick={submit}
+          onClick={onSave}
           disabled={busy}
           className="flex-1 rounded-md bg-signal-500 px-2 py-1 text-xs font-semibold text-white hover:bg-signal-400 disabled:opacity-50"
         >
-          {busy ? 'Saving…' : 'Save'}
+          {busy ? 'Saving…' : 'Save recitation'}
         </button>
         <button
           onClick={onCancel}

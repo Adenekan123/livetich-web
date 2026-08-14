@@ -40,6 +40,28 @@
   --color-signal-900: #0a0a0a;
 }
 
+/*
+ * Uthmani mushaf typeface for the shared Qur'an reader (Amiri, SIL OFL).
+ * Self-hosted from /public/fonts so the reader works offline / data-saver.
+ */
+@font-face {
+  font-family: "Amiri Quran";
+  src: url("/fonts/amiri-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Amiri Quran";
+  src: url("/fonts/amiri-700.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+.font-quran {
+  font-family: "Amiri Quran", "Scheherazade New", "Noto Naskh Arabic", serif;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
