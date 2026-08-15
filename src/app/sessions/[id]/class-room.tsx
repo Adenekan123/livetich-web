@@ -20,6 +20,7 @@ import dynamic from 'next/dynamic';
 import {
   PiBookOpenText,
   PiChalkboardTeacher,
+  PiCode,
   PiChatCircle,
   PiClipboardText,
   PiHandPalm,
@@ -62,6 +63,19 @@ const BoardTldraw = dynamic(
   },
 );
 
+// CodeMirror is browser-only too — same client-only dynamic import as the board.
+const CodeBoard = dynamic(
+  () => import('./code-board').then((m) => m.CodeBoard),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center rounded-2xl bg-[#282c34] text-sm text-neutral-500">
+        Loading editor…
+      </div>
+    ),
+  },
+);
+
 type RoomSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 interface BuzzerQuestion {
@@ -77,13 +91,15 @@ interface Wave {
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
-/** The three shared surfaces the instructor can put the class on. */
+/** The shared surfaces the instructor can put the class on. Which ones actually
+ *  appear depends on the org's add-on packs (see `views` in the component). */
 const VIEW_META = {
   video: { label: 'Video', Icon: PiVideoCamera },
   board: { label: 'Chalkboard', Icon: PiChalkboardTeacher },
   quran: { label: 'Qur’an', Icon: PiBookOpenText },
+  code: { label: 'Code', Icon: PiCode },
 } as const;
-const VIEWS = ['video', 'board', 'quran'] as const;
+const VIEWS = ['video', 'board', 'quran', 'code'] as const;
 
 /** A pill-shaped control button for the dark bottom bar. */
 function ctrl(
@@ -104,11 +120,18 @@ export function ClassRoom({
   courseId,
   courseTitle,
   me,
+  islamicEducation = false,
+  codeInstruction = false,
 }: {
   sessionId: string;
   courseId: string;
   courseTitle: string;
   me: RoomUser;
+  /** Islamic Education pack on for this org — unlocks the mushaf surface and
+   *  the Hifz panel. Off = a general classroom (video, chalkboard). */
+  islamicEducation?: boolean;
+  /** Code Instruction pack on for this org — unlocks the shared code editor. */
+  codeInstruction?: boolean;
 }) {
   const router = useRouter();
   const [ending, startEnding] = useTransition();
@@ -159,6 +182,12 @@ export function ClassRoom({
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const isInstructor = me.role === 'INSTRUCTOR';
+  // Pack-gated surfaces: the mushaf needs Islamic Education, the code editor
+  // needs Code Instruction. Everything else (video, chalkboard) is core.
+  const views = VIEWS.filter(
+    (v) =>
+      (v !== 'quran' || islamicEducation) && (v !== 'code' || codeInstruction),
+  );
   const myHandRaised = hands.some((h) => h.userId === me.userId);
   // Students can join before the instructor arrives; until a host is present in
   // the room, they wait rather than staring at an empty call.
@@ -336,7 +365,7 @@ export function ClassRoom({
         <div className="flex shrink-0 items-center justify-center">
           {isInstructor ? (
             <div className="inline-flex rounded-full bg-white/10 p-1">
-              {VIEWS.map((v) => {
+              {views.map((v) => {
                 const { label, Icon } = VIEW_META[v];
                 return (
                   <button
@@ -398,6 +427,13 @@ export function ClassRoom({
               onNavigate={navigateQuran}
             />
           </div>
+          {/* Only mounted when the pack is on, so a plain classroom never opens
+              the /code socket. Kept mounted across view switches once present. */}
+          {codeInstruction && (
+            <div className={cn('absolute inset-3', view === 'code' ? '' : 'hidden')}>
+              <CodeBoard sessionId={sessionId} canEdit={isInstructor} />
+            </div>
+          )}
 
           {/* Waiting for instructor — covers the whole stage for students. */}
           {waitingForInstructor && (
@@ -531,7 +567,9 @@ export function ClassRoom({
                 </button>
               ))}
               {isInstructor &&
-                (['hifz', 'work'] as const).map((t) => (
+                (['hifz', 'work'] as const)
+                  .filter((t) => t !== 'hifz' || islamicEducation)
+                  .map((t) => (
                   <button
                     key={t}
                     onClick={() => setPanel(t)}
@@ -859,14 +897,16 @@ export function ClassRoom({
           </button>
           {isInstructor && (
             <>
-              <button
-                onClick={() => setPanel(panel === 'hifz' ? null : 'hifz')}
-                className={ctrl(panel === 'hifz' ? 'on' : 'default', 'px-3')}
-                aria-label="Toggle hifz"
-                title="Hifz progress"
-              >
-                <PiBookOpenText className="h-5 w-5" />
-              </button>
+              {islamicEducation && (
+                <button
+                  onClick={() => setPanel(panel === 'hifz' ? null : 'hifz')}
+                  className={ctrl(panel === 'hifz' ? 'on' : 'default', 'px-3')}
+                  aria-label="Toggle hifz"
+                  title="Hifz progress"
+                >
+                  <PiBookOpenText className="h-5 w-5" />
+                </button>
+              )}
               <button
                 onClick={() => setPanel(panel === 'work' ? null : 'work')}
                 className={ctrl(panel === 'work' ? 'on' : 'default', 'px-3')}

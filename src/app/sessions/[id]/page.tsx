@@ -4,6 +4,11 @@ import { Header } from '@/components/header';
 import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
 import { btn } from '@/lib/ui';
+import {
+  enabledPluginKeys,
+  PLUGIN_CODE_INSTRUCTION,
+  PLUGIN_ISLAMIC_EDUCATION,
+} from '@/lib/plugins';
 import type { CourseDetail, LiveSession } from '@/lib/types';
 import { ClassRoom } from './class-room';
 
@@ -24,6 +29,11 @@ export default async function SessionPage(props: {
   const course = await api<CourseDetail>(`/courses/${session.courseId}`, {
     token,
   });
+  // Which add-on packs this org has on — gate the pack-specific room surfaces
+  // (mushaf + Hifz for Islamic Education; the shared code editor for Code).
+  const packs = await enabledPluginKeys(token);
+  const islamicEducation = packs.has(PLUGIN_ISLAMIC_EDUCATION);
+  const codeInstruction = packs.has(PLUGIN_CODE_INSTRUCTION);
 
   if (session.status === 'ENDED') {
     return (
@@ -56,6 +66,8 @@ export default async function SessionPage(props: {
       courseId={session.courseId}
       courseTitle={course.title}
       me={{ userId: user.sub, name: user.name, role: user.role }}
+      islamicEducation={islamicEducation}
+      codeInstruction={codeInstruction}
     />
   );
 }

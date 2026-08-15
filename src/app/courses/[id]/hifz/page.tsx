@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { Header } from '@/components/header';
 import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
+import { isPluginEnabled, PLUGIN_ISLAMIC_EDUCATION } from '@/lib/plugins';
 import type {
   CourseDetail,
   HifzOverviewRow,
@@ -18,6 +19,9 @@ export default async function HifzPage(props: {
   const { id } = await props.params;
   const [user, token] = await Promise.all([getCurrentUser(), getToken()]);
   if (!user || !token) redirect('/login');
+
+  // Hifz is an Islamic Education pack feature; a deep link 404s when it's off.
+  if (!(await isPluginEnabled(PLUGIN_ISLAMIC_EDUCATION, token))) notFound();
 
   let course: CourseDetail;
   try {
