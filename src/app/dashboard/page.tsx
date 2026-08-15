@@ -17,15 +17,14 @@ import type {
   Certificate,
   Enrollment,
   OrgMember,
-  StudentStat,
 } from '@/lib/types';
 import {
   deriveCohort,
   formatCadence,
   formatDuration,
+  type CohortState,
   type CohortStatus,
 } from '../courses/catalog-lib';
-import { StudentPerformanceTable } from '../account/student-performance-table';
 import { CertificateDownload } from './certificate-download';
 
 export const metadata = { title: 'Dashboard - livetich' };
@@ -50,6 +49,17 @@ function CohortBadge({ status, label }: { status: CohortStatus; label: string })
       {label}
     </span>
   );
+}
+
+/**
+ * Instructors teach the program, so enrollment-facing states read wrong on
+ * their cards: "Open to enroll" / "Enrolling" are for students browsing the
+ * catalog. Show the schedule instead (or "Not scheduled" when there's none).
+ */
+function instructorCohortLabel(cohort: CohortState): string {
+  if (cohort.status === 'OPEN') return 'Not scheduled';
+  if (cohort.status === 'ENROLLING') return cohort.hint ?? 'Scheduled';
+  return cohort.label;
 }
 
 function SectionHeading({ title, count }: { title: string; count?: number }) {
@@ -82,7 +92,7 @@ export default async function DashboardPage() {
     user.role === 'ORG_ADMIN'
       ? 'Manage your programs, instructors, and students.'
       : user.role === 'INSTRUCTOR'
-        ? 'Your assigned programs and the students in them.'
+        ? 'The programs you teach.'
         : 'Jump back into a class or enroll in a new one.';
 
   return (
@@ -238,10 +248,7 @@ async function AdminConsole({ token }: { token: string }) {
 /* ---------------- Instructor ---------------- */
 
 async function InstructorDashboard({ token }: { token: string }) {
-  const [courses, students] = await Promise.all([
-    api<CatalogCourse[]>('/courses', { token }),
-    api<StudentStat[]>('/courses/students/stats', { token }),
-  ]);
+  const courses = await api<CatalogCourse[]>('/courses', { token });
 
   return (
     <div className="mt-10 space-y-10">
@@ -266,7 +273,12 @@ async function InstructorDashboard({ token }: { token: string }) {
                   href={`/courses/${c.id}`}
                   title={c.title}
                   description={c.description}
-                  badge={<CohortBadge status={cohort.status} label={cohort.label} />}
+                  badge={
+                    <CohortBadge
+                      status={cohort.status}
+                      label={instructorCohortLabel(cohort)}
+                    />
+                  }
                   meta={[
                     formatCadence(c.meetingDays, c.meetingTime) ?? 'Schedule TBA',
                     formatDuration(c.durationWeeks) ?? '',
@@ -277,13 +289,6 @@ async function InstructorDashboard({ token }: { token: string }) {
             })}
           </div>
         )}
-      </section>
-      <section>
-        <SectionHeading title="Your students" count={students.length} />
-        <StudentPerformanceTable
-          students={students}
-          emptyLabel="No students enrolled in your programs yet."
-        />
       </section>
     </div>
   );

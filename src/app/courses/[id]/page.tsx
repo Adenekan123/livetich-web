@@ -15,7 +15,12 @@ import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
 import { isPluginEnabled, PLUGIN_ISLAMIC_EDUCATION } from '@/lib/plugins';
 import { btn, cardClass, cn } from '@/lib/ui';
-import type { Certificate, CourseDetail, Enrollment } from '@/lib/types';
+import type {
+  Certificate,
+  CourseDetail,
+  Enrollment,
+  OrgMember,
+} from '@/lib/types';
 import {
   deriveCohort,
   formatCadence,
@@ -25,6 +30,7 @@ import {
   type CohortStatus,
 } from '../catalog-lib';
 import { InstructorPanel } from './instructor-panel';
+import { AdminCourseManage } from './admin-course-manage';
 import { AddSectionButton } from './add-section-modal';
 import { ClassReminderCard } from './class-reminder-card';
 import { JoinLiveCard } from './join-live-card';
@@ -148,6 +154,26 @@ export default async function CoursePage(props: {
     myCertificate = certs.find((c) => c.courseId === id);
   }
 
+  // Admin inline management: the org's members + this program's roster.
+  type CourseStudent = { id: string; name: string; email: string };
+  let adminData: {
+    instructors: OrgMember[];
+    orgStudents: OrgMember[];
+    students: CourseStudent[];
+  } | null = null;
+  if (isAdmin) {
+    const [instructors, orgStudents, enrollments] = await Promise.all([
+      api<OrgMember[]>('/organizations/instructors', { token }),
+      api<OrgMember[]>('/organizations/students', { token }),
+      api<{ student: CourseStudent }[]>(`/courses/${id}/students`, { token }),
+    ]);
+    adminData = {
+      instructors,
+      orgStudents,
+      students: enrollments.map((e) => e.student),
+    };
+  }
+
   const liveNow = sessionStatus.isLive;
   const cohort = deriveCohort(course.startDate, course.durationWeeks, liveNow);
   const cadence = formatCadence(course.meetingDays, course.meetingTime);
@@ -243,6 +269,18 @@ export default async function CoursePage(props: {
               .
             </p>
           </div>
+        )}
+
+        {/* Admin: assign the instructor and manage the roster inline */}
+        {isAdmin && adminData && (
+          <AdminCourseManage
+            courseId={id}
+            currentInstructorId={course.instructorId ?? null}
+            currentInstructorName={course.instructor?.name ?? null}
+            instructors={adminData.instructors}
+            students={adminData.students}
+            orgStudents={adminData.orgStudents}
+          />
         )}
 
         {/* Live class — only participants (owner instructor / enrolled) can join */}

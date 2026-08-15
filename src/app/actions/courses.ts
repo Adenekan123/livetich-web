@@ -106,6 +106,22 @@ export async function unenroll(courseId: string): Promise<void> {
   );
 }
 
+/** Org admin assigns the instructor who teaches a program (null = unassign). */
+export async function assignInstructor(
+  courseId: string,
+  instructorId: string | null,
+): Promise<ActionState> {
+  return run(
+    (token) =>
+      api(`/courses/${courseId}/instructor`, {
+        method: 'PATCH',
+        token,
+        body: { instructorId: instructorId ?? undefined },
+      }),
+    `/courses/${courseId}`,
+  );
+}
+
 /** Org admin adds a specific student to a program. */
 export async function addStudentToCourse(
   courseId: string,
