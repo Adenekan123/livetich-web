@@ -117,6 +117,8 @@ export interface TrackingSubmission {
   submissionId: string;
   student: StudentRef;
   content: string | null;
+  /** Editor language id for code submissions (e.g. "python"); null otherwise. */
+  language: string | null;
   fileUrl: string | null;
   fileMimeType: string | null;
   submittedAt: string;

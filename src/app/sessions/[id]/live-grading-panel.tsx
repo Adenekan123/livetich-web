@@ -1,11 +1,32 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { PiCheckCircle, PiClipboardText } from 'react-icons/pi';
+import {
+  PiCheckCircle,
+  PiClipboardText,
+  PiCopy,
+  PiDownloadSimple,
+} from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
 import { getRealtimeToken } from '@/lib/client-token';
 import { cn } from '@/lib/ui';
 import type { AssignmentTracking, TrackingSubmission } from '@/lib/types';
+
+/** Editor language id → file extension, for the "download to run locally" file. */
+const LANG_EXT: Record<string, string> = {
+  javascript: 'js',
+  typescript: 'ts',
+  jsx: 'tsx',
+  python: 'py',
+  html: 'html',
+  css: 'css',
+  json: 'json',
+  markdown: 'md',
+};
+
+function slug(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
 
 async function authFetch(path: string, init?: RequestInit) {
   const token = await getRealtimeToken();
@@ -33,9 +54,13 @@ function isAudio(s: TrackingSubmission): boolean {
 export function LiveGradingPanel({
   courseId,
   sessionId,
+  refreshSignal = 0,
 }: {
   courseId: string;
   sessionId: string;
+  /** Bumped by the class room on every `submission:new` push, so the panel
+   *  reloads the roster the moment a student submits. */
+  refreshSignal?: number;
 }) {
   const [tracking, setTracking] = useState<AssignmentTracking[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +80,11 @@ export function LiveGradingPanel({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // A student just submitted (real-time) — pull the fresh roster + code.
+  useEffect(() => {
+    if (refreshSignal > 0) void load();
+  }, [refreshSignal, load]);
 
   const visible = (tracking ?? []).filter((a) =>
     scope === 'session' ? a.sessionId === sessionId : true,
@@ -149,6 +179,75 @@ export function LiveGradingPanel({
   );
 }
 
+/**
+ * A code submission rendered for review: monospace, scrollable, with the
+ * language, a copy button, and a download that hands the instructor a
+ * properly-named file to open and run in their own editor.
+ */
+function CodeSubmission({
+  content,
+  language,
+  student,
+}: {
+  content: string;
+  language: string;
+  student: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard blocked — the download button is the fallback.
+    }
+  };
+
+  const download = () => {
+    const ext = LANG_EXT[language] ?? 'txt';
+    const url = URL.createObjectURL(
+      new Blob([content], { type: 'text/plain' }),
+    );
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${slug(student) || 'submission'}.${ext}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="mt-1.5 overflow-hidden rounded-lg border border-white/10 bg-black/30">
+      <div className="flex items-center gap-2 border-b border-white/10 px-2 py-1">
+        <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-300">
+          {language}
+        </span>
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            onClick={copy}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-neutral-300 hover:bg-white/10 hover:text-white"
+          >
+            <PiCopy className="h-3 w-3" />
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+          <button
+            onClick={download}
+            title="Download to open in your editor"
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-neutral-300 hover:bg-white/10 hover:text-white"
+          >
+            <PiDownloadSimple className="h-3 w-3" />
+            File
+          </button>
+        </div>
+      </div>
+      <pre className="max-h-64 overflow-auto px-2.5 py-2 text-[11px] leading-relaxed text-neutral-200">
+        <code>{content}</code>
+      </pre>
+    </div>
+  );
+}
+
 function GradeRow({
   maxPoints,
   s,
@@ -196,11 +295,17 @@ function GradeRow({
         )}
       </div>
 
-      {s.content && (
+      {s.content && s.language ? (
+        <CodeSubmission
+          content={s.content}
+          language={s.language}
+          student={s.student.name}
+        />
+      ) : s.content ? (
         <p className="mt-1 whitespace-pre-wrap text-xs text-neutral-300">
           {s.content}
         </p>
-      )}
+      ) : null}
       {s.fileUrl && isAudio(s) && (
         /* eslint-disable-next-line jsx-a11y/media-has-caption */
         <audio controls src={s.fileUrl} className="mt-1.5 w-full" />

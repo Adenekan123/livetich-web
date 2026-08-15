@@ -146,6 +146,8 @@ export function ClassRoom({
   const [picked, setPicked] = useState<RoomUser | null>(null);
   const [answerResult, setAnswerResult] = useState<boolean | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Counter bumped on every `submission:new`; drives the grading panel reload.
+  const [submissionPing, setSubmissionPing] = useState(0);
   const [view, setView] = useState<StageView>('video');
   const [quranPos, setQuranPos] = useState<{ surah: number; ayah: number }>({
     surah: 1,
@@ -222,6 +224,13 @@ export function ClassRoom({
     socket.on('quran:position', (p) =>
       setQuranPos({ surah: p.surah, ayah: p.ayah }),
     );
+    // Staff-only: a student just submitted coursework. Nudge the grading panel
+    // to reload and flag it to the instructor.
+    socket.on('submission:new', (p) => {
+      setSubmissionPing((n) => n + 1);
+      setNotice(`${p.studentName} submitted ${p.assignmentTitle}`);
+      setTimeout(() => setNotice(null), 4000);
+    });
     socket.on('hands:update', (p) => {
       // Someone newly raising a hand gets a wave popup (skip our own). The first
       // snapshot on join just seeds state — don't animate already-raised hands.
@@ -779,7 +788,11 @@ export function ClassRoom({
                 setDraft={setHifzDraft}
               />
             ) : (
-              <LiveGradingPanel courseId={courseId} sessionId={sessionId} />
+              <LiveGradingPanel
+                courseId={courseId}
+                sessionId={sessionId}
+                refreshSignal={submissionPing}
+              />
             )}
           </aside>
         )}
