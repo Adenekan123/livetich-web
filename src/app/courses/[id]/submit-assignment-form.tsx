@@ -13,6 +13,18 @@ import { AudioSubmit } from './audio-submit';
 
 const initial: AssignmentActionState = { error: null };
 
+/** Languages a student can tag a code submission with (mirrors the API set). */
+const CODE_LANGUAGES = [
+  { value: 'javascript', label: 'JavaScript' },
+  { value: 'typescript', label: 'TypeScript' },
+  { value: 'jsx', label: 'JSX / TSX' },
+  { value: 'python', label: 'Python' },
+  { value: 'html', label: 'HTML' },
+  { value: 'css', label: 'CSS' },
+  { value: 'json', label: 'JSON' },
+  { value: 'markdown', label: 'Markdown' },
+] as const;
+
 export function SubmitAssignmentForm({
   courseId,
   assignmentId,
@@ -40,12 +52,31 @@ export function SubmitAssignmentForm({
         </div>
       )}
 
+      <div className="flex items-center gap-2">
+        <label className="text-xs font-medium text-neutral-500">Language</label>
+        <select
+          name="language"
+          defaultValue={submission?.language ?? ''}
+          className={`${inputClass} h-9 w-auto py-0 text-sm`}
+        >
+          <option value="">Plain text</option>
+          {CODE_LANGUAGES.map((l) => (
+            <option key={l.value} value={l.value}>
+              {l.label}
+            </option>
+          ))}
+        </select>
+        <span className="text-xs text-neutral-400">
+          pick a language to submit code
+        </span>
+      </div>
       <textarea
         name="content"
-        rows={3}
+        rows={8}
         defaultValue={submission?.content ?? ''}
-        placeholder="Type your submission…"
-        className={`${inputClass} resize-none`}
+        placeholder="Type or paste your submission (code or text)…"
+        spellCheck={false}
+        className={`${inputClass} resize-y font-mono text-[13px] leading-relaxed`}
       />
       <input
         name="fileUrl"

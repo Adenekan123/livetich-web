@@ -171,6 +171,7 @@ export interface Submission {
   assignmentId: string;
   studentId: string;
   content: string | null;
+  language: string | null;
   fileUrl: string | null;
   fileMimeType: string | null;
   submittedAt: string;

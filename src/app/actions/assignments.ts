@@ -61,6 +61,7 @@ export async function submitAssignment(
       body: {
         content: formData.get('content') || undefined,
         fileUrl: formData.get('fileUrl') || undefined,
+        language: formData.get('language') || undefined,
       },
     });
   } catch (e) {
