@@ -13,6 +13,7 @@ import { Header } from '@/components/header';
 import { SubmitButton } from '@/components/submit-button';
 import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
+import { isPluginEnabled, PLUGIN_ISLAMIC_EDUCATION } from '@/lib/plugins';
 import { btn, cardClass, cn } from '@/lib/ui';
 import type { Certificate, CourseDetail, Enrollment } from '@/lib/types';
 import {
@@ -128,6 +129,10 @@ export default async function CoursePage(props: {
   const isOwner = user?.role === 'INSTRUCTOR' && user.sub === course.instructorId;
   const canManage = isOwner || user?.role === 'ORG_ADMIN';
   const isAdmin = user?.role === 'ORG_ADMIN';
+  // Hifz lives behind the Islamic Education pack — hide the card when it's off.
+  const islamicEducation = token
+    ? await isPluginEnabled(PLUGIN_ISLAMIC_EDUCATION, token)
+    : false;
   let isEnrolled = false;
   let myReminderAddedAt: string | null = null;
   if (user?.role === 'STUDENT' && token) {
@@ -292,7 +297,7 @@ export default async function CoursePage(props: {
                 }
               />
             )}
-            {(canManage || isEnrolled) && (
+            {islamicEducation && (canManage || isEnrolled) && (
               <NavCard
                 href={`/courses/${id}/hifz`}
                 icon={PiBookOpenText}
