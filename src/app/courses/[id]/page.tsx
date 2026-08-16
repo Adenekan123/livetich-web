@@ -5,6 +5,7 @@ import {
   PiBookOpenText,
   PiClipboardText,
   PiClockCounterClockwise,
+  PiExam,
   PiNotePencil,
   PiUsers,
 } from 'react-icons/pi';
@@ -13,7 +14,11 @@ import { Header } from '@/components/header';
 import { SubmitButton } from '@/components/submit-button';
 import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
-import { isPluginEnabled, PLUGIN_ISLAMIC_EDUCATION } from '@/lib/plugins';
+import {
+  isPluginEnabled,
+  PLUGIN_ISLAMIC_EDUCATION,
+  PLUGIN_TEST_PREP,
+} from '@/lib/plugins';
 import { btn, cardClass, cn } from '@/lib/ui';
 import type {
   Certificate,
@@ -138,6 +143,9 @@ export default async function CoursePage(props: {
   // Hifz lives behind the Islamic Education pack — hide the card when it's off.
   const islamicEducation = token
     ? await isPluginEnabled(PLUGIN_ISLAMIC_EDUCATION, token)
+    : false;
+  const testPrep = token
+    ? await isPluginEnabled(PLUGIN_TEST_PREP, token)
     : false;
   let isEnrolled = false;
   let myReminderAddedAt: string | null = null;
@@ -332,6 +340,18 @@ export default async function CoursePage(props: {
                   canManage
                     ? 'Question bank + remediation tasks'
                     : 'Post-class quizzes and practice'
+                }
+              />
+            )}
+            {testPrep && (canManage || isEnrolled) && (
+              <NavCard
+                href={`/courses/${id}/exams`}
+                icon={PiExam}
+                title="Test Prep"
+                desc={
+                  canManage
+                    ? 'Build timed mock exams; import past questions'
+                    : 'Sit timed practice exams'
                 }
               />
             )}

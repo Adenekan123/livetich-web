@@ -483,3 +483,60 @@ export interface MyHifz {
   entries: HifzEntry[];
   progress: HifzProgress;
 }
+
+// ---- Test Prep (exams) ----
+
+export interface ExamQuestionInput {
+  body: string;
+  options: string[];
+  correctIndex: number;
+  topic?: string;
+}
+
+/** Manager list row. */
+export interface ExamListRow {
+  id: string;
+  title: string;
+  durationMinutes: number;
+  questionCount: number;
+  submissions: number;
+  averageScore: number | null;
+}
+
+/** Student list row. */
+export interface ExamAvailableRow {
+  id: string;
+  title: string;
+  durationMinutes: number;
+  questionCount: number;
+  myAttempt: { id: string; score: number | null; submitted: boolean } | null;
+}
+
+/** Payload for an in-progress attempt (answers withheld). */
+export interface ExamStart {
+  attemptId: string;
+  title: string;
+  durationMinutes: number;
+  deadline: string;
+  questions: { id: string; body: string; options: string[]; topic: string | null }[];
+}
+
+export interface ExamSubmitResult {
+  score: number;
+  correct: number;
+  total: number;
+  answered: number;
+}
+
+export interface ExamResults {
+  examTitle: string;
+  students: { studentId: string; name: string; score: number | null; submittedAt: string | null }[];
+  topics: { topic: string; accuracy: number | null; answered: number }[];
+}
+
+/** Draft questions imported from ALOC for the builder. */
+export interface AlocDraftResult {
+  questions: ExamQuestionInput[];
+  creditsRemaining: number | null;
+  fromCache: boolean;
+}

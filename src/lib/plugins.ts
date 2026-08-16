@@ -5,6 +5,7 @@ import type { PluginInfo } from '@/lib/types';
 /** Add-on pack keys, mirrored from the API catalog. Feature code gates on these. */
 export const PLUGIN_ISLAMIC_EDUCATION = 'islamic-education';
 export const PLUGIN_CODE_INSTRUCTION = 'code-instruction';
+export const PLUGIN_TEST_PREP = 'test-prep';
 
 /**
  * Keys of the add-on packs enabled for the current user's org. Fails closed —
