@@ -527,6 +527,18 @@ export interface ExamSubmitResult {
   correct: number;
   total: number;
   answered: number;
+  /** True when the submit arrived after the deadline (scored 0). */
+  expired?: boolean;
+}
+
+/** Full exam for the edit form. */
+export interface ExamDetail {
+  id: string;
+  title: string;
+  durationMinutes: number;
+  /** Questions are frozen once anyone has attempted. */
+  hasAttempts: boolean;
+  questions: ExamQuestionInput[];
 }
 
 export interface ExamResults {

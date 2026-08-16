@@ -2,13 +2,22 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import { createExam, getExamResults, importAlocQuestions } from '@/app/actions/exams';
+import {
+  createExam,
+  deleteExam,
+  getExamDetail,
+  getExamResults,
+  importAlocQuestions,
+  updateExam,
+} from '@/app/actions/exams';
 import { btn, cardClass, cn, inputClass } from '@/lib/ui';
 import type {
+  ExamDetail,
   ExamListRow,
   ExamQuestionInput,
   ExamResults,
 } from '@/lib/types';
+import { Rich } from './rich-text';
 
 // ALOC v1 exam types (exact slugs the API expects).
 const EXAM_TYPES = [
@@ -35,6 +44,12 @@ export function ExamManager({
   exams: ExamListRow[];
 }) {
   const [building, setBuilding] = useState(exams.length === 0);
+  const [editing, setEditing] = useState<ExamDetail | null>(null);
+  const inBuilder = building || editing !== null;
+  const close = () => {
+    setBuilding(false);
+    setEditing(null);
+  };
 
   return (
     <div className="mt-4">
@@ -42,7 +57,7 @@ export function ExamManager({
         <h1 className="font-display text-2xl font-extrabold tracking-tight text-neutral-950">
           Test Prep
         </h1>
-        {!building && (
+        {!inBuilder && (
           <button onClick={() => setBuilding(true)} className={btn('primary', 'sm')}>
             New exam
           </button>
@@ -52,16 +67,18 @@ export function ExamManager({
         Timed mock exams — import real past questions or write your own.
       </p>
 
-      {building ? (
+      {inBuilder ? (
         <Builder
+          key={editing?.id ?? 'new'}
           courseId={courseId}
-          onDone={() => setBuilding(false)}
-          onCancel={exams.length ? () => setBuilding(false) : undefined}
+          existing={editing ?? undefined}
+          onDone={close}
+          onCancel={exams.length || editing ? close : undefined}
         />
       ) : (
         <ul className="mt-6 space-y-3">
           {exams.map((e) => (
-            <ExamRow key={e.id} exam={e} />
+            <ExamRow key={e.id} courseId={courseId} exam={e} onEdit={setEditing} />
           ))}
         </ul>
       )}
@@ -69,10 +86,22 @@ export function ExamManager({
   );
 }
 
-function ExamRow({ exam }: { exam: ExamListRow }) {
+function ExamRow({
+  courseId,
+  exam,
+  onEdit,
+}: {
+  courseId: string;
+  exam: ExamListRow;
+  onEdit: (detail: ExamDetail) => void;
+}) {
+  const router = useRouter();
   const [results, setResults] = useState<ExamResults | null>(null);
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
+  const [loadingEdit, startEdit] = useTransition();
+  const [deleting, startDelete] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   function toggle() {
     if (open) return setOpen(false);
@@ -85,6 +114,30 @@ function ExamRow({ exam }: { exam: ExamListRow }) {
     }
   }
 
+  function edit() {
+    setError(null);
+    startEdit(async () => {
+      const res = await getExamDetail(courseId, exam.id);
+      if (res.error) setError(res.error);
+      else if (res.exam) onEdit(res.exam);
+    });
+  }
+
+  function del() {
+    if (
+      !window.confirm(
+        `Delete "${exam.title}"? Student scores are kept, but it's removed from the list.`,
+      )
+    )
+      return;
+    setError(null);
+    startDelete(async () => {
+      const res = await deleteExam(courseId, exam.id);
+      if (res.error) setError(res.error);
+      else router.refresh();
+    });
+  }
+
   return (
     <li className={cn(cardClass, 'p-5')}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -95,10 +148,19 @@ function ExamRow({ exam }: { exam: ExamListRow }) {
             {exam.submissions} submission{exam.submissions === 1 ? '' : 's'}
             {exam.averageScore != null && ` · avg ${exam.averageScore}%`}
           </p>
+          {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
         </div>
-        <button onClick={toggle} className={btn('secondary', 'sm')}>
-          {open ? 'Hide results' : 'Results'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={edit} disabled={loadingEdit} className={btn('ghost', 'sm')}>
+            {loadingEdit ? '…' : 'Edit'}
+          </button>
+          <button onClick={del} disabled={deleting} className={btn('ghost', 'sm')}>
+            {deleting ? '…' : 'Delete'}
+          </button>
+          <button onClick={toggle} className={btn('secondary', 'sm')}>
+            {open ? 'Hide results' : 'Results'}
+          </button>
+        </div>
       </div>
 
       {open && (
@@ -155,20 +217,25 @@ function ExamRow({ exam }: { exam: ExamListRow }) {
 
 function Builder({
   courseId,
+  existing,
   onDone,
   onCancel,
 }: {
   courseId: string;
+  existing?: ExamDetail;
   onDone: () => void;
   onCancel?: () => void;
 }) {
   const router = useRouter();
-  const [title, setTitle] = useState('');
-  const [duration, setDuration] = useState(30);
-  const [questions, setQuestions] = useState<Draft[]>([]);
+  const [title, setTitle] = useState(existing?.title ?? '');
+  const [duration, setDuration] = useState(existing?.durationMinutes ?? 30);
+  const [questions, setQuestions] = useState<Draft[]>(existing?.questions ?? []);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  // Once students have attempted, questions are frozen (past scores stay valid);
+  // only the title + time can change.
+  const locked = existing?.hasAttempts ?? false;
 
   // ALOC import controls
   const [subject, setSubject] = useState('mathematics');
@@ -218,17 +285,23 @@ function Builder({
 
   function save() {
     setError(null);
-    const clean = questions.filter(
-      (q) => q.body.trim() && q.options.filter((o) => o.trim()).length >= 2,
-    );
     if (!title.trim()) return setError('Give the exam a title.');
-    if (!clean.length) return setError('Add at least one complete question.');
+    let clean: Draft[] = [];
+    if (!locked) {
+      clean = questions.filter(
+        (q) => q.body.trim() && q.options.filter((o) => o.trim()).length >= 2,
+      );
+      if (!clean.length) return setError('Add at least one complete question.');
+    }
     start(async () => {
-      const res = await createExam(courseId, {
-        title: title.trim(),
-        durationMinutes: duration,
-        questions: clean,
-      });
+      const meta = { title: title.trim(), durationMinutes: duration };
+      const res = existing
+        ? await updateExam(
+            courseId,
+            existing.id,
+            locked ? meta : { ...meta, questions: clean },
+          )
+        : await createExam(courseId, { ...meta, questions: clean });
       if (res.error) return setError(res.error);
       router.refresh();
       onDone();
@@ -269,6 +342,15 @@ function Builder({
         </div>
       </div>
 
+      {locked && (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Students have attempted this exam, so the questions are locked (past
+          scores stay valid). You can still change the title and time limit.
+        </p>
+      )}
+
+      {!locked && (
+        <>
       {/* ALOC import */}
       <div className={cn(cardClass, 'p-5')}>
         <p className="text-sm font-semibold text-neutral-900">Import past questions</p>
@@ -404,14 +486,32 @@ function Builder({
                   + option
                 </button>
               </div>
+              {/* Rendered preview — sup/sub etc. show as they will to students,
+                  so imported markup isn't just raw text in the editor. */}
+              {/<[a-z]/i.test(q.body + q.options.join('')) && (
+                <div className="mt-2 rounded-lg bg-neutral-50 px-3 py-2 pl-6 text-xs text-neutral-500">
+                  <span className="font-semibold text-neutral-400">Preview: </span>
+                  <Rich text={q.body} />
+                  {q.options.some((o) => o.trim()) && (
+                    <span> — {q.options.filter(Boolean).map((o, k) => (
+                      <span key={k}>
+                        {k > 0 && ' · '}
+                        <Rich text={o} />
+                      </span>
+                    ))}</span>
+                  )}
+                </div>
+              )}
             </li>
           ))}
         </ol>
       </div>
+        </>
+      )}
 
       <div className="flex items-center gap-2">
         <button onClick={save} disabled={pending} className={btn('primary', 'md')}>
-          {pending ? 'Saving…' : 'Save exam'}
+          {pending ? 'Saving…' : existing ? 'Save changes' : 'Save exam'}
         </button>
         {onCancel && (
           <button onClick={onCancel} className={btn('ghost', 'md')}>

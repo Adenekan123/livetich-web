@@ -5,6 +5,7 @@ import { api, ApiError } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import type {
   AlocDraftResult,
+  ExamDetail,
   ExamResults,
   ExamReview,
   ExamStart,
@@ -54,6 +55,55 @@ export async function createExam(
     return { id: exam.id };
   } catch (e) {
     return { error: e instanceof ApiError ? e.message : 'Could not create exam' };
+  }
+}
+
+export async function getExamDetail(
+  courseId: string,
+  examId: string,
+): Promise<{ exam?: ExamDetail; error?: string }> {
+  const token = await tokenOrLogin();
+  try {
+    const exam = await api<ExamDetail>(`/courses/${courseId}/exams/${examId}`, {
+      token,
+    });
+    return { exam };
+  } catch (e) {
+    return { error: e instanceof ApiError ? e.message : 'Could not load exam' };
+  }
+}
+
+export async function updateExam(
+  courseId: string,
+  examId: string,
+  payload: {
+    title?: string;
+    durationMinutes?: number;
+    questions?: ExamQuestionInput[];
+  },
+): Promise<{ id?: string; error?: string }> {
+  const token = await tokenOrLogin();
+  try {
+    const exam = await api<{ id: string }>(
+      `/courses/${courseId}/exams/${examId}`,
+      { method: 'PATCH', token, body: payload },
+    );
+    return { id: exam.id };
+  } catch (e) {
+    return { error: e instanceof ApiError ? e.message : 'Could not update exam' };
+  }
+}
+
+export async function deleteExam(
+  courseId: string,
+  examId: string,
+): Promise<{ ok?: boolean; error?: string }> {
+  const token = await tokenOrLogin();
+  try {
+    await api(`/courses/${courseId}/exams/${examId}`, { method: 'DELETE', token });
+    return { ok: true };
+  } catch (e) {
+    return { error: e instanceof ApiError ? e.message : 'Could not delete exam' };
   }
 }
 
