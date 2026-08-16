@@ -6,6 +6,7 @@ import { getToken } from '@/lib/auth';
 import type {
   AlocDraftResult,
   ExamResults,
+  ExamReview,
   ExamStart,
   ExamSubmitResult,
   ExamQuestionInput,
@@ -65,6 +66,18 @@ export async function getExamResults(
     return { results };
   } catch (e) {
     return { error: e instanceof ApiError ? e.message : 'Could not load results' };
+  }
+}
+
+export async function getExamReview(
+  examId: string,
+): Promise<{ review?: ExamReview; error?: string }> {
+  const token = await tokenOrLogin();
+  try {
+    const review = await api<ExamReview>(`/exams/${examId}/review`, { token });
+    return { review };
+  } catch (e) {
+    return { error: e instanceof ApiError ? e.message : 'Could not load review' };
   }
 }
 

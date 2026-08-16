@@ -515,6 +515,7 @@ export interface ExamAvailableRow {
 /** Payload for an in-progress attempt (answers withheld). */
 export interface ExamStart {
   attemptId: string;
+  examId: string;
   title: string;
   durationMinutes: number;
   deadline: string;
@@ -532,6 +533,21 @@ export interface ExamResults {
   examTitle: string;
   students: { studentId: string; name: string; score: number | null; submittedAt: string | null }[];
   topics: { topic: string; accuracy: number | null; answered: number }[];
+}
+
+/** A submitted attempt with the answer key + the student's picks, for review. */
+export interface ExamReview {
+  examTitle: string;
+  score: number | null;
+  total: number;
+  submittedAt: string | null;
+  questions: {
+    id: string;
+    body: string;
+    options: string[];
+    correctIndex: number;
+    chosenIndex: number | null;
+  }[];
 }
 
 /** Draft questions imported from ALOC for the builder. */
