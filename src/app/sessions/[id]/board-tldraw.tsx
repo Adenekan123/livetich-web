@@ -1,7 +1,7 @@
 'use client';
 
 import 'tldraw/tldraw.css';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Tldraw, createTLStore, type Editor, type TLRecord } from 'tldraw';
 import { io, type Socket } from 'socket.io-client';
 import * as Y from 'yjs';
@@ -49,9 +49,21 @@ export function BoardTldraw({
   canDraw: boolean;
 }) {
   const [store] = useState(() => createTLStore());
+  // Presenter tools (camera-follow + shared laser). Refs bridge the socket
+  // handlers in onMount to React state for the overlay + follow button.
+  const editorRef = useRef<Editor | null>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const followingRef = useRef(true);
+  const lastCameraRef = useRef<{ x: number; y: number; z: number } | null>(null);
+  const [following, setFollowing] = useState(true);
+  const [laser, setLaser] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    followingRef.current = following;
+  }, [following]);
 
   const handleMount = (editor: Editor) => {
     if (!canDraw) editor.updateInstanceState({ isReadonly: true });
+    editorRef.current = editor;
 
     const doc = new Y.Doc();
     const yStore = doc.getMap<TLRecord>('tldraw');
@@ -151,8 +163,62 @@ export function BoardTldraw({
       { source: 'user', scope: 'document' },
     );
 
+    // ---- Presenter tools: camera-follow + shared laser (ephemeral) ----
+    let presenterTimer: ReturnType<typeof setInterval> | undefined;
+    let pointerInside = true;
+    const el = wrapperRef.current;
+    const onEnter = () => {
+      pointerInside = true;
+    };
+    const onLeave = () => {
+      pointerInside = false;
+    };
+    // A student panning/zooming means they want to explore — release follow.
+    const onInteract = () => {
+      if (followingRef.current) setFollowing(false);
+    };
+
+    if (canDraw) {
+      // Instructor broadcasts camera + pointer ~10×/s, only when it changed.
+      el?.addEventListener('pointerenter', onEnter);
+      el?.addEventListener('pointerleave', onLeave);
+      let last = '';
+      presenterTimer = setInterval(() => {
+        if (!socket.connected) return;
+        const cam = editor.getCamera();
+        const pt = editor.inputs.currentPagePoint;
+        const payload = {
+          camera: { x: cam.x, y: cam.y, z: cam.z },
+          cursor: pointerInside ? { x: pt.x, y: pt.y } : null,
+        };
+        const key = JSON.stringify(payload);
+        if (key === last) return;
+        last = key;
+        socket.emit('board:presenter', { sessionId, ...payload });
+      }, 100);
+    } else {
+      // Students match the presenter's view (while following) + show the laser.
+      socket.on('board:presenter', (p) => {
+        lastCameraRef.current = p.camera;
+        if (followingRef.current) editor.setCamera(p.camera);
+        if (p.cursor) {
+          const s = editor.pageToScreen(p.cursor);
+          setLaser({ x: s.x, y: s.y });
+        } else {
+          setLaser(null);
+        }
+      });
+      el?.addEventListener('wheel', onInteract, { passive: true });
+      el?.addEventListener('pointerdown', onInteract);
+    }
+
     return () => {
       clearTimeout(initTimer);
+      if (presenterTimer) clearInterval(presenterTimer);
+      el?.removeEventListener('pointerenter', onEnter);
+      el?.removeEventListener('pointerleave', onLeave);
+      el?.removeEventListener('wheel', onInteract);
+      el?.removeEventListener('pointerdown', onInteract);
       unlisten();
       yStore.unobserve(onYChange);
       doc.off('update', onDocUpdate);
@@ -162,8 +228,41 @@ export function BoardTldraw({
   };
 
   return (
-    <div className="relative h-full min-h-[320px] overflow-hidden rounded-xl border border-neutral-300 bg-white">
+    <div
+      ref={wrapperRef}
+      className="relative h-full min-h-[320px] overflow-hidden rounded-xl border border-neutral-300 bg-white"
+    >
       <Tldraw store={store} onMount={handleMount} />
+
+      {/* Shared laser — the presenter's pointer, shown to students. */}
+      {!canDraw && laser && (
+        <div
+          className="pointer-events-none absolute z-[400] h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-500/70 ring-2 ring-red-300/60 shadow-[0_0_10px_3px_rgba(239,68,68,0.45)]"
+          style={{ left: laser.x, top: laser.y }}
+        />
+      )}
+
+      {/* Follow toggle — students only. Releases automatically when they pan. */}
+      {!canDraw && (
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => {
+            if (following) {
+              setFollowing(false);
+              return;
+            }
+            setFollowing(true);
+            if (lastCameraRef.current) editorRef.current?.setCamera(lastCameraRef.current);
+          }}
+          className={`absolute left-1/2 top-3 z-[400] -translate-x-1/2 rounded-full px-3 py-1.5 text-xs font-semibold shadow transition ${
+            following
+              ? 'bg-neutral-900/90 text-white'
+              : 'animate-pulse bg-white text-neutral-900 ring-1 ring-neutral-300'
+          }`}
+        >
+          {following ? '● Following presenter' : 'Follow presenter'}
+        </button>
+      )}
     </div>
   );
 }
