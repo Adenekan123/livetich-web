@@ -27,9 +27,16 @@ export default async function SessionPage(props: {
     if (e instanceof ApiError && e.status === 404) notFound();
     throw e;
   }
-  const course = await api<CourseDetail>(`/courses/${session.courseId}`, {
-    token,
-  });
+  // The course fetch is org-scoped (unlike the public session read), so a
+  // session whose course the caller can't see 404s here — treat that as a
+  // missing page rather than letting it crash the classroom with a 500.
+  let course: CourseDetail;
+  try {
+    course = await api<CourseDetail>(`/courses/${session.courseId}`, { token });
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) notFound();
+    throw e;
+  }
   // Which add-on packs this org has on — gate the pack-specific room surfaces
   // (mushaf + Hifz for Islamic Education; the shared code editor for Code).
   const packs = await enabledPluginKeys(token);

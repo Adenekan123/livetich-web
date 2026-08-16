@@ -63,6 +63,21 @@ function isDocumentRecord(r: TLRecord): boolean {
 }
 
 /**
+ * Only ever hand tldraw's store well-formed document records. The shared Y.Map
+ * is bytes on the wire, so a buggy/older client (or a stray write) could leave
+ * a value with no `typeName`; putting that into the store throws "Missing
+ * definition for record type undefined" and kills the whole board. Filter here.
+ */
+function isSharedRecord(r: unknown): r is TLRecord {
+  return (
+    !!r &&
+    typeof r === 'object' &&
+    typeof (r as { typeName?: unknown }).typeName === 'string' &&
+    isDocumentRecord(r as TLRecord)
+  );
+}
+
+/**
  * tldraw whiteboard bound to the /board Yjs namespace. tldraw's document
  * records live in a Y.Map so the server keeps authority and snapshots; the
  * socket gateway relays doc updates. Instructor edits; students view
@@ -131,7 +146,7 @@ export function BoardTldraw({
     const reconcile = () => {
       if (initialized) return;
       initialized = true;
-      const yRecords = [...yStore.values()];
+      const yRecords = [...yStore.values()].filter(isSharedRecord);
       if (yRecords.length === 0) {
         doc.transact(() => {
           for (const record of editor.store.allRecords()) {
@@ -182,7 +197,7 @@ export function BoardTldraw({
           toRemove.push(key as TLRecord['id']);
         } else {
           const record = yStore.get(key);
-          if (record) toPut.push(record);
+          if (isSharedRecord(record)) toPut.push(record);
         }
       });
       editor.store.mergeRemoteChanges(() => {
