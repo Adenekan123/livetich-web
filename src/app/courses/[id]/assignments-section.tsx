@@ -21,12 +21,15 @@ export function AssignmentsSection({
   isEnrolled,
   assignments,
   groups = [],
+  codeInstruction = false,
 }: {
   courseId: string;
   canManage: boolean;
   isEnrolled: boolean;
   assignments: Row[];
   groups?: { id: string; name: string; memberCount: number }[];
+  /** Code Instruction pack on — surfaces the code-language picker on submit. */
+  codeInstruction?: boolean;
 }) {
   return (
     <section className="mt-10">
@@ -91,6 +94,7 @@ export function AssignmentsSection({
                         courseId={courseId}
                         assignmentId={a.id}
                         submission={a.mySubmission}
+                        codeInstruction={codeInstruction}
                       />
                     ) : (
                       <p className="mt-2 text-xs text-neutral-400">

@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { Header } from '@/components/header';
 import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
+import { isPluginEnabled, PLUGIN_CODE_INSTRUCTION } from '@/lib/plugins';
 import type {
   AssignmentTracking,
   CourseDetail,
@@ -117,6 +118,8 @@ async function StudentAssignments({
     `/courses/${courseId}/assignments`,
     { token },
   );
+  // The code-language picker is a Code Instruction surface — off by default.
+  const codeInstruction = await isPluginEnabled(PLUGIN_CODE_INSTRUCTION, token);
 
   return (
     <AssignmentsSection
@@ -124,6 +127,7 @@ async function StudentAssignments({
       canManage={false}
       isEnrolled={isEnrolled}
       assignments={assignments}
+      codeInstruction={codeInstruction}
     />
   );
 }

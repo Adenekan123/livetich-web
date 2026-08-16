@@ -428,14 +428,18 @@ export function ClassRoom({
           <div className={cn('absolute inset-3', view === 'board' ? '' : 'hidden')}>
             <BoardTldraw sessionId={sessionId} canDraw={isInstructor} />
           </div>
-          <div className={cn('absolute inset-3', view === 'quran' ? '' : 'hidden')}>
-            <QuranReader
-              surah={quranPos.surah}
-              ayah={quranPos.ayah}
-              isInstructor={isInstructor}
-              onNavigate={navigateQuran}
-            />
-          </div>
+          {/* Only mounted when the Islamic Education pack is on, so a plain
+              classroom never opens the shared mushaf (mirrors CodeBoard). */}
+          {islamicEducation && (
+            <div className={cn('absolute inset-3', view === 'quran' ? '' : 'hidden')}>
+              <QuranReader
+                surah={quranPos.surah}
+                ayah={quranPos.ayah}
+                isInstructor={isInstructor}
+                onNavigate={navigateQuran}
+              />
+            </div>
+          )}
           {/* Only mounted when the pack is on, so a plain classroom never opens
               the /code socket. Kept mounted across view switches once present. */}
           {codeInstruction && (

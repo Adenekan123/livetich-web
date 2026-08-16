@@ -29,10 +29,14 @@ export function SubmitAssignmentForm({
   courseId,
   assignmentId,
   submission,
+  codeInstruction = false,
 }: {
   courseId: string;
   assignmentId: string;
   submission: Submission | null;
+  /** Code Instruction pack on — show the code-language picker. When off, this
+   *  is a plain text/file submission and no language is sent. */
+  codeInstruction?: boolean;
 }) {
   const [state, action] = useActionState(submitAssignment, initial);
   const graded = submission?.grade != null;
@@ -52,29 +56,35 @@ export function SubmitAssignmentForm({
         </div>
       )}
 
-      <div className="flex items-center gap-2">
-        <label className="text-xs font-medium text-neutral-500">Language</label>
-        <select
-          name="language"
-          defaultValue={submission?.language ?? ''}
-          className={`${inputClass} h-9 w-auto py-0 text-sm`}
-        >
-          <option value="">Plain text</option>
-          {CODE_LANGUAGES.map((l) => (
-            <option key={l.value} value={l.value}>
-              {l.label}
-            </option>
-          ))}
-        </select>
-        <span className="text-xs text-neutral-400">
-          pick a language to submit code
-        </span>
-      </div>
+      {codeInstruction && (
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium text-neutral-500">Language</label>
+          <select
+            name="language"
+            defaultValue={submission?.language ?? ''}
+            className={`${inputClass} h-9 w-auto py-0 text-sm`}
+          >
+            <option value="">Plain text</option>
+            {CODE_LANGUAGES.map((l) => (
+              <option key={l.value} value={l.value}>
+                {l.label}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-neutral-400">
+            pick a language to submit code
+          </span>
+        </div>
+      )}
       <textarea
         name="content"
         rows={8}
         defaultValue={submission?.content ?? ''}
-        placeholder="Type or paste your submission (code or text)…"
+        placeholder={
+          codeInstruction
+            ? 'Type or paste your submission (code or text)…'
+            : 'Type or paste your submission…'
+        }
         spellCheck={false}
         className={`${inputClass} resize-y font-mono text-[13px] leading-relaxed`}
       />
