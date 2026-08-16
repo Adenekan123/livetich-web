@@ -6,6 +6,26 @@ import { startExam, submitExam } from '@/app/actions/exams';
 import { btn, cardClass, cn, inputClass } from '@/lib/ui';
 import type { ExamAvailableRow, ExamStart, ExamSubmitResult } from '@/lib/types';
 
+/** ALOC question text embeds <sup>/<sub> (and the odd <br>) HTML. Render just
+ *  that whitelist safely: escape everything, then re-enable those tags — so
+ *  "(343)<sup>1/3</sup>" shows as proper math, never as literal markup, and no
+ *  other markup (scripts, attributes) can slip through. */
+function richHtml(s: string): string {
+  const esc = s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return esc
+    .replace(/&lt;(\/?)(sup|sub)&gt;/gi, '<$1$2>')
+    .replace(/&lt;br\s*\/?&gt;/gi, '<br/>');
+}
+
+function Rich({ text, className }: { text: string; className?: string }) {
+  return (
+    <span className={className} dangerouslySetInnerHTML={{ __html: richHtml(text) }} />
+  );
+}
+
 export function ExamTaker({
   courseId,
   exams,
@@ -192,7 +212,7 @@ function Sitting({
         {take.questions.map((q, qi) => (
           <li key={q.id} className={cn(cardClass, 'p-5')}>
             <p className="font-medium text-neutral-900">
-              {qi + 1}. {q.body}
+              {qi + 1}. <Rich text={q.body} />
             </p>
             <ul className="mt-3 space-y-2">
               {q.options.map((opt, i) => {
@@ -214,7 +234,7 @@ function Sitting({
                         onChange={() => setAnswers((p) => ({ ...p, [q.id]: i }))}
                         className="h-4 w-4 text-neutral-900 focus:ring-neutral-400"
                       />
-                      {opt}
+                      <Rich text={opt} />
                     </label>
                   </li>
                 );
