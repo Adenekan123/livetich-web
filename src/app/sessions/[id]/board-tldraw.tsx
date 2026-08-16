@@ -2,7 +2,13 @@
 
 import 'tldraw/tldraw.css';
 import { useEffect, useRef, useState } from 'react';
-import { Tldraw, createTLStore, type Editor, type TLRecord } from 'tldraw';
+import {
+  Tldraw,
+  createTLStore,
+  type Editor,
+  type TLRecord,
+  type TLShapePartial,
+} from 'tldraw';
 import { io, type Socket } from 'socket.io-client';
 import * as Y from 'yjs';
 import { API_URL } from '@/lib/api';
@@ -16,6 +22,31 @@ type BoardSocket = Socket<BoardServerToClientEvents, BoardClientToServerEvents>;
 
 // Yjs transaction origin for edits made on this client (vs. remote/server).
 const LOCAL = 'local';
+
+/** A thin grey bar used to draw guide lines (stable geo-rectangle shape). */
+const bar = (x: number, y: number, w: number, h: number): TLShapePartial =>
+  ({
+    type: 'geo',
+    x,
+    y,
+    props: { geo: 'rectangle', w, h, color: 'grey', fill: 'solid', dash: 'solid', size: 's' },
+  }) as TLShapePartial;
+
+/** Subject board templates — inserted as synced shapes. Gated per plugin. */
+const TEMPLATES: Record<string, { label: string; make: () => TLShapePartial[] }> = {
+  axes: {
+    label: 'Axes',
+    make: () => [bar(399, 100, 2, 600), bar(100, 399, 600, 2)],
+  },
+  lined: {
+    label: 'Lined',
+    make: () => Array.from({ length: 12 }, (_, i) => bar(80, 80 + i * 44, 640, 2)),
+  },
+  ruling: {
+    label: 'Arabic ruling',
+    make: () => Array.from({ length: 8 }, (_, i) => bar(80, 100 + i * 56, 640, 2)),
+  },
+};
 
 /**
  * tldraw's document-scoped record types. Only these are shared; session and
@@ -44,22 +75,35 @@ function isDocumentRecord(r: TLRecord): boolean {
 export function BoardTldraw({
   sessionId,
   canDraw,
+  templates = [],
 }: {
   sessionId: string;
   canDraw: boolean;
+  /** Subject template keys available for this org (gated per plugin). */
+  templates?: string[];
 }) {
   const [store] = useState(() => createTLStore());
   // Presenter tools (camera-follow + shared laser). Refs bridge the socket
   // handlers in onMount to React state for the overlay + follow button.
   const editorRef = useRef<Editor | null>(null);
+  const socketRef = useRef<BoardSocket | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const followingRef = useRef(true);
   const lastCameraRef = useRef<{ x: number; y: number; z: number } | null>(null);
   const [following, setFollowing] = useState(true);
   const [laser, setLaser] = useState<{ x: number; y: number } | null>(null);
+  // Whether the instructor has opened the board for students to draw.
+  const [boardOpen, setBoardOpen] = useState(false);
   useEffect(() => {
     followingRef.current = following;
   }, [following]);
+  // Students gain/lose drawing when the board opens/closes; opening also
+  // releases follow so they can work without the view snapping around.
+  useEffect(() => {
+    if (canDraw) return;
+    editorRef.current?.updateInstanceState({ isReadonly: !boardOpen });
+    if (boardOpen) setFollowing(false);
+  }, [boardOpen, canDraw]);
 
   const handleMount = (editor: Editor) => {
     if (!canDraw) editor.updateInstanceState({ isReadonly: true });
@@ -109,7 +153,11 @@ export function BoardTldraw({
       }
     };
 
+    socketRef.current = socket;
+    // Re-emitted on reconnect too (socket.io fires 'connect' again), so a
+    // dropped student re-syncs board state via the board:state that follows.
     socket.on('connect', () => socket.emit('board:join', { sessionId }));
+    socket.on('board:writable', (p) => setBoardOpen(p.open));
     socket.on('board:state', (p) => {
       applyRemote(p.update);
       reconcile();
@@ -190,6 +238,7 @@ export function BoardTldraw({
         const payload = {
           camera: { x: cam.x, y: cam.y, z: cam.z },
           cursor: pointerInside ? { x: pt.x, y: pt.y } : null,
+          page: editor.getCurrentPageId(),
         };
         const key = JSON.stringify(payload);
         if (key === last) return;
@@ -200,7 +249,12 @@ export function BoardTldraw({
       // Students match the presenter's view (while following) + show the laser.
       socket.on('board:presenter', (p) => {
         lastCameraRef.current = p.camera;
-        if (followingRef.current) editor.setCamera(p.camera);
+        if (followingRef.current) {
+          // Flip to the presenter's page first (if it has synced), then match view.
+          if (p.page && editor.getPage(p.page as Parameters<typeof editor.getPage>[0]))
+            editor.setCurrentPage(p.page as Parameters<typeof editor.setCurrentPage>[0]);
+          editor.setCamera(p.camera);
+        }
         if (p.cursor) {
           const s = editor.pageToScreen(p.cursor);
           setLaser({ x: s.x, y: s.y });
@@ -227,12 +281,68 @@ export function BoardTldraw({
     };
   };
 
+  const toggleWritable = () =>
+    socketRef.current?.emit('board:writable', { sessionId, open: !boardOpen });
+
+  const insertTemplate = (key: string) => {
+    const t = TEMPLATES[key];
+    if (t) editorRef.current?.createShapes(t.make());
+  };
+
+  const exportPng = async () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const ids = editor.getCurrentPageShapeIds();
+    if (ids.size === 0) return;
+    const { blob } = await editor.toImage([...ids], { format: 'png', background: true });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `board-${sessionId}.png`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const pill =
+    'rounded-full px-3 py-1.5 text-xs font-semibold shadow ring-1 ring-neutral-200 transition';
+
   return (
     <div
       ref={wrapperRef}
       className="relative h-full min-h-[320px] overflow-hidden rounded-xl border border-neutral-300 bg-white"
     >
       <Tldraw store={store} onMount={handleMount} />
+
+      {/* Instructor board controls (top-center, clear of tldraw's menus). */}
+      {canDraw && (
+        <div className="pointer-events-none absolute left-1/2 top-3 z-[400] flex -translate-x-1/2 flex-wrap items-center justify-center gap-1.5">
+          <button
+            onClick={toggleWritable}
+            className={`pointer-events-auto ${pill} ${
+              boardOpen ? 'bg-emerald-600 text-white ring-emerald-600' : 'bg-white text-neutral-800'
+            }`}
+          >
+            {boardOpen ? 'Students drawing ✓' : 'Let students draw'}
+          </button>
+          {templates
+            .filter((k) => TEMPLATES[k])
+            .map((k) => (
+              <button
+                key={k}
+                onClick={() => insertTemplate(k)}
+                className={`pointer-events-auto ${pill} bg-white text-neutral-800`}
+              >
+                {TEMPLATES[k].label}
+              </button>
+            ))}
+          <button
+            onClick={exportPng}
+            className={`pointer-events-auto ${pill} bg-white text-neutral-800`}
+          >
+            Export
+          </button>
+        </div>
+      )}
 
       {/* Shared laser — the presenter's pointer, shown to students. */}
       {!canDraw && laser && (

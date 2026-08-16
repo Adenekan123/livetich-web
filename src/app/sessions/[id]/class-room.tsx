@@ -122,6 +122,7 @@ export function ClassRoom({
   me,
   islamicEducation = false,
   codeInstruction = false,
+  testPrep = false,
 }: {
   sessionId: string;
   courseId: string;
@@ -132,6 +133,8 @@ export function ClassRoom({
   islamicEducation?: boolean;
   /** Code Instruction pack on for this org — unlocks the shared code editor. */
   codeInstruction?: boolean;
+  /** Test Prep pack on — adds exam-style chalkboard templates (axes). */
+  testPrep?: boolean;
 }) {
   const router = useRouter();
   const [ending, startEnding] = useTransition();
@@ -426,7 +429,15 @@ export function ClassRoom({
             />
           </div>
           <div className={cn('absolute inset-3', view === 'board' ? '' : 'hidden')}>
-            <BoardTldraw sessionId={sessionId} canDraw={isInstructor} />
+            <BoardTldraw
+              sessionId={sessionId}
+              canDraw={isInstructor}
+              templates={[
+                'lined',
+                ...(testPrep ? ['axes'] : []),
+                ...(islamicEducation ? ['ruling'] : []),
+              ]}
+            />
           </div>
           {/* Only mounted when the Islamic Education pack is on, so a plain
               classroom never opens the shared mushaf (mirrors CodeBoard). */}

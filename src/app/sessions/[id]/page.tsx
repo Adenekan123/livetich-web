@@ -8,6 +8,7 @@ import {
   enabledPluginKeys,
   PLUGIN_CODE_INSTRUCTION,
   PLUGIN_ISLAMIC_EDUCATION,
+  PLUGIN_TEST_PREP,
 } from '@/lib/plugins';
 import type { CourseDetail, LiveSession } from '@/lib/types';
 import { ClassRoom } from './class-room';
@@ -34,6 +35,7 @@ export default async function SessionPage(props: {
   const packs = await enabledPluginKeys(token);
   const islamicEducation = packs.has(PLUGIN_ISLAMIC_EDUCATION);
   const codeInstruction = packs.has(PLUGIN_CODE_INSTRUCTION);
+  const testPrep = packs.has(PLUGIN_TEST_PREP);
 
   if (session.status === 'ENDED') {
     return (
@@ -68,6 +70,7 @@ export default async function SessionPage(props: {
       me={{ userId: user.sub, name: user.name, role: user.role }}
       islamicEducation={islamicEducation}
       codeInstruction={codeInstruction}
+      testPrep={testPrep}
     />
   );
 }
