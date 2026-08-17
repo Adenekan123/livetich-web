@@ -197,7 +197,7 @@ function ExamRow({
                       </div>
                       <div className="mt-1 h-1.5 rounded-full bg-neutral-100">
                         <div
-                          className="h-1.5 rounded-full bg-neutral-900"
+                          className="h-1.5 rounded-full bg-signal-600"
                           style={{ width: `${t.accuracy ?? 0}%` }}
                         />
                       </div>

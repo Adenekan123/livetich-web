@@ -1,43 +1,56 @@
 @import "tailwindcss";
 
 /*
- * livetich design foundation — "White stage, black type, fully monochrome."
- * Ground: pure white. Ink: near-black neutral. No chromatic accent: energy
- * comes from weight, scale, and motion (the pulses that travel the hero
- * network). Errors are the one functional exception (rose). See DESIGN.md.
+ * livetich design foundation — "flat & accessible, one warm brand pair."
+ * Ground: white surfaces, ink near-black. Brand energy comes from a single
+ * org-rebrandable pair — Education Teal (primary) + Course Amber (accent) —
+ * plus grade-green / alert-red semantics. WCAG AA throughout: text-weight
+ * brand tones sit at signal-700 (4.8:1 on white), not the lighter 600.
+ * Data-backed (ui-ux-pro-max: LMS). See DESIGN.md.
  */
 
 :root {
   --background: #ffffff;
-  --foreground: #0a0a0a; /* neutral-950 */
+  --foreground: #0f2e2a; /* deep teal ink */
+  /* Org rebrand hooks — a tenant overrides these two to retheme everything. */
+  --org-primary: #0d9488; /* Education Teal */
+  --org-accent: #d97706; /* Course Amber   */
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-display: var(--font-archivo), var(--font-geist-sans), ui-sans-serif,
+  --font-display: var(--font-lexend), var(--font-source), ui-sans-serif,
     system-ui, sans-serif;
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-source), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
 }
 
 /*
- * Monochrome "signal" scale. The design is fully monochrome — no chromatic
- * accent. This ramp maps to the neutral gray scale so the former accent role
- * (live dots, pulses, primary actions, highlights) now reads as near-black on
- * white. Kept under the `signal-*` name so usages stay in one place.
+ * Primary brand ramp, kept under the `signal-*` name so existing usages
+ * (live dots, links, primary actions, highlights) rebrand in one place.
+ * Anchored to the teal scale: signal-600 (#0d9488) is the brand primary and
+ * matches the org default; signal-700 (#0f766e) is the AA-safe text/hover tone.
  */
 @theme {
-  --color-signal-50: #f5f5f5;
-  --color-signal-100: #e5e5e5;
-  --color-signal-200: #d4d4d4;
-  --color-signal-300: #a3a3a3;
-  --color-signal-400: #525252;
-  --color-signal-500: #171717;
-  --color-signal-600: #0a0a0a;
-  --color-signal-700: #0a0a0a;
-  --color-signal-800: #000000;
-  --color-signal-900: #0a0a0a;
+  --color-signal-50: #f0fdfa;
+  --color-signal-100: #ccfbf1;
+  --color-signal-200: #99f6e4;
+  --color-signal-300: #5eead4;
+  --color-signal-400: #2dd4bf;
+  --color-signal-500: #14b8a6;
+  --color-signal-600: #0d9488;
+  --color-signal-700: #0f766e;
+  --color-signal-800: #115e59;
+  --color-signal-900: #134e4a;
+
+  /* Course Amber — accent for achievement, highlights, secondary CTAs.
+     Use soft (50/100) fills with 700 text for AA; 600 for large fills only. */
+  --color-accent-50: #fffbeb;
+  --color-accent-100: #fef3c7;
+  --color-accent-500: #f59e0b;
+  --color-accent-600: #d97706;
+  --color-accent-700: #b45309;
 }
 
 /*
@@ -65,10 +78,20 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+  font-family: var(--font-source), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* Headings render in the display face (Lexend) app-wide, without each screen
+   having to opt in with a `font-display` utility. */
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-lexend), var(--font-source), ui-sans-serif, system-ui,
+    sans-serif;
 }
 
 /* Pulsing "live" indicator dot. */

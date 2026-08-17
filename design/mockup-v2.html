@@ -1,0 +1,378 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>livetich — UI direction v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* ============ DATA-BACKED DESIGN SYSTEM (ui-ux-pro-max: LMS row 180) ============ */
+  :root{
+    /* brand — org-rebrandable via --org-primary / --org-accent */
+    --org-primary:#0D9488;   /* Education Teal  */
+    --org-accent:#D97706;    /* Course Amber    */
+
+    --primary:var(--org-primary);
+    --primary-600:#0B7F74;
+    --primary-soft:#CCFBF1;
+    --on-primary:#FFFFFF;
+    --accent:var(--org-accent);
+    --accent-soft:#FEF3C7;
+
+    --bg:#F0FDFA;            /* light teal-tinted page */
+    --surface:#FFFFFF;
+    --surface-2:#F6FBFA;
+    --ink:#0F2E2A;          /* deep teal ink */
+    --ink-2:#134E4A;
+    --muted:#5A756F;
+    --border:#D6E7E3;
+    --border-strong:#B8D4CE;
+
+    --success:#15803D;      /* grade green */
+    --success-soft:#DCFCE7;
+    --warn:#B45309;
+    --warn-soft:#FEF3C7;
+    --danger:#DC2626;       /* alert red */
+    --danger-soft:#FEE2E2;
+    --live:#E11D48;
+
+    --r-sm:8px; --r:12px; --r-lg:16px; --r-xl:22px;
+    --focus:0 0 0 3px rgba(13,148,136,.35);
+    --font-head:'Lexend',system-ui,sans-serif;
+    --font-body:'Source Sans 3',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-body);
+       font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  h1,h2,h3,h4{font-family:var(--font-head);margin:0;letter-spacing:-.01em;line-height:1.2}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+
+  /* ---- section framing (mockup chrome only) ---- */
+  .band{border-top:1px solid var(--border);padding:34px 0}
+  .band-label{font-family:var(--font-head);font-size:12px;font-weight:600;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--muted);margin:0 0 18px}
+
+  /* ---- app header ---- */
+  .appbar{background:var(--surface);border-bottom:1px solid var(--border)}
+  .appbar .row{display:flex;align-items:center;gap:20px;height:64px}
+  .logo{display:flex;align-items:center;gap:10px;font-family:var(--font-head);font-weight:700;font-size:18px}
+  .logo .mark{width:30px;height:30px;border-radius:9px;background:var(--primary);color:#fff;
+    display:grid;place-items:center;font-size:16px}
+  .nav{display:flex;gap:4px;margin-left:8px}
+  .nav a{padding:8px 14px;border-radius:999px;font-weight:600;font-size:14.5px;color:var(--muted)}
+  .nav a.on{background:var(--primary-soft);color:var(--ink-2)}
+  .nav a:hover:not(.on){background:var(--surface-2);color:var(--ink)}
+  .appbar .spacer{flex:1}
+  .avatar{width:36px;height:36px;border-radius:999px;background:var(--accent);color:#fff;
+    display:grid;place-items:center;font-family:var(--font-head);font-weight:600;font-size:14px}
+
+  /* ---- buttons ---- */
+  .btn{font-family:var(--font-head);font-weight:600;font-size:14.5px;border-radius:999px;
+    padding:11px 20px;border:1px solid transparent;cursor:pointer;display:inline-flex;
+    align-items:center;gap:8px;transition:background .15s,border-color .15s,color .15s;min-height:44px}
+  .btn:focus-visible{outline:none;box-shadow:var(--focus)}
+  .btn-primary{background:var(--primary);color:#fff}
+  .btn-primary:hover{background:var(--primary-600)}
+  .btn-accent{background:var(--accent);color:#fff}
+  .btn-ghost{background:transparent;border-color:var(--border-strong);color:var(--ink-2)}
+  .btn-ghost:hover{background:var(--surface-2)}
+
+  /* ---- cards ---- */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:20px}
+  .card.link{transition:border-color .15s,transform .15s}
+  .card.link:hover{border-color:var(--border-strong);transform:translateY(-2px)}
+
+  /* ---- badges ---- */
+  .badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px;
+    font-size:12px;font-weight:600;font-family:var(--font-head)}
+  .b-live{background:var(--danger-soft);color:#9F1239}
+  .b-soon{background:var(--accent-soft);color:#92400E}
+  .b-enrolling{background:var(--primary-soft);color:var(--ink-2)}
+  .b-done{background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
+  .dot{width:7px;height:7px;border-radius:999px;background:var(--live);animation:pulse 1.6s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  @media (prefers-reduced-motion:reduce){.dot{animation:none}}
+
+  /* ---- palette / type specimens ---- */
+  .swatches{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:12px}
+  .sw{border:1px solid var(--border);border-radius:var(--r);overflow:hidden;background:var(--surface)}
+  .sw .chip{height:56px}
+  .sw .meta{padding:8px 10px;font-size:11.5px}
+  .sw .meta b{display:block;font-family:var(--font-head);font-size:12.5px}
+  .sw .meta span{color:var(--muted);font-variant-numeric:tabular-nums}
+
+  .grid{display:grid;gap:16px}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g2{grid-template-columns:1fr 1fr}
+  .stat{grid-template-columns:repeat(5,1fr)}
+  @media(max-width:860px){.g3,.stat{grid-template-columns:1fr 1fr}.g2{grid-template-columns:1fr}}
+  @media(max-width:560px){.nav{display:none}}
+
+  .stat-tile{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px}
+  .stat-tile .k{font-family:var(--font-head);font-size:11px;font-weight:600;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:6px}
+  .stat-tile .v{font-family:var(--font-head);font-size:30px;font-weight:700;margin-top:6px;color:var(--ink)}
+
+  .course-title{font-family:var(--font-head);font-weight:600;font-size:17px;margin:10px 0 2px}
+  .meta-row{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:12px;font-size:13px;color:var(--muted)}
+  .meta-row span{display:inline-flex;align-items:center;gap:5px}
+  .thumb{height:96px;border-radius:var(--r);background:
+      linear-gradient(135deg,var(--primary) 0%,#0B7F74 55%,#0a6b62 100%);position:relative;overflow:hidden}
+  .thumb.amber{background:linear-gradient(135deg,var(--accent),#B45309)}
+  .thumb.plum{background:linear-gradient(135deg,#7C3AED,#5B21B6)}
+  .thumb .glyph{position:absolute;right:-8px;bottom:-14px;font-size:74px;opacity:.18;color:#fff}
+  .progress{height:7px;border-radius:999px;background:var(--surface-2);margin-top:14px;overflow:hidden;border:1px solid var(--border)}
+  .progress i{display:block;height:100%;background:var(--success);border-radius:999px}
+
+  /* ---- live classroom preview ---- */
+  .stage{background:#0B211E;border-radius:var(--r-lg);padding:14px;color:#E7F4F1}
+  .stage .board{background:#fff;border-radius:var(--r);height:210px;position:relative;overflow:hidden;
+    color:var(--ink)}
+  .stage .board .pen{position:absolute;font-family:var(--font-head);color:var(--ink-2)}
+  .filmstrip{display:flex;gap:8px;margin-top:10px}
+  .tile{flex:1;height:52px;border-radius:9px;background:#123A35;display:grid;place-items:center;
+    font-size:12px;color:#B9E0DA;position:relative}
+  .tile.you{outline:2px solid var(--primary)}
+  .tile .mic{position:absolute;right:5px;bottom:4px;font-size:11px}
+  .toolbar{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  .tool{background:#123A35;border:1px solid #1d4f48;color:#CFEAE5;border-radius:999px;
+    padding:8px 14px;font-size:13px;font-family:var(--font-head);font-weight:500;min-height:40px;display:inline-flex;align-items:center;gap:6px}
+  .tool.end{background:var(--danger);border-color:var(--danger);color:#fff}
+
+  .callout{background:var(--surface);border:1px dashed var(--border-strong);border-radius:var(--r);
+    padding:16px 18px;font-size:14px;color:var(--muted)}
+  .type-spec div{margin-bottom:2px}
+  .kbd{font-family:var(--font-head);font-size:12px;background:var(--surface-2);border:1px solid var(--border);
+    border-radius:6px;padding:2px 7px;color:var(--ink-2)}
+</style>
+
+<!-- ===================== APP HEADER ===================== -->
+<header class="appbar">
+  <div class="wrap row">
+    <div class="logo"><span class="mark">◎</span> livetich</div>
+    <nav class="nav">
+      <a class="on" href="#">Dashboard</a>
+      <a href="#">Programs</a>
+      <a href="#">Account</a>
+    </nav>
+    <div class="spacer"></div>
+    <button class="btn btn-ghost">Browse catalog</button>
+    <span class="avatar">AB</span>
+  </div>
+</header>
+
+<!-- ===================== HERO / WELCOME ===================== -->
+<div class="wrap" style="padding:30px 20px 6px">
+  <div style="display:flex;align-items:center;gap:16px">
+    <span class="avatar" style="width:52px;height:52px;font-size:19px">AB</span>
+    <div>
+      <h1 style="font-size:27px;font-weight:700">Welcome back, Aisha</h1>
+      <p style="margin:2px 0 0;color:var(--muted)">Jump back into a class or enroll in a new one.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== STUDENT DASHBOARD ===================== -->
+<div class="wrap band" style="border-top:none;padding-top:22px">
+  <p class="band-label">Student dashboard — real screen, restyled</p>
+
+  <div class="stat grid" style="margin-bottom:26px">
+    <div class="stat-tile"><div class="k"><span class="dot"></span>Live now</div><div class="v">1</div></div>
+    <div class="stat-tile"><div class="k">Enrolled</div><div class="v">3</div></div>
+    <div class="stat-tile"><div class="k">This week</div><div class="v">4</div></div>
+    <div class="stat-tile"><div class="k">Assignments due</div><div class="v" style="color:var(--warn)">2</div></div>
+    <div class="stat-tile"><div class="k">Certificates</div><div class="v">1</div></div>
+  </div>
+
+  <div class="grid g2">
+    <!-- Programs -->
+    <section>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <h2 style="font-size:16px;font-weight:700;display:flex;gap:8px;align-items:center">Your programs
+          <span class="badge b-done">3</span></h2>
+        <a href="#" style="font-weight:600;font-size:14px;color:var(--primary)">Browse catalog →</a>
+      </div>
+      <div class="grid" style="gap:14px">
+        <a class="card link">
+          <div class="thumb"><span class="glyph">◎</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-top:12px">
+            <div class="course-title">Hifz — Juz&rsquo; 30 Intensive</div>
+            <span class="badge b-live"><span class="dot"></span>Live now</span>
+          </div>
+          <div class="meta-row">
+            <span>👤 Ustadh Bilal</span><span>📅 Mon·Wed·Fri · 5:00pm</span><span>⏳ Week 4 of 12</span>
+          </div>
+          <div class="progress"><i style="width:33%"></i></div>
+        </a>
+        <a class="card link">
+          <div class="thumb amber"><span class="glyph">✎</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-top:12px">
+            <div class="course-title">Tajwīd Foundations</div>
+            <span class="badge b-soon">Starts Mon</span>
+          </div>
+          <div class="meta-row">
+            <span>👤 Ustadha Maryam</span><span>📅 Tue·Thu · 6:30pm</span><span>⏳ 8 weeks</span>
+          </div>
+        </a>
+      </div>
+    </section>
+
+    <!-- Certificates + due work -->
+    <section>
+      <h2 style="font-size:16px;font-weight:700;margin-bottom:12px;display:flex;gap:8px;align-items:center">
+        Assignments due <span class="badge b-soon">2</span></h2>
+      <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px">
+        <div style="display:flex;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)">
+          <span style="width:38px;height:38px;border-radius:10px;background:var(--warn-soft);color:var(--warn);display:grid;place-items:center">✎</span>
+          <div style="flex:1"><b style="font-family:var(--font-head)">Recite Sūrah An-Nās</b>
+            <div style="font-size:13px;color:var(--muted)">Hifz · audio submission</div></div>
+          <span class="badge b-soon">Due in 2d</span>
+        </div>
+        <div style="display:flex;gap:12px;padding:14px 16px">
+          <span style="width:38px;height:38px;border-radius:10px;background:var(--primary-soft);color:var(--ink-2);display:grid;place-items:center">📝</span>
+          <div style="flex:1"><b style="font-family:var(--font-head)">Tajwīd worksheet 3</b>
+            <div style="font-size:13px;color:var(--muted)">Tajwīd Foundations</div></div>
+          <span class="badge b-enrolling">Due Fri</span>
+        </div>
+      </div>
+
+      <h2 style="font-size:16px;font-weight:700;margin-bottom:12px;display:flex;gap:8px;align-items:center">
+        Certificates <span class="badge b-done">1</span></h2>
+      <div class="card">
+        <div style="display:flex;gap:12px;align-items:center">
+          <span style="width:38px;height:38px;border-radius:10px;background:var(--success-soft);color:var(--success);display:grid;place-items:center">🎓</span>
+          <b style="font-family:var(--font-head)">Qā&rsquo;idah Completion</b>
+        </div>
+        <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0">Issued 12 Jun 2026 · code
+          <span style="font-family:ui-monospace,monospace;color:var(--ink-2)">LT-9F3K-QA</span></p>
+        <div style="display:flex;gap:16px;margin-top:14px">
+          <button class="btn btn-primary" style="padding:9px 16px;min-height:40px">Download PDF</button>
+          <a href="#" style="align-self:center;font-weight:600;font-size:14px;color:var(--muted)">Verify ↗</a>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ===================== LIVE CLASSROOM PREVIEW ===================== -->
+<div class="wrap band">
+  <p class="band-label">Live classroom — shared board, video, roster</p>
+  <div class="grid" style="grid-template-columns:1.6fr 1fr;gap:18px" >
+    <div class="stage">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <span class="badge b-live" style="background:#3a1620;color:#fecdd3"><span class="dot"></span>Live · 24:11</span>
+        <b style="font-family:var(--font-head)">Hifz — Juz&rsquo; 30</b>
+        <span style="margin-left:auto;font-size:13px;color:#9DBFB9">12 present</span>
+      </div>
+      <div class="board">
+        <span class="pen" style="left:22px;top:20px;font-size:22px;font-weight:700">سُورَة النَّاس</span>
+        <span class="pen" style="left:24px;top:64px;font-size:14px;color:var(--muted)">1 · Refuge of mankind</span>
+        <svg style="position:absolute;left:20px;top:96px" width="230" height="80">
+          <path d="M4,60 C50,10 110,70 160,26 200,-2 220,44 226,40" fill="none" stroke="#0D9488" stroke-width="3" stroke-linecap="round"/>
+        </svg>
+        <span class="pen" style="right:16px;top:16px;font-size:12px;background:var(--accent-soft);color:#92400E;padding:3px 9px;border-radius:999px">Ustadh is drawing…</span>
+      </div>
+      <div class="filmstrip">
+        <div class="tile you">You <span class="mic">🎙</span></div>
+        <div class="tile">Bilal <span class="mic">🔇</span></div>
+        <div class="tile">Yusuf</div>
+        <div class="tile">+9</div>
+      </div>
+      <div class="toolbar">
+        <span class="tool">🎙 Mute</span>
+        <span class="tool">📹 Camera</span>
+        <span class="tool">✋ Raise hand</span>
+        <span class="tool">✎ Board</span>
+        <span class="tool end" style="margin-left:auto">Leave</span>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:14px">
+        <h3 style="font-size:15px;margin-bottom:10px">Roster</h3>
+        <div style="display:flex;flex-direction:column;gap:9px;font-size:14px">
+          <div style="display:flex;align-items:center;gap:9px"><span class="avatar" style="width:28px;height:28px;font-size:11px;background:var(--primary)">UB</span>Ustadh Bilal <span class="badge b-enrolling" style="margin-left:auto">Host</span></div>
+          <div style="display:flex;align-items:center;gap:9px"><span class="avatar" style="width:28px;height:28px;font-size:11px">AB</span>Aisha (you) <span style="margin-left:auto">✋</span></div>
+          <div style="display:flex;align-items:center;gap:9px;color:var(--muted)"><span class="avatar" style="width:28px;height:28px;font-size:11px;background:var(--border-strong);color:var(--ink-2)">YM</span>Yusuf M.</div>
+        </div>
+      </div>
+      <div class="callout">Empty / offline / permission-denied states are part of the spec — a low-bandwidth
+        student sees a data-saver board (strokes only, video paused), never a blank screen.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== DESIGN SYSTEM ===================== -->
+<div class="wrap band">
+  <p class="band-label">The system behind it — flat &amp; accessible (WCAG AA), one org-rebrandable brand pair</p>
+
+  <div class="grid g2" style="align-items:start;margin-bottom:28px">
+    <div>
+      <h3 style="font-size:14px;margin-bottom:12px">Palette</h3>
+      <div class="swatches">
+        <div class="sw"><div class="chip" style="background:var(--primary)"></div><div class="meta"><b>Primary</b><span>#0D9488 · teal</span></div></div>
+        <div class="sw"><div class="chip" style="background:var(--accent)"></div><div class="meta"><b>Accent</b><span>#D97706 · amber</span></div></div>
+        <div class="sw"><div class="chip" style="background:var(--success)"></div><div class="meta"><b>Grade</b><span>#15803D</span></div></div>
+        <div class="sw"><div class="chip" style="background:var(--danger)"></div><div class="meta"><b>Alert</b><span>#DC2626</span></div></div>
+        <div class="sw"><div class="chip" style="background:var(--bg);border-bottom:1px solid var(--border)"></div><div class="meta"><b>Page</b><span>#F0FDFA</span></div></div>
+        <div class="sw"><div class="chip" style="background:var(--ink)"></div><div class="meta"><b>Ink</b><span>#0F2E2A</span></div></div>
+      </div>
+    </div>
+    <div>
+      <h3 style="font-size:14px;margin-bottom:12px">Type — Lexend + Source Sans 3</h3>
+      <div class="type-spec card">
+        <div style="font-family:var(--font-head);font-weight:700;font-size:26px">Aa Display / Lexend</div>
+        <div style="font-family:var(--font-head);font-weight:600;font-size:18px;color:var(--ink-2)">Heading · legibility-tuned</div>
+        <div style="margin-top:6px">Body copy in Source Sans 3 at 16px, 1.5 line-height — comfortable for long reading and young readers. Pairs with Noto Sans Arabic for RTL.</div>
+      </div>
+    </div>
+  </div>
+
+  <h3 style="font-size:14px;margin-bottom:12px">Components &amp; states</h3>
+  <div class="grid g3">
+    <div class="card">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Buttons</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        <button class="btn btn-primary">Primary</button>
+        <button class="btn btn-accent">Accent</button>
+        <button class="btn btn-ghost">Ghost</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin:12px 0 6px">Focus ring (keyboard)</div>
+      <button class="btn btn-primary" style="box-shadow:var(--focus)">Focused</button>
+    </div>
+    <div class="card">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Status badges (never colour-only)</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        <span class="badge b-live"><span class="dot"></span>Live now</span>
+        <span class="badge b-soon">Starts Mon</span>
+        <span class="badge b-enrolling">Enrolling</span>
+        <span class="badge b-done">Completed</span>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin:14px 0 6px">Grade / alert</div>
+      <div style="display:flex;gap:8px">
+        <span class="badge" style="background:var(--success-soft);color:var(--success)">✓ Passed</span>
+        <span class="badge" style="background:var(--danger-soft);color:#9F1239">Overdue</span>
+      </div>
+    </div>
+    <div class="card">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Org rebrand — 2 vars swap the whole theme</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="rebrand('#0D9488','#D97706')" class="btn btn-ghost" style="padding:7px 12px;min-height:auto"><span style="width:12px;height:12px;border-radius:4px;background:#0D9488;display:inline-block"></span>Teal</button>
+        <button onclick="rebrand('#7C3AED','#DB2777')" class="btn btn-ghost" style="padding:7px 12px;min-height:auto"><span style="width:12px;height:12px;border-radius:4px;background:#7C3AED;display:inline-block"></span>Madrasah</button>
+        <button onclick="rebrand('#2563EB','#F59E0B')" class="btn btn-ghost" style="padding:7px 12px;min-height:auto"><span style="width:12px;height:12px;border-radius:4px;background:#2563EB;display:inline-block"></span>Exam-prep</button>
+        <button onclick="rebrand('#059669','#0EA5E9')" class="btn btn-ghost" style="padding:7px 12px;min-height:auto"><span style="width:12px;height:12px;border-radius:4px;background:#059669;display:inline-block"></span>Coding</button>
+      </div>
+      <p style="font-size:12.5px;color:var(--muted);margin:12px 0 0">Every tenant keeps the accessible neutrals; only the brand pair changes.</p>
+    </div>
+  </div>
+</div>
+
+<div class="wrap" style="padding:24px 20px 60px;color:var(--muted);font-size:13px">
+  Mockup for approval · direction v2 · flat + accessible · Education Teal / Course Amber · Lexend + Source Sans 3
+</div>
+
+<script>
+  function rebrand(p,a){
+    var r=document.documentElement.style;
+    r.setProperty('--org-primary',p); r.setProperty('--org-accent',a);
+  }
+</script>

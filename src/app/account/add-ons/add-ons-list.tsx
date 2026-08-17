@@ -66,7 +66,7 @@ export function AddOnsList({ plugins }: { plugins: PluginInfo[] }) {
                 disabled={busy}
                 className={cn(
                   'relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition disabled:opacity-50',
-                  p.enabled ? 'bg-neutral-900' : 'bg-neutral-200',
+                  p.enabled ? 'bg-signal-600' : 'bg-neutral-200',
                 )}
               >
                 <span

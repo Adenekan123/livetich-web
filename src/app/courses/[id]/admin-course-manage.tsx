@@ -87,7 +87,7 @@ function InstructorManager({
   return (
     <div className={cn(cardClass, 'p-5')}>
       <div className="flex items-center gap-2">
-        <span className="grid h-8 w-8 place-items-center rounded-lg bg-neutral-900 text-white">
+        <span className="grid h-8 w-8 place-items-center rounded-lg bg-signal-700 text-white">
           <PiChalkboardTeacher className="h-4 w-4" />
         </span>
         <h3 className="text-sm font-semibold text-neutral-900">Instructor</h3>
@@ -177,7 +177,7 @@ function StudentManager({
   return (
     <div className={cn(cardClass, 'p-5')}>
       <div className="flex items-center gap-2">
-        <span className="grid h-8 w-8 place-items-center rounded-lg bg-neutral-900 text-white">
+        <span className="grid h-8 w-8 place-items-center rounded-lg bg-signal-700 text-white">
           <PiUsers className="h-4 w-4" />
         </span>
         <h3 className="text-sm font-semibold text-neutral-900">

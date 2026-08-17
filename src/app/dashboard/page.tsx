@@ -32,11 +32,11 @@ export const metadata = { title: 'Dashboard - livetich' };
 /* Compact cohort badge for dashboard cards (monochrome). */
 function CohortBadge({ status, label }: { status: CohortStatus; label: string }) {
   const styles: Record<CohortStatus, string> = {
-    LIVE: 'bg-neutral-950 text-white',
-    STARTING_SOON: 'bg-neutral-950 text-white',
-    ENROLLING: 'border border-neutral-300 text-neutral-700',
-    OPEN: 'border border-neutral-300 text-neutral-700',
-    IN_PROGRESS: 'bg-neutral-100 text-neutral-700',
+    LIVE: 'bg-rose-100 text-rose-700',
+    STARTING_SOON: 'bg-accent-100 text-accent-700',
+    ENROLLING: 'bg-signal-100 text-signal-800',
+    OPEN: 'border border-neutral-300 text-neutral-600',
+    IN_PROGRESS: 'bg-signal-50 text-signal-800',
     COMPLETED: 'bg-neutral-100 text-neutral-400',
   };
   return (
@@ -182,7 +182,7 @@ function ShortcutCard({
         'flex items-start gap-4 p-5 transition hover:border-neutral-300 hover:shadow-sm',
       )}
     >
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-neutral-900 text-white">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-signal-700 text-white">
         <Icon className="h-5 w-5" />
       </span>
       <div className="min-w-0">
@@ -361,7 +361,7 @@ async function StudentDashboard({ token }: { token: string }) {
             {certificates.map((c) => (
               <div key={c.id} className={cn(cardClass, 'p-5')}>
                 <div className="flex items-center gap-3">
-                  <span className="grid h-9 w-9 place-items-center rounded-xl bg-neutral-900 text-white">
+                  <span className="grid h-9 w-9 place-items-center rounded-xl bg-signal-700 text-white">
                     <PiCertificate className="h-5 w-5" />
                   </span>
                   <p className="font-semibold text-neutral-950">

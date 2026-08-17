@@ -20,7 +20,7 @@ export function CourseCard({
       href={href}
       className={cn(
         cardClass,
-        'group flex h-full flex-col p-5 transition duration-200 ease-out hover:-translate-y-0.5 hover:border-neutral-400 hover:shadow-md',
+        'group flex h-full flex-col p-5 transition duration-200 ease-out hover:-translate-y-0.5 hover:border-signal-300 hover:shadow-md',
       )}
     >
       <div className="flex items-start justify-between gap-3">

@@ -64,7 +64,7 @@ export function Rating({ value }: { value: number | null }) {
           key={n}
           className={cn(
             'h-1.5 w-1.5 rounded-full',
-            n <= value ? 'bg-neutral-900' : 'bg-neutral-200',
+            n <= value ? 'bg-signal-600' : 'bg-neutral-200',
           )}
         />
       ))}

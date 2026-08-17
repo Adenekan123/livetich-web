@@ -144,7 +144,7 @@ export function AiDrafting({
             ref={fileRef}
             type="file"
             accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            className="block text-sm text-neutral-600 file:mr-3 file:rounded-lg file:border-0 file:bg-neutral-900 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white hover:file:bg-neutral-800"
+            className="block text-sm text-neutral-600 file:mr-3 file:rounded-lg file:border-0 file:bg-signal-700 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-white hover:file:bg-signal-800"
           />
           <button
             onClick={upload}

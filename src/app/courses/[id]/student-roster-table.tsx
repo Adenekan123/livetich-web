@@ -80,8 +80,8 @@ export function StudentRosterTable({ students }: { students: RosterStudent[] }) 
               className={cn(
                 'rounded-full border px-3 py-1.5 text-xs font-medium transition',
                 filter === f.value
-                  ? 'border-neutral-950 bg-neutral-950 text-white'
-                  : 'border-neutral-300 bg-white text-neutral-600 hover:border-neutral-500',
+                  ? 'border-signal-700 bg-signal-700 text-white'
+                  : 'border-neutral-300 bg-white text-neutral-600 hover:border-signal-400',
               )}
             >
               {f.label}

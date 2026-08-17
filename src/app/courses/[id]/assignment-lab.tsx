@@ -245,7 +245,7 @@ function NavPill({
       <span
         className={cn(
           'rounded-full px-1.5 py-0.5 text-[11px] font-semibold',
-          active ? 'bg-neutral-950 text-white' : 'bg-neutral-200 text-neutral-500',
+          active ? 'bg-signal-700 text-white' : 'bg-neutral-200 text-neutral-500',
         )}
       >
         {count}
@@ -286,7 +286,7 @@ function SidebarItem({
       <div className="mt-2 flex items-center gap-2">
         <div className="h-1 flex-1 overflow-hidden rounded-full bg-neutral-100">
           <div
-            className={cn('h-full rounded-full', done ? 'bg-signal-500' : 'bg-neutral-900')}
+            className={cn('h-full rounded-full', done ? 'bg-signal-600' : 'bg-accent-500')}
             style={{
               width: `${
                 a.audienceCount > 0
@@ -355,7 +355,7 @@ function AssignmentDetail({
         <div className="mt-4 flex items-center gap-3">
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-100">
             <div
-              className="h-full rounded-full bg-neutral-900 transition-all"
+              className="h-full rounded-full bg-signal-600 transition-all"
               style={{ width: `${pct}%` }}
             />
           </div>
@@ -611,7 +611,7 @@ function SubmissionViewer({
                   rel="noreferrer"
                   className="flex items-center gap-3 rounded-xl border border-neutral-200 bg-white p-4 transition hover:border-neutral-300"
                 >
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-neutral-900 text-white">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-signal-700 text-white">
                     <PiPaperclip className="h-5 w-5" />
                   </span>
                   <span className="min-w-0 flex-1">

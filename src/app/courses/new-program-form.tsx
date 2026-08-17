@@ -131,7 +131,7 @@ export function NewProgramForm() {
             {DAYS.map((d, i) => (
               <label key={i} className="cursor-pointer">
                 <input type="checkbox" name="meetingDays" value={i} className="peer sr-only" />
-                <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-neutral-300 text-xs font-medium text-neutral-600 transition hover:border-neutral-500 peer-checked:border-neutral-950 peer-checked:bg-neutral-950 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-neutral-400 peer-focus-visible:ring-offset-1">
+                <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-neutral-300 text-xs font-medium text-neutral-600 transition hover:border-neutral-500 peer-checked:border-signal-700 peer-checked:bg-signal-700 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-signal-400 peer-focus-visible:ring-offset-1">
                   {d}
                 </span>
               </label>

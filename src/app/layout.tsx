@@ -1,17 +1,18 @@
 import type { Metadata } from "next";
-import { Archivo, Geist, Geist_Mono } from "next/font/google";
+import { Lexend, Source_Sans_3, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-// Display face for bold headlines — a wide, confident grotesque. Not Inter,
-// not a training-data default; carries the minimalist "big black type" world.
-const archivo = Archivo({
-  variable: "--font-archivo",
+// Display face for headings — Lexend is engineered for reading fluency, which
+// suits an all-ages learning product and pairs cleanly with Noto Sans Arabic
+// for RTL. Carries the warm, accessible "flat & human" direction.
+const lexend = Lexend({
+  variable: "--font-lexend",
   subsets: ["latin"],
-  axes: ["wdth"],
 });
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Body face — Source Sans 3, a highly legible humanist sans for long reading.
+const sourceSans = Source_Sans_3({
+  variable: "--font-source",
   subsets: ["latin"],
 });
 
@@ -34,9 +35,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${archivo.variable} ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${lexend.variable} ${sourceSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="flex min-h-full flex-col bg-white text-neutral-950">
+      <body className="flex min-h-full flex-col bg-white text-foreground">
         {children}
       </body>
     </html>
