@@ -49,13 +49,23 @@ export default async function SessionPage(props: {
       <>
         <Header />
         <main className="mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center px-4 py-20 text-center">
-          <span className="text-4xl">🎬</span>
+          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-signal-50 text-signal-700 ring-1 ring-signal-200">
+            <svg viewBox="0 0 24 24" fill="none" className="h-7 w-7" aria-hidden>
+              <path
+                d="M8 5v14l11-7L8 5Z"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
           <h1 className="mt-4 font-display text-3xl font-extrabold tracking-[-0.02em] text-neutral-950">
             This class has ended
           </h1>
           <p className="mt-2 text-sm text-neutral-500">
-            The live session for {course.title} is over. Recordings and
-            certificates appear on the course page.
+            The live session for {course.title} has wrapped up. Head back to the
+            program for its schedule and coursework — and once your instructor
+            issues your certificate, it&apos;ll appear on your dashboard.
           </p>
           <Link
             href={`/courses/${course.id}`}

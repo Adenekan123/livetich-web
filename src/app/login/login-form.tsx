@@ -5,6 +5,7 @@ import { useActionState } from 'react';
 import { login, type AuthFormState } from '@/app/actions/auth';
 import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
+import { PasswordInput } from '@/components/password-input';
 import { inputClass, labelClass } from '@/lib/ui';
 
 const initial: AuthFormState = { error: null };
@@ -40,14 +41,12 @@ export function LoginForm() {
             Forgot password?
           </Link>
         </div>
-        <input
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
           required
           autoComplete="current-password"
           placeholder="••••••••"
-          className={inputClass}
         />
       </div>
       <SubmitButton size="lg" className="w-full" pendingLabel="Logging in…">

@@ -9,9 +9,7 @@ import {
   PiNotePencil,
   PiUsers,
 } from 'react-icons/pi';
-import { enroll, unenroll } from '@/app/actions/courses';
 import { Header } from '@/components/header';
-import { SubmitButton } from '@/components/submit-button';
 import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
 import {
@@ -34,6 +32,7 @@ import {
   tzShort,
   type CohortStatus,
 } from '../catalog-lib';
+import { EnrollActions } from './enroll-actions';
 import { InstructorPanel } from './instructor-panel';
 import { AdminCourseManage } from './admin-course-manage';
 import { AddSectionButton } from './add-section-modal';
@@ -44,17 +43,17 @@ import { JoinLiveCard } from './join-live-card';
 function StatusPill({ status, label }: { status: CohortStatus; label: string }) {
   if (status === 'LIVE') {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-neutral-950 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-600 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white">
         <span className="animate-live h-1.5 w-1.5 rounded-full bg-white" />
         {label}
       </span>
     );
   }
   const styles: Record<Exclude<CohortStatus, 'LIVE'>, string> = {
-    STARTING_SOON: 'bg-neutral-950 text-white',
+    STARTING_SOON: 'bg-accent-100 text-accent-700',
     ENROLLING: 'border border-neutral-300 bg-white text-neutral-800',
     OPEN: 'border border-neutral-300 bg-white text-neutral-800',
-    IN_PROGRESS: 'bg-neutral-100 text-neutral-700',
+    IN_PROGRESS: 'bg-signal-50 text-signal-800',
     COMPLETED: 'bg-neutral-100 text-neutral-400',
   };
   return (
@@ -64,7 +63,7 @@ function StatusPill({ status, label }: { status: CohortStatus; label: string }) 
         styles[status],
       )}
     >
-      {status === 'ENROLLING' && <span className="h-1.5 w-1.5 rounded-full bg-neutral-900" />}
+      {status === 'ENROLLING' && <span className="h-1.5 w-1.5 rounded-full bg-signal-600" />}
       {label}
     </span>
   );
@@ -90,7 +89,7 @@ function NavCard({
         'group flex items-center gap-4 p-5 transition hover:border-neutral-300 hover:shadow-sm',
       )}
     >
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-neutral-900 text-white">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-signal-700 text-white">
         <Icon className="h-5 w-5" />
       </span>
       <div className="min-w-0 flex-1">
@@ -227,19 +226,7 @@ export default async function CoursePage(props: {
 
           <div className="shrink-0">
             {user?.role === 'STUDENT' && (
-              <form
-                action={
-                  isEnrolled ? unenroll.bind(null, id) : enroll.bind(null, id)
-                }
-              >
-                <SubmitButton
-                  variant={isEnrolled ? 'secondary' : 'primary'}
-                  size="lg"
-                  pendingLabel={isEnrolled ? 'Leaving…' : 'Enrolling…'}
-                >
-                  {isEnrolled ? 'Enrolled ✓' : 'Enroll in cohort'}
-                </SubmitButton>
-              </form>
+              <EnrollActions courseId={id} isEnrolled={isEnrolled} />
             )}
             {!user && (
               <Link href="/login" className={btn('primary', 'lg')}>

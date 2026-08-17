@@ -4,11 +4,17 @@ import { useActionState } from 'react';
 import { registerOrganization, type AuthFormState } from '@/app/actions/auth';
 import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
+import { PasswordInput } from '@/components/password-input';
 import { inputClass, labelClass } from '@/lib/ui';
 
 const initial: AuthFormState = { error: null };
 
-/** Company signup: creates the organization and its first admin together. */
+/**
+ * Teaching-space signup: creates the organization and its first admin together.
+ * Kept to the essentials — name, email, password — so a solo instructor is one
+ * short form from being set up. Brand colour and tagline are deferred to the
+ * account brand kit (see account/brand-kit-form.tsx) rather than gating signup.
+ */
 export function RegisterForm() {
   const [state, action] = useActionState(registerOrganization, initial);
 
@@ -18,60 +24,38 @@ export function RegisterForm() {
 
       <div className="space-y-1.5">
         <label htmlFor="organizationName" className={labelClass}>
-          Company / academy name
+          Your school or teaching space
         </label>
         <input
           id="organizationName"
           name="organizationName"
           required
-          placeholder="Bright Future Institute"
+          autoComplete="organization"
+          placeholder="e.g. Bright Future Institute, or your own name"
           className={inputClass}
         />
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <label htmlFor="name" className={labelClass}>
-            Your name
-          </label>
-          <input
-            id="name"
-            name="name"
-            required
-            autoComplete="name"
-            placeholder="Amara Okafor"
-            className={inputClass}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <label htmlFor="primaryColor" className={labelClass}>
-            Brand color
-          </label>
-          <input
-            id="primaryColor"
-            name="primaryColor"
-            type="color"
-            defaultValue="#4f46e5"
-            className="h-[46px] w-full cursor-pointer rounded-xl border border-neutral-300 bg-white p-1"
-          />
-        </div>
+        <p className="text-xs text-neutral-400">
+          This is the name your students will see. You can change it anytime.
+        </p>
       </div>
 
       <div className="space-y-1.5">
-        <label htmlFor="tagline" className={labelClass}>
-          Tagline <span className="text-neutral-400">(optional)</span>
+        <label htmlFor="name" className={labelClass}>
+          Your name
         </label>
         <input
-          id="tagline"
-          name="tagline"
-          placeholder="Careers, accelerated."
+          id="name"
+          name="name"
+          required
+          autoComplete="name"
+          placeholder="Amara Okafor"
           className={inputClass}
         />
       </div>
 
       <div className="space-y-1.5">
         <label htmlFor="email" className={labelClass}>
-          Work email
+          Email
         </label>
         <input
           id="email"
@@ -79,7 +63,7 @@ export function RegisterForm() {
           type="email"
           required
           autoComplete="email"
-          placeholder="you@company.com"
+          placeholder="you@example.com"
           className={inputClass}
         />
       </div>
@@ -87,24 +71,22 @@ export function RegisterForm() {
         <label htmlFor="password" className={labelClass}>
           Password
         </label>
-        <input
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
           required
           minLength={8}
           autoComplete="new-password"
           placeholder="At least 8 characters"
-          className={inputClass}
         />
       </div>
 
-      <SubmitButton size="lg" className="w-full" pendingLabel="Creating workspace…">
-        Create company workspace
+      <SubmitButton size="lg" className="w-full" pendingLabel="Setting up…">
+        Create my teaching space
       </SubmitButton>
       <p className="text-xs text-neutral-400">
-        You&apos;ll invite your instructors and students with a link once your
-        workspace is ready.
+        Next, you&apos;ll add your logo and brand colour, then invite instructors
+        and students with a link — all from your dashboard.
       </p>
     </form>
   );

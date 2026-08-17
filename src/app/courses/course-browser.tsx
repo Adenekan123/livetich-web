@@ -58,17 +58,17 @@ const SearchIcon = () => (
 function StatusPill({ status, label }: { status: CohortStatus; label: string }) {
   if (status === 'LIVE') {
     return (
-      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-neutral-950 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">
+      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-rose-600 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">
         <span className="animate-live h-1.5 w-1.5 rounded-full bg-white" />
         {label}
       </span>
     );
   }
   const styles: Record<Exclude<CohortStatus, 'LIVE'>, string> = {
-    STARTING_SOON: 'bg-neutral-950 text-white',
+    STARTING_SOON: 'bg-accent-100 text-accent-700',
     ENROLLING: 'border border-neutral-300 bg-white text-neutral-800',
     OPEN: 'border border-neutral-300 bg-white text-neutral-800',
-    IN_PROGRESS: 'bg-neutral-100 text-neutral-700',
+    IN_PROGRESS: 'bg-signal-50 text-signal-800',
     COMPLETED: 'bg-neutral-100 text-neutral-400',
   };
   return (
@@ -78,7 +78,7 @@ function StatusPill({ status, label }: { status: CohortStatus; label: string }) 
         styles[status],
       )}
     >
-      {status === 'ENROLLING' && <span className="h-1.5 w-1.5 rounded-full bg-neutral-900" />}
+      {status === 'ENROLLING' && <span className="h-1.5 w-1.5 rounded-full bg-signal-600" />}
       {label}
     </span>
   );
@@ -107,7 +107,7 @@ function CohortCard({ c }: { c: ClassItem }) {
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <span
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-neutral-950 text-sm font-bold tracking-tight text-white"
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-signal-700 text-sm font-bold tracking-tight text-white"
           aria-hidden
         >
           {c.monogram}
@@ -238,7 +238,7 @@ export function CourseBrowser({
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
           {liveCount > 0 && (
             <span className="inline-flex items-center gap-1.5 font-semibold text-neutral-900">
-              <span className="animate-live h-1.5 w-1.5 rounded-full bg-neutral-900" />
+              <span className="animate-live h-1.5 w-1.5 rounded-full bg-rose-500" />
               {liveCount} in session now
             </span>
           )}
@@ -281,7 +281,7 @@ export function CourseBrowser({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search programs or instructors…"
             aria-label="Search programs"
-            className="w-full rounded-full border border-neutral-300 bg-white py-2 pl-10 pr-4 text-sm text-neutral-950 shadow-sm transition placeholder:text-neutral-400 focus:border-neutral-900 focus:outline-none focus:ring-4 focus:ring-neutral-900/10"
+            className="w-full rounded-full border border-neutral-300 bg-white py-2 pl-10 pr-4 text-sm text-neutral-950 shadow-sm transition placeholder:text-neutral-400 focus:border-signal-600 focus:outline-none focus:ring-4 focus:ring-signal-600/15"
           />
         </div>
       </div>
@@ -299,8 +299,8 @@ export function CourseBrowser({
                 className={cn(
                   'rounded-full border px-3 py-1 text-xs font-medium transition',
                   active
-                    ? 'border-neutral-950 bg-neutral-950 text-white'
-                    : 'border-neutral-200 text-neutral-600 hover:border-neutral-400 hover:text-neutral-900',
+                    ? 'border-signal-700 bg-signal-700 text-white'
+                    : 'border-neutral-200 text-neutral-600 hover:border-signal-400 hover:text-signal-700',
                 )}
               >
                 {c}
@@ -323,9 +323,33 @@ export function CourseBrowser({
             <CohortCard key={c.courseId} c={c} />
           ))}
         </div>
-      ) : (
+      ) : classes.length === 0 ? (
+        /* Genuinely empty catalog — nothing to "clear", so guide the next step
+           by role instead of offering a filter reset. */
         <div className="mt-4 rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 px-6 py-16 text-center">
-          <p className="text-3xl">🔍</p>
+          <p className="font-display text-lg font-bold text-neutral-950">
+            {canCreate ? 'No programs yet' : 'No programs published yet'}
+          </p>
+          <p className="mx-auto mt-1 max-w-sm text-sm text-neutral-500">
+            {canCreate
+              ? 'Create your first program to set a schedule, enroll students, and run it live.'
+              : 'Your school hasn’t published any live programs yet. Check back soon — you’ll see them here the moment they open.'}
+          </p>
+          {canCreate && (
+            <div className="mt-5 flex justify-center">
+              <NewProgramButton />
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Catalog has programs, but the current search/filter hides them all. */
+        <div className="mt-4 rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 px-6 py-16 text-center">
+          <span className="mx-auto grid h-11 w-11 place-items-center rounded-full bg-white text-neutral-400 ring-1 ring-neutral-200">
+            <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden>
+              <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+              <path d="m20 20-3.2-3.2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </span>
           <p className="mt-3 font-semibold text-neutral-950">No programs match</p>
           <p className="mt-1 text-sm text-neutral-500">Try a different search or filter.</p>
           <button

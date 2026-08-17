@@ -361,13 +361,29 @@ export function ClassRoom({
       {/* ---------- Top bar ---------- */}
       <header className="flex items-center gap-3 border-b border-white/10 px-4 py-2.5">
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          {/* Connection status: visible label + colour (not colour-alone, not
+              hover-only) and aria-live so state changes are announced. */}
           <span
+            role="status"
+            aria-live="polite"
             className={cn(
-              'inline-block h-2 w-2 shrink-0 rounded-full',
-              connected ? 'animate-live bg-signal-500' : 'bg-neutral-500',
+              'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold',
+              connected
+                ? 'bg-signal-500/15 text-signal-300'
+                : 'bg-amber-500/15 text-amber-300',
             )}
-            title={connected ? 'Connected' : 'Connecting…'}
-          />
+          >
+            <span
+              className={cn(
+                'inline-block h-1.5 w-1.5 rounded-full',
+                connected ? 'animate-live bg-signal-400' : 'bg-amber-400',
+              )}
+              aria-hidden
+            />
+            <span className={connected ? 'hidden sm:inline' : 'inline'}>
+              {connected ? 'Connected' : 'Connecting…'}
+            </span>
+          </span>
           <h1 className="truncate text-sm font-semibold text-white">
             {courseTitle}
           </h1>
