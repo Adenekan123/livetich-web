@@ -15,6 +15,7 @@ export function PasswordInput({
   autoComplete,
   minLength,
   required,
+  showRequirement = false,
 }: {
   id: string;
   name: string;
@@ -22,8 +23,13 @@ export function PasswordInput({
   autoComplete?: string;
   minLength?: number;
   required?: boolean;
+  /** When true (with minLength), show a live "at least N characters" hint. */
+  showRequirement?: boolean;
 }) {
   const [show, setShow] = useState(false);
+  const [value, setValue] = useState('');
+  const met = minLength ? value.length >= minLength : true;
+  const hintId = `${id}-req`;
   return (
     <div className="relative">
       <input
@@ -34,6 +40,8 @@ export function PasswordInput({
         minLength={minLength}
         autoComplete={autoComplete}
         placeholder={placeholder}
+        aria-describedby={showRequirement && minLength ? hintId : undefined}
+        onChange={(e) => setValue(e.target.value)}
         className={cn(inputClass, 'pr-11')}
       />
       <button
@@ -66,6 +74,28 @@ export function PasswordInput({
           </svg>
         )}
       </button>
+      {showRequirement && minLength ? (
+        <p
+          id={hintId}
+          className={cn(
+            'mt-1.5 flex items-center gap-1.5 text-xs transition-colors',
+            value.length === 0
+              ? 'text-neutral-400'
+              : met
+                ? 'text-emerald-600'
+                : 'text-neutral-500',
+          )}
+        >
+          <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0" fill="none" aria-hidden>
+            {met && value.length > 0 ? (
+              <path d="m3.5 8.5 2.5 2.5 6.5-6.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            ) : (
+              <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.4" />
+            )}
+          </svg>
+          At least {minLength} characters
+        </p>
+      ) : null}
     </div>
   );
 }

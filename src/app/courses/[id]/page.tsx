@@ -253,7 +253,10 @@ export default async function CoursePage(props: {
 
         {myCertificate && (
           <div className="mt-6 flex items-start gap-3 rounded-xl border border-signal-200 bg-signal-50 px-4 py-3.5 text-sm text-signal-800">
-            <span className="text-lg leading-none">🎓</span>
+            <svg viewBox="0 0 24 24" fill="none" className="mt-0.5 h-5 w-5 shrink-0" aria-hidden>
+              <path d="M12 4 2 9l10 5 10-5-10-5Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+              <path d="M6 11v4c0 1.1 2.7 2.5 6 2.5s6-1.4 6-2.5v-4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+            </svg>
             <p>
               You hold a certificate for this course (code{' '}
               <span className="font-mono">{myCertificate.verificationCode}</span>

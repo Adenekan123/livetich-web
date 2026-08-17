@@ -60,7 +60,17 @@ export function ClassReminderCard({
       disabled={pending}
       className={cn(btn('primary', 'sm'), 'shrink-0')}
     >
-      {pending ? 'Opening…' : '📅 Add to calendar'}
+      {pending ? (
+        'Opening…'
+      ) : (
+        <>
+          <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden>
+            <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.7" />
+            <path d="M3 9h18M8 3v4M16 3v4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          </svg>
+          Add to calendar
+        </>
+      )}
     </button>
   );
 

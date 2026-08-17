@@ -11,7 +11,7 @@ import { Header } from '@/components/header';
 import { CourseCard } from '@/components/course-card';
 import { api } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
-import { avatarColor, cardClass, cn, initials } from '@/lib/ui';
+import { avatarColor, btn, cardClass, cn, initials } from '@/lib/ui';
 import type {
   CatalogCourse,
   Certificate,
@@ -193,6 +193,103 @@ function ShortcutCard({
   );
 }
 
+/**
+ * First-run guide for a brand-new org: an admin's very first dashboard shows
+ * all-zero stats, which teach nothing. Until there's a program to run, guide
+ * the three activation steps instead, with live checkmarks so it doubles as a
+ * progress tracker and disappears once the org is set up.
+ */
+function FirstRunGuide({
+  hasProgram,
+  hasInstructors,
+  hasStudents,
+}: {
+  hasProgram: boolean;
+  hasInstructors: boolean;
+  hasStudents: boolean;
+}) {
+  const steps = [
+    {
+      done: hasProgram,
+      title: 'Create your first program',
+      desc: 'Set a weekly schedule and how many weeks it runs. This is the class your students join live.',
+      href: '/courses',
+      cta: 'New program',
+    },
+    {
+      done: hasInstructors,
+      title: 'Invite your instructors',
+      desc: 'Add anyone else who teaches. Skip this if it’s just you.',
+      href: '/account',
+      cta: 'Invite instructors',
+    },
+    {
+      done: hasStudents,
+      title: 'Invite your students',
+      desc: 'Share a join link — they land straight in, no signup form.',
+      href: '/account',
+      cta: 'Invite students',
+    },
+  ];
+  const doneCount = steps.filter((s) => s.done).length;
+
+  return (
+    <section className="rounded-2xl border border-signal-200 bg-signal-50/60 p-5 sm:p-6">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="font-display text-lg font-bold tracking-tight text-neutral-950">
+            Get your first class running
+          </h2>
+          <p className="mt-1 text-sm text-neutral-600">
+            A few steps and you’re teaching live.
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-semibold text-signal-700 ring-1 ring-signal-200">
+          {doneCount} of {steps.length} done
+        </span>
+      </div>
+
+      <ol className="mt-5 space-y-3">
+        {steps.map((s, i) => (
+          <li
+            key={s.title}
+            className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-4 sm:flex-row sm:items-center"
+          >
+            <span
+              className={cn(
+                'grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm font-bold',
+                s.done
+                  ? 'bg-signal-600 text-white'
+                  : 'bg-neutral-100 text-neutral-500',
+              )}
+              aria-hidden
+            >
+              {s.done ? (
+                <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none">
+                  <path d="m5 10.5 3.2 3.2L15 6.8" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              ) : (
+                i + 1
+              )}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className={cn('font-semibold', s.done ? 'text-neutral-400 line-through' : 'text-neutral-950')}>
+                {s.title}
+              </p>
+              {!s.done && <p className="mt-0.5 text-sm text-neutral-500">{s.desc}</p>}
+            </div>
+            {!s.done && (
+              <Link href={s.href} className={btn(i === 0 ? 'primary' : 'secondary', 'sm', 'shrink-0')}>
+                {s.cta}
+              </Link>
+            )}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 async function AdminConsole({ token }: { token: string }) {
   const [courses, instructors, students] = await Promise.all([
     api<CatalogCourse[]>('/courses', { token }),
@@ -202,6 +299,19 @@ async function AdminConsole({ token }: { token: string }) {
 
   const enrollments = courses.reduce((n, c) => n + c._count.enrollments, 0);
   const liveNow = courses.filter((c) => Boolean(c.liveSessionId)).length;
+
+  // Brand-new org — guide the first steps instead of showing all-zero stats.
+  if (courses.length === 0) {
+    return (
+      <div className="mt-10">
+        <FirstRunGuide
+          hasProgram={courses.length > 0}
+          hasInstructors={instructors.length > 0}
+          hasStudents={students.length > 0}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="mt-10 space-y-8">

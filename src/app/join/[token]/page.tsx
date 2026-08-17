@@ -36,8 +36,12 @@ export default async function JoinPage(props: {
           </p>
         }
       >
-        <div className="mt-8 rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 px-5 py-8 text-center text-sm text-neutral-500">
-          🔒 Invite links are issued by your company&apos;s admin.
+        <div className="mt-8 flex flex-col items-center gap-2 rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 px-5 py-8 text-center text-sm text-neutral-500">
+          <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6 text-neutral-400" aria-hidden>
+            <rect x="4" y="10" width="16" height="10" rx="2" stroke="currentColor" strokeWidth="1.7" />
+            <path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          </svg>
+          Invite links are issued by your company&apos;s admin.
         </div>
       </AuthShell>
     );

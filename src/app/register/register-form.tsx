@@ -77,7 +77,8 @@ export function RegisterForm() {
           required
           minLength={8}
           autoComplete="new-password"
-          placeholder="At least 8 characters"
+          placeholder="Create a password"
+          showRequirement
         />
       </div>
 

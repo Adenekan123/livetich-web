@@ -199,6 +199,17 @@ export function ClassRoom({
   const instructorPresent = users.some((u) => u.role === 'INSTRUCTOR');
   const waitingForInstructor = !isInstructor && connected && !instructorPresent;
 
+  // Keyboard: Escape dismisses the leave/end-class confirmation, matching the
+  // standard modal contract (the overlay also closes on backdrop click).
+  useEffect(() => {
+    if (!confirmLeave) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setConfirmLeave(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [confirmLeave]);
+
   useEffect(() => {
     const socket: RoomSocket = io(API_URL, {
       // Async auth: the httpOnly cookie is fetched from a same-origin route.
@@ -564,11 +575,18 @@ export function ClassRoom({
                   {answerResult !== null && buzzer.phase === 'QUESTION_OPEN' && (
                     <p
                       className={cn(
-                        'mt-3 text-sm font-medium',
+                        'mt-3 flex items-center gap-1.5 text-sm font-medium',
                         answerResult ? 'text-signal-600' : 'text-rose-600',
                       )}
                     >
-                      {answerResult ? '✅ Correct!' : '❌ Not quite.'}
+                      <svg viewBox="0 0 20 20" className="h-4 w-4 shrink-0" fill="none" aria-hidden>
+                        {answerResult ? (
+                          <path d="m5 10.5 3.2 3.2L15 6.8" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                        ) : (
+                          <path d="M6 6l8 8M14 6l-8 8" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+                        )}
+                      </svg>
+                      {answerResult ? 'Correct!' : 'Not quite.'}
                     </p>
                   )}
                 </div>
