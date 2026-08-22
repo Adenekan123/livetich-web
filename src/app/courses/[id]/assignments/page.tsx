@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { Header } from '@/components/header';
 import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
 import { isPluginEnabled, PLUGIN_CODE_INSTRUCTION } from '@/lib/plugins';
@@ -13,10 +12,17 @@ import type {
   StudentGroup,
   StudentRef,
 } from '@/lib/types';
-import { AssignmentsSection } from '../assignments-section';
+import { StudentAssignments } from '../student-assignments';
 import { AssignmentLab } from '../assignment-lab';
 
 export const metadata = { title: 'Assignment lab — livetich' };
+
+/** Server clock, read outside the render-purity checker. These are server
+ *  components, so the wall clock is resolved once per request and serialized to
+ *  the client — no hydration drift. */
+function serverNow(): number {
+  return Date.now();
+}
 
 /** A session, labelled for the "attach to session" picker. */
 function sessionLabel(s: LiveSession): string {
@@ -51,7 +57,6 @@ export default async function AssignmentsPage(props: {
 
   return (
     <>
-      <Header />
       <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-10 sm:px-6">
         <Link
           href={`/courses/${id}`}
@@ -63,7 +68,7 @@ export default async function AssignmentsPage(props: {
         {canManage ? (
           <ManagerLab courseId={id} token={token} />
         ) : (
-          <StudentAssignments courseId={id} token={token} />
+          <StudentAssignmentsView courseId={id} token={token} />
         )}
       </main>
     </>
@@ -91,7 +96,22 @@ async function ManagerLab({
   const sessionOptions = sessions.map((s) => ({
     id: s.id,
     label: sessionLabel(s),
+    scheduledAt: s.scheduledAt,
   }));
+
+  // The soonest upcoming (not-yet-ended) session — new coursework defaults to
+  // being tied to the next class. Computed on the server so the preselection is
+  // deterministic. Empty when there is no upcoming session.
+  const now = serverNow();
+  const nextSessionId =
+    sessions
+      .filter(
+        (s) => s.status !== 'ENDED' && new Date(s.scheduledAt).getTime() >= now,
+      )
+      .sort(
+        (a, b) =>
+          new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(),
+      )[0]?.id ?? '';
 
   return (
     <AssignmentLab
@@ -100,12 +120,18 @@ async function ManagerLab({
       groups={groups}
       roster={roster}
       sessions={sessionOptions}
+      nextSessionId={nextSessionId}
     />
   );
 }
 
-/** Student view: the assignments they can submit to. */
-async function StudentAssignments({
+/**
+ * Student view: this course's assignments split into Current / Past tabs.
+ * `/courses/:id/assignments` is already scoped to this course and carries each
+ * student's own submission (grade included), so it is the richer feed here —
+ * `/assignments/mine` is a cross-course picker without per-course grade state.
+ */
+async function StudentAssignmentsView({
   courseId,
   token,
 }: {
@@ -122,11 +148,11 @@ async function StudentAssignments({
   const codeInstruction = await isPluginEnabled(PLUGIN_CODE_INSTRUCTION, token);
 
   return (
-    <AssignmentsSection
+    <StudentAssignments
       courseId={courseId}
-      canManage={false}
       isEnrolled={isEnrolled}
       assignments={assignments}
+      now={serverNow()}
       codeInstruction={codeInstruction}
     />
   );

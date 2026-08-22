@@ -2,10 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useActionState } from 'react';
-import { addSection, type ActionState } from '@/app/actions/courses';
+import {
+  addSection,
+  importSectionsFromToc,
+  type ActionState,
+} from '@/app/actions/courses';
 import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
-import { btn, inputClass, labelClass } from '@/lib/ui';
+import { btn, cn, inputClass, labelClass } from '@/lib/ui';
 
 const initial: ActionState = { error: null };
 
@@ -13,16 +17,21 @@ const initial: ActionState = { error: null };
  *  title and an optional description. Closes itself once the section lands. */
 export function AddSectionButton({ courseId }: { courseId: string }) {
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<'single' | 'toc'>('single');
   const [state, action] = useActionState(addSection, initial);
+  const [tocState, tocAction] = useActionState(importSectionsFromToc, initial);
   const formRef = useRef<HTMLFormElement>(null);
 
-  // Close + reset once a section is successfully added.
+  // Close + reset once a section (or a whole TOC) is successfully added. The
+  // close is deferred a tick so it isn't a synchronous setState in the effect.
   useEffect(() => {
-    if (state.ok) {
+    if (!state.ok && !tocState.ok) return;
+    const t = setTimeout(() => {
       setOpen(false);
       formRef.current?.reset();
-    }
-  }, [state.ok]);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [state.ok, tocState.ok]);
 
   useEffect(() => {
     if (!open) return;
@@ -67,6 +76,25 @@ export function AddSectionButton({ courseId }: { courseId: string }) {
               </button>
             </div>
 
+            <div className="mt-4 flex gap-1 rounded-lg bg-neutral-100 p-1">
+              {(['single', 'toc'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMode(m)}
+                  className={cn(
+                    'flex-1 rounded-md px-3 py-1.5 text-sm font-semibold transition',
+                    mode === m
+                      ? 'bg-white text-neutral-900 shadow-sm'
+                      : 'text-neutral-500 hover:text-neutral-800',
+                  )}
+                >
+                  {m === 'single' ? 'Single section' : 'From table of contents'}
+                </button>
+              ))}
+            </div>
+
+            {mode === 'single' ? (
             <form ref={formRef} action={action} className="mt-4 space-y-4">
               <FormError message={state.error} />
               <input type="hidden" name="courseId" value={courseId} />
@@ -101,6 +129,34 @@ export function AddSectionButton({ courseId }: { courseId: string }) {
                 Add section
               </SubmitButton>
             </form>
+            ) : (
+            <form action={tocAction} className="mt-4 space-y-4">
+              <FormError message={tocState.error} />
+              <input type="hidden" name="courseId" value={courseId} />
+              <div className="space-y-1.5">
+                <label htmlFor="section-toc" className={labelClass}>
+                  Table of contents
+                </label>
+                <textarea
+                  id="section-toc"
+                  name="toc"
+                  required
+                  rows={8}
+                  placeholder={
+                    'Paste your document’s table of contents — one heading per line, e.g.\n\n1. Introduction to Tajweed\n2. Rules of Noon Sakinah\n3. Rules of Meem Sakinah'
+                  }
+                  className={`${inputClass} resize-none font-mono text-xs`}
+                />
+                <p className="text-xs text-neutral-400">
+                  Numbering, bullets and page numbers are stripped
+                  automatically. Creates up to 50 sections in order.
+                </p>
+              </div>
+              <SubmitButton className="w-full" pendingLabel="Importing…">
+                Import sections
+              </SubmitButton>
+            </form>
+            )}
           </div>
         </div>
       )}

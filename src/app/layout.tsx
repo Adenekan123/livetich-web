@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Lexend, Source_Sans_3, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -35,9 +36,18 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      data-theme="dark"
+      suppressHydrationWarning
       className={`${lexend.variable} ${sourceSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-white text-foreground">
+        {/* Set the landing theme before first paint to avoid a flash. Stored
+            choice wins; otherwise dark is the default. */}
+        <Script id="lp-theme-init" strategy="beforeInteractive">
+          {
+            "(function(){try{var t=localStorage.getItem('lp-theme');if(t!=='light'&&t!=='dark'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();"
+          }
+        </Script>
         {children}
       </body>
     </html>

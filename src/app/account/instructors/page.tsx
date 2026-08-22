@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Header } from '@/components/header';
 import { api } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
 import { avatarColor, cardClass, cn, initials } from '@/lib/ui';
@@ -24,7 +23,8 @@ export default async function ManageInstructorsPage(props: {
   const [instructors, courses, invites] = await Promise.all([
     api<OrgMember[]>('/organizations/instructors', { token }),
     api<CatalogCourse[]>('/courses', { token }),
-    api<OrgInvite[]>('/organizations/invites', { token }),
+    // Workspace-level links only — program-scoped links live on the program page.
+    api<OrgInvite[]>('/organizations/invites?courseId=', { token }),
   ]);
 
   const programs = courses.map((c) => ({
@@ -41,7 +41,6 @@ export default async function ManageInstructorsPage(props: {
 
   return (
     <>
-      <Header />
       <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-10 sm:px-6">
         <Link href="/account" className="text-sm text-neutral-500 hover:text-neutral-900">
           ← Account

@@ -53,6 +53,98 @@
   --color-accent-700: #b45309;
 }
 
+/* ================================================================== *
+ *  Landing page theme tokens (lp-*) — flip between the dark terminal  *
+ *  world and a light "daylight" variation. Only the landing uses      *
+ *  these, so toggling data-theme never touches the app surfaces.      *
+ *  Dark is the default (on :root); [data-theme="light"] overrides.    *
+ * ================================================================== */
+:root,
+:root[data-theme='dark'] {
+  --lp-bg: #05130f;
+  --lp-alt: rgba(255, 255, 255, 0.02);
+  --lp-surface: rgba(255, 255, 255, 0.04);
+  --lp-surface-2: rgba(255, 255, 255, 0.05);
+  --lp-surface-3: rgba(255, 255, 255, 0.08);
+  --lp-border: rgba(255, 255, 255, 0.1);
+  --lp-border-2: rgba(255, 255, 255, 0.18);
+  --lp-text: #ffffff;
+  --lp-text-2: #d4d4d4;
+  --lp-text-3: #a3a3a3;
+  --lp-accent: #bef264;
+  --lp-accent-strong: #a3e635;
+  --lp-lime: #bef264;
+  --lp-ink: #05130f;
+  /* globe particle colours as rgb triplets (alpha applied in canvas) */
+  --lp-globe-rgb: 190, 242, 100;
+  --lp-globe-hot-rgb: 217, 249, 157;
+  --lp-globe-arc-rgb: 163, 230, 53;
+  /* nav-over-hero + solid-on-scroll */
+  --lp-nav-fg: rgba(240, 253, 250, 0.74);
+  --lp-nav-fg-hover: #ffffff;
+  --lp-nav-solid-bg: rgba(9, 20, 15, 0.8);
+  --lp-nav-solid-border: rgba(255, 255, 255, 0.1);
+}
+
+:root[data-theme='light'] {
+  --lp-bg: #eef2ea;
+  --lp-alt: rgba(15, 46, 42, 0.035);
+  --lp-surface: rgba(255, 255, 255, 0.72);
+  --lp-surface-2: rgba(255, 255, 255, 0.55);
+  --lp-surface-3: rgba(255, 255, 255, 0.95);
+  --lp-border: rgba(15, 46, 42, 0.12);
+  --lp-border-2: rgba(15, 46, 42, 0.18);
+  --lp-text: #0f2e2a;
+  --lp-text-2: #3f5750;
+  --lp-text-3: #63776f;
+  --lp-accent: #a3e635;
+  --lp-accent-strong: #84cc16;
+  --lp-lime: #4d7c0f;
+  --lp-ink: #05130f;
+  --lp-globe-rgb: 60, 96, 10;
+  --lp-globe-hot-rgb: 40, 66, 8;
+  --lp-globe-arc-rgb: 63, 100, 12;
+  --lp-nav-fg: rgba(15, 46, 42, 0.72);
+  --lp-nav-fg-hover: #0f2e2a;
+  --lp-nav-solid-bg: rgba(255, 255, 255, 0.8);
+  --lp-nav-solid-border: rgba(15, 46, 42, 0.1);
+}
+
+/*
+ * Landing type scale bump — the marketing page reads a touch larger than the
+ * app default. Tailwind v4's text-* utilities resolve `font-size` from these
+ * --text-* custom properties, so redefining them on the landing root scales
+ * every text-* utility inside it (~10%) without touching the app surfaces or
+ * the arbitrary mono labels (text-[11px] etc.), which stay literal by design.
+ */
+.lp-root {
+  --text-xs: 0.95rem;
+  --text-sm: 1.18rem;
+  --text-base: 1.35rem;
+  --text-lg: 1.5rem;
+  --text-xl: 1.68rem;
+  --text-2xl: 1.98rem;
+  --text-3xl: 2.45rem;
+  --text-4xl: 2.85rem;
+}
+
+@theme inline {
+  --color-lp-bg: var(--lp-bg);
+  --color-lp-alt: var(--lp-alt);
+  --color-lp-surface: var(--lp-surface);
+  --color-lp-surface-2: var(--lp-surface-2);
+  --color-lp-surface-3: var(--lp-surface-3);
+  --color-lp-border: var(--lp-border);
+  --color-lp-border-2: var(--lp-border-2);
+  --color-lp-text: var(--lp-text);
+  --color-lp-text-2: var(--lp-text-2);
+  --color-lp-text-3: var(--lp-text-3);
+  --color-lp-accent: var(--lp-accent);
+  --color-lp-accent-strong: var(--lp-accent-strong);
+  --color-lp-lime: var(--lp-lime);
+  --color-lp-ink: var(--lp-ink);
+}
+
 /*
  * Uthmani mushaf typeface for the shared Qur'an reader (Amiri, SIL OFL).
  * Self-hosted from /public/fonts so the reader works offline / data-saver.
@@ -169,4 +261,190 @@ h4 {
   .animate-wave {
     animation: none;
   }
+}
+
+/* Custom cursor for the landing page (see components/landing-cursor.tsx).
+ * GSAP moves these via transform; they start hidden and fade in on first move.
+ * Hidden entirely on touch / coarse pointers and under reduced motion. */
+.cursor-glow {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 340px;
+  height: 340px;
+  margin: -170px 0 0 -170px;
+  border-radius: 9999px;
+  background: radial-gradient(
+    circle,
+    rgba(190, 242, 100, 0.1) 0%,
+    rgba(190, 242, 100, 0.05) 40%,
+    transparent 70%
+  );
+  pointer-events: none;
+  z-index: 60;
+  opacity: 0;
+  will-change: transform;
+}
+.cursor-dot {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 9999px;
+  background: #bef264;
+  mix-blend-mode: screen;
+  pointer-events: none;
+  z-index: 61;
+  opacity: 0;
+  will-change: transform;
+}
+@media (hover: none), (pointer: coarse) {
+  .cursor-glow,
+  .cursor-dot {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cursor-glow,
+  .cursor-dot {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ *  Landing hero — GSAP support (see components/landing-gsap.tsx)      *
+ * ------------------------------------------------------------------ */
+
+/* Anti-FOUC: hero entrance elements start hidden so nothing flashes before
+ * hydration. GSAP animates them in; reduced-motion reveals them instantly; a
+ * <noscript> block in the page reveals them when JS is absent. */
+[data-hero] [data-anim],
+[data-hero] [data-anim-line],
+[data-hero] [data-globe] {
+  opacity: 0;
+}
+
+/* The landing header: transparent over the dark hero, solid once scrolled past
+ * (the .is-solid class is toggled by GSAP — a legibility state, not motion). */
+#landing-nav {
+  transition:
+    background-color 0.35s ease,
+    border-color 0.35s ease,
+    box-shadow 0.35s ease;
+  border-bottom: 1px solid transparent;
+}
+#landing-nav .nav-brand {
+  color: var(--lp-nav-fg-hover);
+  transition: color 0.35s ease;
+}
+#landing-nav .nav-link {
+  color: var(--lp-nav-fg);
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease;
+}
+#landing-nav .nav-link:hover {
+  color: var(--lp-nav-fg-hover);
+  background: var(--lp-surface-2);
+}
+#landing-nav .nav-cta {
+  background: var(--lp-accent);
+  color: var(--lp-ink);
+  transition: background-color 0.2s ease;
+}
+#landing-nav .nav-cta:hover {
+  background: var(--lp-accent-strong);
+}
+
+#landing-nav.is-solid {
+  background: var(--lp-nav-solid-bg);
+  backdrop-filter: blur(16px) saturate(1.5);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
+  border-bottom-color: var(--lp-nav-solid-border);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
+}
+#landing-nav.is-solid .nav-brand,
+#landing-nav.is-solid .nav-link {
+  color: var(--lp-text);
+}
+#landing-nav.is-solid .nav-link {
+  color: var(--lp-text-2);
+}
+#landing-nav.is-solid .nav-link:hover {
+  color: var(--lp-lime);
+  background: var(--lp-surface-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #landing-nav,
+  #landing-nav * {
+    transition: none;
+  }
+}
+
+/* ======================================================================= *
+ *  Live-session colour schemes (instructor-selectable, synced per room)   *
+ *                                                                         *
+ *  The classroom root carries `.room-shell` + `data-room-scheme`. Tailwind *
+ *  v4 emits `signal-*` utilities as `var(--color-signal-*)`, so re-tinting *
+ *  the ramp on this subtree re-themes every existing accent with no markup *
+ *  change. Chrome surfaces read `--room-bg` / `--room-panel` directly.     *
+ *  `teal` is the classic default (retains the current look).              *
+ * ======================================================================= */
+.room-shell {
+  --room-bg: #0a0a0a; /* neutral-950 — current */
+  --room-panel: #171717; /* neutral-900 — current */
+  transition:
+    background-color 0.35s ease,
+    color 0.35s ease;
+}
+
+/* Forest — from the reference screenshot: green-black room, emerald accent. */
+.room-shell[data-room-scheme='forest'] {
+  --room-bg: #071108;
+  --room-panel: #0d1a11;
+  --color-signal-50: #ecfdf5;
+  --color-signal-100: #d1fae5;
+  --color-signal-200: #a7f3d0;
+  --color-signal-300: #6ee7b7;
+  --color-signal-400: #34d399;
+  --color-signal-500: #10b981;
+  --color-signal-600: #059669;
+  --color-signal-700: #047857;
+  --color-signal-800: #065f46;
+  --color-signal-900: #064e3b;
+}
+
+/* Indigo — cool, focused: deep indigo room, violet accent. */
+.room-shell[data-room-scheme='indigo'] {
+  --room-bg: #0a091d;
+  --room-panel: #14122e;
+  --color-signal-50: #eef2ff;
+  --color-signal-100: #e0e7ff;
+  --color-signal-200: #c7d2fe;
+  --color-signal-300: #a5b4fc;
+  --color-signal-400: #818cf8;
+  --color-signal-500: #6366f1;
+  --color-signal-600: #4f46e5;
+  --color-signal-700: #4338ca;
+  --color-signal-800: #3730a3;
+  --color-signal-900: #312e81;
+}
+
+/* Plum — warm, high-energy: dark wine room, rose accent. */
+.room-shell[data-room-scheme='plum'] {
+  --room-bg: #17070f;
+  --room-panel: #230f18;
+  --color-signal-50: #fff1f2;
+  --color-signal-100: #ffe4e6;
+  --color-signal-200: #fecdd3;
+  --color-signal-300: #fda4af;
+  --color-signal-400: #fb7185;
+  --color-signal-500: #f43f5e;
+  --color-signal-600: #e11d48;
+  --color-signal-700: #be123c;
+  --color-signal-800: #9f1239;
+  --color-signal-900: #881337;
 }

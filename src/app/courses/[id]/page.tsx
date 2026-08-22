@@ -6,10 +6,10 @@ import {
   PiClipboardText,
   PiClockCounterClockwise,
   PiExam,
+  PiLightning,
   PiNotePencil,
   PiUsers,
 } from 'react-icons/pi';
-import { Header } from '@/components/header';
 import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
 import {
@@ -17,12 +17,14 @@ import {
   PLUGIN_ISLAMIC_EDUCATION,
   PLUGIN_TEST_PREP,
 } from '@/lib/plugins';
-import { btn, cardClass, cn } from '@/lib/ui';
+import { cardClass, cn } from '@/lib/ui';
 import type {
+  AssessmentQuestion,
   Certificate,
   CourseDetail,
   Enrollment,
-  OrgMember,
+  MyAssignment,
+  OrgInvite,
 } from '@/lib/types';
 import {
   deriveCohort,
@@ -34,10 +36,14 @@ import {
 } from '../catalog-lib';
 import { EnrollActions } from './enroll-actions';
 import { InstructorPanel } from './instructor-panel';
-import { AdminCourseManage } from './admin-course-manage';
+import { CourseInviteManage } from './course-invite-manage';
 import { AddSectionButton } from './add-section-modal';
 import { ClassReminderCard } from './class-reminder-card';
 import { JoinLiveCard } from './join-live-card';
+import { ShadowJoinCard } from './shadow-join-card';
+import { EditProgramButton } from './edit-program-modal';
+import { AssessmentGate } from './assessment-gate';
+import { Leaderboard } from '@/components/leaderboard';
 
 /* Server-rendered cohort status pill (mirrors the catalog's monochrome styles). */
 function StatusPill({ status, label }: { status: CohortStatus; label: string }) {
@@ -69,32 +75,45 @@ function StatusPill({ status, label }: { status: CohortStatus; label: string }) 
   );
 }
 
-/* Link card to a program sub-page (roster, assignments, session history). */
-function NavCard({
+/* A teaching-tool card in the main column's "Teach" grid. */
+function ToolCard({
   href,
   icon: Icon,
   title,
   desc,
+  badge,
 }: {
   href: string;
   icon: IconType;
   title: string;
   desc: string;
+  /** Optional count pill (e.g. pending assignments) shown by the title. */
+  badge?: number;
 }) {
   return (
     <Link
       href={href}
       className={cn(
         cardClass,
-        'group flex items-center gap-4 p-5 transition hover:border-neutral-300 hover:shadow-sm',
+        'group flex items-start gap-4 p-4 transition hover:-translate-y-0.5 hover:border-neutral-300 hover:shadow-sm',
       )}
     >
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-signal-700 text-white">
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-signal-700 text-white">
         <Icon className="h-5 w-5" />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="font-semibold text-neutral-950">{title}</p>
-        <p className="mt-0.5 truncate text-sm text-neutral-500">{desc}</p>
+        <p className="flex items-center gap-2 font-semibold text-neutral-950">
+          {title}
+          {badge != null && badge > 0 && (
+            <span
+              className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-accent-500 px-1.5 py-0.5 text-[11px] font-bold text-neutral-950"
+              title={`${badge} pending`}
+            >
+              {badge}
+            </span>
+          )}
+        </p>
+        <p className="mt-0.5 text-sm text-neutral-500">{desc}</p>
       </div>
       <span className="text-neutral-300 transition group-hover:translate-x-0.5 group-hover:text-neutral-500">
         →
@@ -103,15 +122,87 @@ function NavCard({
   );
 }
 
-/* One labelled fact in the cohort summary strip. */
-function Fact({ label, value, sub }: { label: string; value: string; sub?: string | null }) {
+/* A demoted "records" link (session history, roster) — lighter than a tool card. */
+function RecordLink({ href, icon: Icon, label }: { href: string; icon: IconType; label: string }) {
   return (
-    <div className="min-w-0">
-      <dt className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">
-        {label}
-      </dt>
-      <dd className="mt-1 truncate text-sm font-semibold text-neutral-950">{value}</dd>
-      {sub && <dd className="truncate text-xs text-neutral-400">{sub}</dd>}
+    <Link
+      href={href}
+      className="inline-flex items-center gap-2.5 rounded-xl border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-800 transition hover:border-neutral-300 hover:bg-neutral-50"
+    >
+      <Icon className="h-[18px] w-[18px] text-signal-700" />
+      {label}
+      <span className="text-neutral-300">→</span>
+    </Link>
+  );
+}
+
+/* Section label with a rule and optional trailing action. */
+function SectionLabel({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
+  return (
+    <div className="mb-4 flex items-center gap-3">
+      <h2 className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-neutral-400">
+        {children}
+      </h2>
+      <span className="h-px flex-1 bg-neutral-200" />
+      {action}
+    </div>
+  );
+}
+
+/* Rail: compact cohort facts. */
+function FactsCard({
+  schedule,
+  tz,
+  duration,
+  dates,
+  datesLabel,
+}: {
+  schedule: string | null;
+  tz: string | null;
+  duration: string | null;
+  dates: string | null;
+  datesLabel: string;
+}) {
+  const rows: { k: string; v: string; sub?: string | null }[] = [
+    { k: 'Schedule', v: schedule ?? 'To be announced', sub: schedule ? tz : null },
+    { k: 'Duration', v: duration ?? 'Self-paced' },
+    { k: datesLabel, v: dates ?? 'To be scheduled' },
+    { k: 'Certificate', v: 'On completion', sub: 'Verifiable' },
+  ];
+  return (
+    <div className={cn(cardClass, 'overflow-hidden')}>
+      <p className="border-b border-neutral-100 px-4 py-3 font-mono text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">
+        Details
+      </p>
+      <dl className="px-4">
+        {rows.map((r) => (
+          <div key={r.k} className="flex items-start justify-between gap-3 border-t border-neutral-100 py-2.5 first:border-t-0">
+            <dt className="text-[13px] text-neutral-500">{r.k}</dt>
+            <dd className="text-right text-[13.5px] font-semibold text-neutral-900">
+              {r.v}
+              {r.sub && <span className="block text-[11.5px] font-normal text-neutral-400">{r.sub}</span>}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+/* Rail: next-session card for admins (who don't join the room themselves). */
+function NextSessionCard({ live, when }: { live: boolean; when: string | null }) {
+  return (
+    <div className={cn(cardClass, 'overflow-hidden border-lime-100')}>
+      <div className="bg-gradient-to-b from-lime-50 to-white p-4">
+        <p className="flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-wider text-lime-700">
+          {live && <span className="animate-live h-1.5 w-1.5 rounded-full bg-lime-500" />}
+          {live ? 'In session' : 'Next session'}
+        </p>
+        <p className="mt-2 text-[17px] font-extrabold tracking-tight text-neutral-950">
+          {when ?? 'Not scheduled'}
+        </p>
+        {!live && when && <p className="mt-0.5 text-[12.5px] text-neutral-500">The instructor opens the room.</p>}
+      </div>
     </div>
   );
 }
@@ -161,24 +252,36 @@ export default async function CoursePage(props: {
     myCertificate = certs.find((c) => c.courseId === id);
   }
 
-  // Admin inline management: the org's members + this program's roster.
-  type CourseStudent = { id: string; name: string; email: string };
-  let adminData: {
-    instructors: OrgMember[];
-    orgStudents: OrgMember[];
-    students: CourseStudent[];
-  } | null = null;
+  // Pending coursework in this program — surfaced as a badge on the student's
+  // Assignments card so they can see there's work waiting without opening it.
+  let pendingAssignments = 0;
+  if (isEnrolled && token) {
+    const mineAssignments = await api<MyAssignment[]>('/assignments/mine', {
+      token,
+    }).catch(() => [] as MyAssignment[]);
+    pendingAssignments = mineAssignments.filter(
+      (a) => a.courseId === id && !a.submitted,
+    ).length;
+  }
+
+  // Instructor go-live guard: if this program has no authored assessment
+  // questions, no post-class quiz will materialize — warn before going live.
+  let hasAssessment = true;
+  if (isOwner && token) {
+    const questions = await api<AssessmentQuestion[]>(
+      `/courses/${id}/assessment/questions`,
+      { token },
+    ).catch(() => [] as AssessmentQuestion[]);
+    hasAssessment = questions.length > 0;
+  }
+
+  // Admin management is invite-first: fetch this program's scoped invite links.
+  let courseInvites: OrgInvite[] = [];
   if (isAdmin) {
-    const [instructors, orgStudents, enrollments] = await Promise.all([
-      api<OrgMember[]>('/organizations/instructors', { token }),
-      api<OrgMember[]>('/organizations/students', { token }),
-      api<{ student: CourseStudent }[]>(`/courses/${id}/students`, { token }),
-    ]);
-    adminData = {
-      instructors,
-      orgStudents,
-      students: enrollments.map((e) => e.student),
-    };
+    courseInvites = await api<OrgInvite[]>(
+      `/organizations/invites?courseId=${id}`,
+      { token },
+    ).catch(() => []);
   }
 
   const liveNow = sessionStatus.isLive;
@@ -189,102 +292,189 @@ export default async function CoursePage(props: {
   const dateRange = course.startDate
     ? formatDateRange(course.startDate, course.durationWeeks)
     : null;
+  const nextWhen = sessionStatus.nextAt
+    ? new Date(sessionStatus.nextAt).toLocaleString(undefined, {
+        weekday: 'long',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZone: course.timezone ?? undefined,
+      })
+    : null;
+
+  // The teaching tools that appear in the main column's "Teach" grid.
+  const canUseTools = canManage || isEnrolled;
+  const teachTools: {
+    href: string;
+    icon: IconType;
+    title: string;
+    desc: string;
+    badge?: number;
+  }[] = [];
+  if (canUseTools) {
+    teachTools.push({
+      href: `/courses/${id}/assignments`,
+      icon: PiNotePencil,
+      title: canManage ? 'Assignment lab' : 'Assignments',
+      desc: canManage ? 'Coursework, groups, grading & submissions' : 'View and submit coursework',
+      ...(!canManage && pendingAssignments > 0
+        ? { badge: pendingAssignments }
+        : {}),
+    });
+    teachTools.push({
+      href: `/courses/${id}/assessment`,
+      icon: PiClipboardText,
+      title: 'Assessments',
+      desc: canManage ? 'Question bank + remediation tasks' : 'Post-class quizzes and practice',
+    });
+    if (canManage) {
+      teachTools.push({
+        href: `/courses/${id}/buzzer`,
+        icon: PiLightning,
+        title: 'Buzzer questions',
+        desc: 'Build a bank of live buzzer rounds',
+      });
+    }
+    if (testPrep) {
+      teachTools.push({
+        href: `/courses/${id}/exams`,
+        icon: PiExam,
+        title: 'Test Prep',
+        desc: canManage ? 'Build timed mock exams; import past questions' : 'Sit timed practice exams',
+      });
+    }
+    if (islamicEducation) {
+      teachTools.push({
+        href: `/courses/${id}/hifz`,
+        icon: PiBookOpenText,
+        title: 'Hifz & memorization',
+        desc: canManage ? 'Set targets, log recitations, track progress' : 'Your memorization targets and recitation log',
+      });
+    }
+  }
 
   return (
-    <>
-      <Header />
-      <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-10 sm:px-6">
-        {/* Course header */}
-        <div className="flex flex-wrap items-start justify-between gap-5">
-          <div className="max-w-2xl">
-            <div className="flex items-center gap-2 text-sm text-neutral-500">
-              <Link href="/courses" className="hover:text-neutral-700">
-                Programs
-              </Link>
-              <span className="text-neutral-300">/</span>
-              <span className="text-neutral-400">{course.category ?? 'Program'}</span>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-              <h1 className="font-display text-3xl font-extrabold tracking-tight text-neutral-950">
-                {course.title}
-              </h1>
-              <StatusPill status={cohort.status} label={cohort.label} />
-            </div>
-            <p className="mt-2 text-sm text-neutral-500">
-              Taught by{' '}
-              <span className="font-medium text-neutral-700">
-                {course.instructor?.name ?? 'To be assigned'}
-              </span>
-              {course.level && <> · {course.level}</>} ·{' '}
-              {course._count.enrollments}{' '}
-              {course._count.enrollments === 1 ? 'student' : 'students'} enrolled
-            </p>
-            {course.description && (
-              <p className="mt-4 text-neutral-700">{course.description}</p>
-            )}
-          </div>
+    <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-9 sm:px-6 lg:px-8">
+      {/* Class-end assessment gate: enrolled students with a pending quiz are
+          blocked until they start it. */}
+      {user?.role === 'STUDENT' && isEnrolled && <AssessmentGate courseId={id} />}
 
-          <div className="shrink-0">
-            {user?.role === 'STUDENT' && (
-              <EnrollActions courseId={id} isEnrolled={isEnrolled} />
+      {/* Header */}
+      <div className="max-w-3xl">
+        <div className="flex items-center gap-2 text-sm text-neutral-500">
+          <Link href="/courses" className="hover:text-neutral-700">
+            Programs
+          </Link>
+          <span className="text-neutral-300">/</span>
+          <span className="text-neutral-400">{course.category ?? 'Program'}</span>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <h1 className="font-display text-3xl font-extrabold tracking-tight text-neutral-950">
+            {course.title}
+          </h1>
+          <StatusPill status={cohort.status} label={cohort.label} />
+          {canManage && (
+            <span className="sm:ml-auto">
+              <EditProgramButton course={course} />
+            </span>
+          )}
+        </div>
+        <p className="mt-2 text-sm text-neutral-500">
+          Taught by{' '}
+          <span className="font-medium text-neutral-700">
+            {course.instructor?.name ?? 'To be assigned'}
+          </span>
+          {course.level && <> · {course.level}</>} · {course._count.enrollments}{' '}
+          {course._count.enrollments === 1 ? 'student' : 'students'} enrolled
+        </p>
+        {course.description && <p className="mt-4 text-neutral-700">{course.description}</p>}
+      </div>
+
+      {/* Two-column: main content + sticky cockpit rail. On mobile the rail
+          (live action + facts) leads, then the teaching content. */}
+      <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        {/* MAIN */}
+        <div className="order-2 min-w-0 space-y-10 lg:order-1">
+          {teachTools.length > 0 && (
+            <section>
+              <SectionLabel>Teach</SectionLabel>
+              <div className="grid gap-3 xl:grid-cols-2">
+                {teachTools.map((t) => (
+                  <ToolCard key={t.href} {...t} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Curriculum */}
+          <section>
+            <SectionLabel action={canManage ? <AddSectionButton courseId={id} /> : undefined}>
+              Curriculum
+            </SectionLabel>
+            {course.sections.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50/50 px-5 py-6 text-sm text-neutral-500">
+                {canManage
+                  ? 'No sections yet. Add the first one to outline this program.'
+                  : 'No sections yet.'}
+              </p>
+            ) : (
+              <ol className="divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">
+                {course.sections.map((s) => (
+                  <li key={s.id} className="flex items-start gap-4 px-5 py-3.5">
+                    <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-neutral-100 text-xs font-semibold text-neutral-500">
+                      {s.order}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-neutral-800">{s.title}</span>
+                      {s.description && (
+                        <span className="mt-0.5 block text-sm text-neutral-500">{s.description}</span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ol>
             )}
-            {!user && (
-              <Link href="/login" className={btn('primary', 'lg')}>
-                Log in to enroll
-              </Link>
-            )}
-          </div>
+          </section>
+
+          {/* Records — demoted to light links */}
+          <section>
+            <SectionLabel>Records</SectionLabel>
+            <div className="flex flex-wrap gap-3">
+              <RecordLink
+                href={`/courses/${id}/sessions`}
+                icon={PiClockCounterClockwise}
+                label="Session history"
+              />
+              {isAdmin && (
+                <RecordLink
+                  href={`/courses/${id}/roster`}
+                  icon={PiUsers}
+                  label="Roster & certificates"
+                />
+              )}
+            </div>
+          </section>
+
+          {/* Admin: invite-first management — a shareable link per role that
+              lands people straight in this program. */}
+          {isAdmin && (
+            <CourseInviteManage
+              courseId={id}
+              currentInstructorName={course.instructor?.name ?? null}
+              enrolledCount={course._count.enrollments}
+              instructorInvites={courseInvites.filter((i) => i.role === 'INSTRUCTOR')}
+              studentInvites={courseInvites.filter((i) => i.role === 'STUDENT')}
+            />
+          )}
+
+          {isOwner && <InstructorPanel course={course} />}
         </div>
 
-        {/* Cohort summary */}
-        <dl className="mt-8 grid grid-cols-2 gap-x-6 gap-y-5 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm sm:grid-cols-4 sm:p-6">
-          <Fact
-            label="Schedule"
-            value={cadence ?? 'To be announced'}
-            sub={cadence && tz ? tz : null}
-          />
-          <Fact label="Duration" value={duration ?? 'Self-paced'} />
-          <Fact
-            label={cohort.status === 'COMPLETED' ? 'Ran' : 'Dates'}
-            value={dateRange ?? 'To be scheduled'}
-          />
-          <Fact label="Certificate" value="On completion" sub="Verifiable" />
-        </dl>
-
-        {myCertificate && (
-          <div className="mt-6 flex items-start gap-3 rounded-xl border border-signal-200 bg-signal-50 px-4 py-3.5 text-sm text-signal-800">
-            <svg viewBox="0 0 24 24" fill="none" className="mt-0.5 h-5 w-5 shrink-0" aria-hidden>
-              <path d="M12 4 2 9l10 5 10-5-10-5Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
-              <path d="M6 11v4c0 1.1 2.7 2.5 6 2.5s6-1.4 6-2.5v-4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-            </svg>
-            <p>
-              You hold a certificate for this course (code{' '}
-              <span className="font-mono">{myCertificate.verificationCode}</span>
-              ). Download it from your{' '}
-              <Link href="/dashboard" className="font-medium underline">
-                dashboard
-              </Link>
-              .
-            </p>
-          </div>
-        )}
-
-        {/* Admin: assign the instructor and manage the roster inline */}
-        {isAdmin && adminData && (
-          <AdminCourseManage
-            courseId={id}
-            currentInstructorId={course.instructorId ?? null}
-            currentInstructorName={course.instructor?.name ?? null}
-            instructors={adminData.instructors}
-            students={adminData.students}
-            orgStudents={adminData.orgStudents}
-          />
-        )}
-
-        {/* Live class — only participants (owner instructor / enrolled) can join */}
-        {(isOwner || isEnrolled) && (
-          <section className="mt-10">
-            <h2 className="text-lg font-semibold text-neutral-900">Live class</h2>
+        {/* RAIL — the "program cockpit" */}
+        <aside className="order-1 space-y-4 lg:sticky lg:top-6 lg:order-2">
+          {/* Primary action / status */}
+          {isOwner || isEnrolled ? (
             <JoinLiveCard
               courseId={id}
               canJoin={isOwner || isEnrolled}
@@ -293,122 +483,93 @@ export default async function CoursePage(props: {
               isLive={sessionStatus.isLive}
               nextAt={sessionStatus.nextAt}
               timezone={course.timezone}
+              hasAssessment={hasAssessment}
             />
-            {isEnrolled && (
-              <ClassReminderCard
-                courseId={id}
-                cadence={cadence}
-                reminderAddedAt={myReminderAddedAt}
-                scheduleUpdatedAt={course.scheduleUpdatedAt}
-              />
-            )}
-          </section>
-        )}
-
-        {/* Program navigation — roster / assignments / session history on their own pages */}
-        <section className="mt-10">
-          <h2 className="text-lg font-semibold text-neutral-900">Tools</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {(canManage || isEnrolled) && (
-              <NavCard
-                href={`/courses/${id}/assignments`}
-                icon={PiNotePencil}
-                title={canManage ? 'Assignment lab' : 'Assignments'}
-                desc={
-                  canManage
-                    ? 'Coursework, groups, grading & submissions'
-                    : 'View and submit coursework'
-                }
-              />
-            )}
-            {(canManage || isEnrolled) && (
-              <NavCard
-                href={`/courses/${id}/assessment`}
-                icon={PiClipboardText}
-                title="Assessments"
-                desc={
-                  canManage
-                    ? 'Question bank + remediation tasks'
-                    : 'Post-class quizzes and practice'
-                }
-              />
-            )}
-            {testPrep && (canManage || isEnrolled) && (
-              <NavCard
-                href={`/courses/${id}/exams`}
-                icon={PiExam}
-                title="Test Prep"
-                desc={
-                  canManage
-                    ? 'Build timed mock exams; import past questions'
-                    : 'Sit timed practice exams'
-                }
-              />
-            )}
-            {islamicEducation && (canManage || isEnrolled) && (
-              <NavCard
-                href={`/courses/${id}/hifz`}
-                icon={PiBookOpenText}
-                title="Hifz & memorization"
-                desc={
-                  canManage
-                    ? 'Set targets, log recitations, track progress'
-                    : 'Your memorization targets and recitation log'
-                }
-              />
-            )}
-            <NavCard
-              href={`/courses/${id}/sessions`}
-              icon={PiClockCounterClockwise}
-              title="Session history"
-              desc="Every live session held so far"
+          ) : user?.role === 'STUDENT' ? (
+            <div className={cn(cardClass, 'p-4')}>
+              <p className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">
+                Join this cohort
+              </p>
+              <p className="mb-3 mt-1.5 text-sm text-neutral-500">
+                Enrol to join the live room, get reminders, and earn a certificate.
+              </p>
+              <EnrollActions courseId={id} isEnrolled={isEnrolled} />
+            </div>
+          ) : isAdmin ? (
+            <ShadowJoinCard
+              courseId={id}
+              live={sessionStatus.isLive}
+              joinableNow={sessionStatus.joinableNow}
             />
-            {isAdmin && (
-              <NavCard
-                href={`/courses/${id}/roster`}
-                icon={PiUsers}
-                title="Roster"
-                desc="Enrolment and certificates"
-              />
-            )}
-          </div>
-        </section>
-
-        {/* Curriculum */}
-        <section className="mt-10">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-neutral-900">Curriculum</h2>
-            {canManage && <AddSectionButton courseId={id} />}
-          </div>
-          {course.sections.length === 0 ? (
-            <p className="mt-3 rounded-xl border border-dashed border-neutral-300 bg-neutral-50/50 px-5 py-6 text-sm text-neutral-500">
-              {canManage
-                ? 'No sections yet. Add the first one to outline this program.'
-                : 'No sections yet.'}
-            </p>
           ) : (
-            <ol className="mt-4 divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">
-              {course.sections.map((s) => (
-                <li key={s.id} className="flex items-start gap-4 px-5 py-3.5">
-                  <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-neutral-100 text-xs font-semibold text-neutral-500">
-                    {s.order}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium text-neutral-800">{s.title}</span>
-                    {s.description && (
-                      <span className="mt-0.5 block text-sm text-neutral-500">
-                        {s.description}
-                      </span>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ol>
+            <NextSessionCard live={sessionStatus.isLive} when={nextWhen} />
           )}
-        </section>
 
-        {isOwner && <InstructorPanel course={course} />}
-      </main>
-    </>
+          {/* Cohort facts */}
+          <FactsCard
+            schedule={cadence}
+            tz={tz}
+            duration={duration}
+            dates={dateRange}
+            datesLabel={cohort.status === 'COMPLETED' ? 'Ran' : 'Dates'}
+          />
+
+          {/* Student reminder */}
+          {isEnrolled && (
+            <ClassReminderCard
+              courseId={id}
+              cadence={cadence}
+              reminderAddedAt={myReminderAddedAt}
+              scheduleUpdatedAt={course.scheduleUpdatedAt}
+            />
+          )}
+
+          {/* Live-class leaderboard — shown to students, instructors & admins. */}
+          <Leaderboard
+            courseId={id}
+            highlightUserId={user?.role === 'STUDENT' ? user.sub : undefined}
+          />
+
+          {/* Roster snapshot for admins */}
+          {isAdmin && (
+            <div className={cn(cardClass, 'p-4')}>
+              <p className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">
+                Roster
+              </p>
+              <p className="mt-1.5 text-[22px] font-extrabold tracking-tight text-neutral-950">
+                {course._count.enrollments}{' '}
+                <span className="text-sm font-semibold text-neutral-500">
+                  {course._count.enrollments === 1 ? 'student' : 'students'}
+                </span>
+              </p>
+              <Link
+                href={`/courses/${id}/roster`}
+                className="mt-2 inline-block text-[13px] font-bold text-signal-700 hover:text-signal-600"
+              >
+                View roster →
+              </Link>
+            </div>
+          )}
+
+          {/* Certificate held (student) */}
+          {myCertificate && (
+            <div className="flex items-start gap-3 rounded-2xl border border-signal-200 bg-signal-50 px-4 py-3.5 text-sm text-signal-800">
+              <svg viewBox="0 0 24 24" fill="none" className="mt-0.5 h-5 w-5 shrink-0" aria-hidden>
+                <path d="M12 4 2 9l10 5 10-5-10-5Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+                <path d="M6 11v4c0 1.1 2.7 2.5 6 2.5s6-1.4 6-2.5v-4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+              </svg>
+              <p>
+                You hold a certificate for this course (code{' '}
+                <span className="font-mono">{myCertificate.verificationCode}</span>). Download it from your{' '}
+                <Link href="/dashboard" className="font-medium underline">
+                  dashboard
+                </Link>
+                .
+              </p>
+            </div>
+          )}
+        </aside>
+      </div>
+    </main>
   );
 }

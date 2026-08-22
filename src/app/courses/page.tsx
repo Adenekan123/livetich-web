@@ -1,8 +1,7 @@
 import { redirect } from 'next/navigation';
-import { Header } from '@/components/header';
 import { api } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
-import type { CatalogCourse } from '@/lib/types';
+import type { CatalogCourse, Enrollment } from '@/lib/types';
 import { coursesToClasses } from './catalog-lib';
 import { CourseBrowser } from './course-browser';
 
@@ -13,18 +12,30 @@ export default async function CoursesPage() {
   if (!user || !token) redirect('/login');
 
   let courses: CatalogCourse[] = [];
+  // Which cohorts this student is enrolled in — derived from the existing
+  // /courses/enrolled endpoint (same one the student dashboard uses), so we
+  // don't need an `enrolled` flag on the catalog payload. Empty for non-students.
+  let enrolledIds: string[] = [];
   let failed = false;
   try {
-    courses = await api<CatalogCourse[]>('/courses', { token });
+    if (user.role === 'STUDENT') {
+      const [cat, enrolled] = await Promise.all([
+        api<CatalogCourse[]>('/courses', { token }),
+        api<Enrollment[]>('/courses/enrolled', { token }),
+      ]);
+      courses = cat;
+      enrolledIds = enrolled.map((e) => e.courseId);
+    } else {
+      courses = await api<CatalogCourse[]>('/courses', { token });
+    }
   } catch {
     failed = true;
   }
 
-  const classes = coursesToClasses(courses);
+  const classes = coursesToClasses(courses, enrolledIds);
 
   return (
     <>
-      <Header />
       <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 pb-16 sm:px-6">
         {failed ? (
           <div className="mx-auto mt-16 max-w-md rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 px-6 py-14 text-center">
@@ -38,7 +49,12 @@ export default async function CoursesPage() {
             </p>
           </div>
         ) : (
-          <CourseBrowser classes={classes} canCreate={user.role === 'ORG_ADMIN'} />
+          <CourseBrowser
+            classes={classes}
+            role={user.role}
+            currentUserId={user.sub}
+            canCreate={user.role === 'ORG_ADMIN'}
+          />
         )}
       </main>
     </>

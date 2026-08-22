@@ -21,7 +21,7 @@ import { AddAssignmentForm } from './add-assignment-form';
 import { GradeForm } from './grade-form';
 import { GroupsManager } from './groups/groups-manager';
 
-type SessionOption = { id: string; label: string };
+type SessionOption = { id: string; label: string; scheduledAt: string };
 type View = 'assignments' | 'groups';
 
 function fmtDateTime(iso: string): string {
@@ -75,12 +75,15 @@ export function AssignmentLab({
   groups,
   roster,
   sessions,
+  nextSessionId = '',
 }: {
   courseId: string;
   tracking: AssignmentTracking[];
   groups: StudentGroup[];
   roster: StudentRef[];
   sessions: SessionOption[];
+  /** Soonest upcoming session — new coursework defaults to this "next class". */
+  nextSessionId?: string;
 }) {
   const [view, setView] = useState<View>('assignments');
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -147,6 +150,7 @@ export function AssignmentLab({
                 courseId={courseId}
                 groups={groupOptions}
                 sessions={sessions}
+                nextSessionId={nextSessionId}
               />
 
               {sessionFilters.size > 0 && (

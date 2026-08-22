@@ -10,7 +10,6 @@ import {
   PiStudentBold,
   PiUserBold,
 } from 'react-icons/pi';
-import { Header } from '@/components/header';
 import { getCurrentUser } from '@/lib/auth';
 import { cardClass, cn } from '@/lib/ui';
 
@@ -21,11 +20,13 @@ function SettingsRow({
   icon: Icon,
   title,
   subtitle,
+  tone = 'soft',
 }: {
   href: string;
   icon: IconType;
   title: string;
   subtitle: string;
+  tone?: 'soft' | 'teal';
 }) {
   return (
     <Link
@@ -33,7 +34,12 @@ function SettingsRow({
       className="group flex items-center gap-4 px-5 py-4 transition hover:bg-neutral-50"
     >
       <span
-        className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-neutral-100 text-neutral-700"
+        className={cn(
+          'grid h-10 w-10 shrink-0 place-items-center rounded-xl',
+          tone === 'teal'
+            ? 'bg-signal-700 text-white'
+            : 'bg-signal-50 text-signal-700',
+        )}
         aria-hidden
       >
         <Icon className="h-5 w-5" />
@@ -53,16 +59,14 @@ export default async function AccountPage() {
   const isAdmin = user.role === 'ORG_ADMIN';
 
   return (
-    <>
-      <Header />
-      <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-10 sm:px-6">
-        <h1 className="font-display text-3xl font-extrabold tracking-tight text-neutral-950">
+    <main className="mx-auto w-full max-w-2xl px-4 py-7 sm:px-8">
+        <h1 className="text-[22px] font-extrabold tracking-tight text-neutral-950">
           Account
         </h1>
         <p className="mt-1 text-sm text-neutral-500">Manage your account settings.</p>
 
         {/* Account */}
-        <p className="mt-8 px-1 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+        <p className="mt-8 px-1 font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-neutral-400">
           Account
         </p>
         <div className={cn(cardClass, 'mt-2 divide-y divide-neutral-100 overflow-hidden')}>
@@ -98,7 +102,7 @@ export default async function AccountPage() {
 
         {isAdmin && (
           <>
-            <p className="mt-8 px-1 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+            <p className="mt-8 px-1 font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-neutral-400">
               People
             </p>
             <div className={cn(cardClass, 'mt-2 divide-y divide-neutral-100 overflow-hidden')}>
@@ -107,17 +111,18 @@ export default async function AccountPage() {
                 icon={PiChalkboardTeacherBold}
                 title="Manage instructors"
                 subtitle="Invite teaching staff and assign programs"
+                tone="teal"
               />
               <SettingsRow
                 href="/account/students"
                 icon={PiStudentBold}
                 title="Manage students"
                 subtitle="Invite students and track their performance"
+                tone="teal"
               />
             </div>
           </>
         )}
-      </main>
-    </>
+    </main>
   );
 }

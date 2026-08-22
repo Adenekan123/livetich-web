@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useState } from 'react';
+import { useActionState, useState } from 'react';
 import { createInvite, revokeInvite } from '@/app/actions/org';
 import { btn, cn } from '@/lib/ui';
 import type { OrgInvite, Role } from '@/lib/types';
@@ -43,26 +43,32 @@ function CopyLink({ token }: { token: string }) {
 export function InviteLinkPanel({
   role,
   invites,
+  courseId,
 }: {
   role: Extract<Role, 'STUDENT' | 'INSTRUCTOR'>;
   invites: OrgInvite[];
+  /** When set, the link is scoped to this program (auto-enroll / auto-assign). */
+  courseId?: string;
 }) {
   const [state, action, pending] = useActionState(createInvite, {
     error: null as string | null,
   });
-  const [freshToken, setFreshToken] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (state.invite?.token) setFreshToken(state.invite.token);
-  }, [state]);
+  // The just-created link, read straight from the action result — no effect.
+  const freshToken = state.invite?.token ?? null;
 
   const active = invites.filter((i) => i.status === 'ACTIVE');
   const noun = role === 'INSTRUCTOR' ? 'instructor' : 'student';
+  const shareHint = courseId
+    ? role === 'INSTRUCTOR'
+      ? 'New link — whoever joins is assigned to teach this program:'
+      : 'New link — share it; whoever joins enrols in this program:'
+    : `New link — share it with your ${noun}s:`;
 
   return (
     <div className="space-y-3">
       <form action={action} className="flex items-center gap-2">
         <input type="hidden" name="role" value={role} />
+        {courseId && <input type="hidden" name="courseId" value={courseId} />}
         <button disabled={pending} className={btn('primary', 'sm')}>
           {pending ? 'Generating…' : `Generate ${noun} link`}
         </button>
@@ -71,9 +77,7 @@ export function InviteLinkPanel({
 
       {freshToken && (
         <div className="rounded-xl border border-neutral-200 bg-white p-3">
-          <p className="mb-1.5 text-xs font-medium text-neutral-500">
-            New link — share it with your {noun}s:
-          </p>
+          <p className="mb-1.5 text-xs font-medium text-neutral-500">{shareHint}</p>
           <CopyLink token={freshToken} />
         </div>
       )}
@@ -97,7 +101,7 @@ export function InviteLinkPanel({
                   <CopyLink token={inv.token} />
                 </div>
               </div>
-              <form action={revokeInvite.bind(null, inv.id)}>
+              <form action={revokeInvite.bind(null, inv.id, courseId)}>
                 <button className={cn(btn('ghost', 'sm'), 'text-rose-600 hover:bg-rose-50')}>
                   Revoke
                 </button>

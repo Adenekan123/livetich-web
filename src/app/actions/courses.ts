@@ -66,6 +66,45 @@ export async function createCourse(
   redirect(`/courses/${course.id}`);
 }
 
+/**
+ * Edit an existing program — owning admin or the assigned instructor (the API
+ * enforces both). Covers the cohort schedule (days, time, timezone, start,
+ * duration) alongside the basics. Meeting days are always sent (even when empty)
+ * so unchecking every day clears the cadence; the other fields are omitted when
+ * blank so a partial edit never wipes them.
+ */
+export async function updateCourse(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const courseId = formData.get('courseId') as string;
+  const meetingDays = formData
+    .getAll('meetingDays')
+    .map((d) => Number(d))
+    .filter((d) => !Number.isNaN(d));
+  const startDate = (formData.get('startDate') as string) || '';
+  const durationWeeks = formData.get('durationWeeks');
+  return run(
+    (token) =>
+      api(`/courses/${courseId}`, {
+        method: 'PATCH',
+        token,
+        body: {
+          title: formData.get('title'),
+          description: (formData.get('description') as string) ?? '',
+          category: (formData.get('category') as string) || undefined,
+          level: (formData.get('level') as string) || undefined,
+          startDate: startDate ? new Date(startDate).toISOString() : undefined,
+          durationWeeks: durationWeeks ? Number(durationWeeks) : undefined,
+          meetingDays,
+          meetingTime: (formData.get('meetingTime') as string) || undefined,
+          timezone: (formData.get('timezone') as string) || undefined,
+        },
+      }),
+    `/courses/${courseId}`,
+  );
+}
+
 export async function addSection(
   _prev: ActionState,
   formData: FormData,
@@ -81,6 +120,59 @@ export async function addSection(
       }),
     `/courses/${courseId}`,
   );
+}
+
+/**
+ * Turn a pasted document table of contents into curriculum section titles.
+ * Strips the noise a copied TOC carries — leading numbering (1., 1.2, IV.),
+ * "Chapter/Unit/Part N" prefixes, bullets, and trailing dot-leaders + page
+ * numbers ("Introduction .......... 5") — leaving just the heading text.
+ */
+function parseToc(raw: string): string[] {
+  return raw
+    .split(/\r?\n/)
+    .map((line) =>
+      line
+        .replace(/\.{2,}\s*\d+\s*$/, '') // dot leaders + page no: "Intro .... 5"
+        .replace(/\s{2,}\d+\s*$/, '') // trailing page number after a gap
+        .replace(/^[\s\-*•·—]+/, '') // leading bullets / dashes
+        .replace(
+          /^(chapter|section|unit|part|module|lesson|week)\s+[\dIVXLC]+\s*[:.)\-]*\s*/i,
+          '',
+        ) // "Chapter 1: " / "Week 3 - "
+        .replace(/^[\dIVXLC]+\s*[.)]\s*/i, '') // "1. " / "1) " / "IV. "
+        .replace(/^\d+(\.\d+)+\s+/, '') // "1.2.3 "
+        .trim(),
+    )
+    .filter((t) => t.length > 0 && t.length <= 200);
+}
+
+/**
+ * Populate the curriculum in bulk from a document's table of contents — one
+ * section per heading, created in the pasted order. Owner-only (the API's
+ * section create already enforces it).
+ */
+export async function importSectionsFromToc(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const courseId = formData.get('courseId') as string;
+  const titles = parseToc((formData.get('toc') as string) ?? '').slice(0, 50);
+  if (titles.length === 0) {
+    return {
+      error:
+        'No headings found — paste a table of contents with one heading per line.',
+    };
+  }
+  return run(async (token) => {
+    for (const title of titles) {
+      await api(`/courses/${courseId}/sections`, {
+        method: 'POST',
+        token,
+        body: { title },
+      });
+    }
+  }, `/courses/${courseId}`);
 }
 
 /** Records that the student tapped "Add to calendar" for this class. */

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Logo } from './logo';
+import { BrandLogo } from './brand-logo';
 
 const HIGHLIGHTS = [
   'Live video, chalkboard, and chat in one room',
@@ -31,8 +31,7 @@ export function AuthShell({
           aria-hidden
         />
         <Link href="/" className="relative flex items-center gap-2">
-          <Logo className="h-8 w-8" />
-          <span className="text-lg font-semibold tracking-tight">livetich</span>
+          <BrandLogo onDark />
         </Link>
         <div className="relative">
           <p className="font-display text-3xl font-extrabold leading-[1.02] tracking-[-0.03em]">
@@ -70,10 +69,7 @@ export function AuthShell({
             className="mb-8 flex items-center gap-2 lg:hidden"
             aria-label="livetich home"
           >
-            <Logo className="h-8 w-8" />
-            <span className="text-lg font-semibold tracking-tight text-neutral-950">
-              livetich
-            </span>
+            <BrandLogo />
           </Link>
           <h1 className="font-display text-3xl font-extrabold tracking-[-0.02em] text-neutral-950">
             {title}

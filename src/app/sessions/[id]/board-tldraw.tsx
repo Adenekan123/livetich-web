@@ -109,6 +109,9 @@ export function BoardTldraw({
   const [laser, setLaser] = useState<{ x: number; y: number } | null>(null);
   // Whether the instructor has opened the board for students to draw.
   const [boardOpen, setBoardOpen] = useState(false);
+  // Importing a document/PDF onto the board (rasterising can take a moment).
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
   useEffect(() => {
     followingRef.current = following;
   }, [following]);
@@ -304,6 +307,34 @@ export function BoardTldraw({
     if (t) editorRef.current?.createShapes(t.make());
   };
 
+  // Import images onto the board — they drop in as image shapes/assets and sync
+  // to students over the same Yjs doc as any drawing. (Slides/PDF: export to
+  // images for now; native PDF rasterisation lands with the pdfjs dependency.)
+  const importFiles = async (list: FileList | null) => {
+    const editor = editorRef.current;
+    if (!editor || !list || list.length === 0) return;
+    setImporting(true);
+    try {
+      const center = editor.getViewportPageBounds().center;
+      let y = center.y;
+      for (const file of Array.from(list)) {
+        if (!file.type.startsWith('image/')) continue;
+        await editor.putExternalContent({
+          type: 'files',
+          files: [file],
+          point: { x: center.x, y },
+        });
+        y += 620;
+      }
+    } catch {
+      // Best-effort — a bad or oversized file simply doesn't land; the board
+      // (and everyone's connection) stays intact.
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   const exportPng = async () => {
     const editor = editorRef.current;
     if (!editor) return;
@@ -350,6 +381,22 @@ export function BoardTldraw({
                 {TEMPLATES[k].label}
               </button>
             ))}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+            className={`pointer-events-auto ${pill} bg-white text-neutral-800 disabled:opacity-50`}
+            title="Import images onto the board (export slides or PDF pages as images)"
+          >
+            {importing ? 'Importing…' : 'Import'}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => void importFiles(e.currentTarget.files)}
+          />
           <button
             onClick={exportPng}
             className={`pointer-events-auto ${pill} bg-white text-neutral-800`}

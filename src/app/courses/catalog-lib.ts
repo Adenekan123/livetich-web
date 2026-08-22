@@ -23,9 +23,11 @@ export interface ClassItem {
   title: string;
   monogram: string;
   instructor: string;
+  instructorId: string | null; // owning instructor — powers the "Your programs" split
   category: string;
   level: string | null;
   enrollments: number;
+  enrolled: boolean; // the viewing student is enrolled in this cohort
 
   isLive: boolean;
   liveSessionId: string | null;
@@ -207,8 +209,18 @@ export function deriveCohort(
 
 /* ---------- Aggregation ---------- */
 
-/** Map the company-scoped catalog (GET /courses) into cohort cards. */
-export function coursesToClasses(courses: CatalogCourse[]): ClassItem[] {
+/**
+ * Map the company-scoped catalog (GET /courses) into cohort cards.
+ *
+ * `enrolledCourseIds` are the ids the viewing student is enrolled in (from
+ * GET /courses/enrolled). Omit for admins/instructors — every card is then
+ * `enrolled: false`. Derived on the server so the flag ships resolved.
+ */
+export function coursesToClasses(
+  courses: CatalogCourse[],
+  enrolledCourseIds?: Iterable<string>,
+): ClassItem[] {
+  const enrolledSet = new Set(enrolledCourseIds ?? []);
   const out = courses.map((c) => {
     const isLive = Boolean(c.liveSessionId);
     const cohort = deriveCohort(c.startDate, c.durationWeeks, isLive);
@@ -217,9 +229,11 @@ export function coursesToClasses(courses: CatalogCourse[]): ClassItem[] {
       title: c.title,
       monogram: monogram(c.title),
       instructor: c.instructor?.name ?? 'Instructor to be assigned',
+      instructorId: c.instructor?.id ?? c.instructorId ?? null,
       category: c.category ?? categorize(c.title, c.description),
       level: c.level ?? null,
       enrollments: c._count.enrollments,
+      enrolled: enrolledSet.has(c.id),
 
       isLive,
       liveSessionId: c.liveSessionId,
@@ -290,9 +304,11 @@ export function toClasses(sessions: BrowseSession[]): ClassItem[] {
       title: c.title,
       monogram: monogram(c.title),
       instructor: c.instructor.name,
+      instructorId: c.instructor.id ?? null,
       category: c.category ?? categorize(c.title, c.description),
       level: c.level ?? null,
       enrollments: c._count.enrollments,
+      enrolled: false,
 
       isLive,
       liveSessionId: liveS?.id ?? null,

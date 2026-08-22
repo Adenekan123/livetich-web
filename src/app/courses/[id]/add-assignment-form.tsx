@@ -11,18 +11,32 @@ import { btn, inputClass, labelClass } from '@/lib/ui';
 
 const initial: AssignmentActionState = { error: null };
 
+/** Short date+time for the "Next class · …" option label. */
+function nextClassDate(scheduledAt: string): string {
+  return new Date(scheduledAt).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 type GroupOption = { id: string; name: string; memberCount: number };
-type SessionOption = { id: string; label: string };
+type SessionOption = { id: string; label: string; scheduledAt: string };
 
 /** "Add assignment" button that opens the create form in a modal. */
 export function AddAssignmentForm({
   courseId,
   groups = [],
   sessions = [],
+  nextSessionId = '',
 }: {
   courseId: string;
   groups?: GroupOption[];
   sessions?: SessionOption[];
+  /** Id of the soonest upcoming session — preselected in the picker. Computed
+   *  on the server so the default is deterministic across hydration. */
+  nextSessionId?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [state, action] = useActionState(createAssignment, initial);
@@ -165,13 +179,15 @@ export function AddAssignmentForm({
                       <select
                         id="a-session"
                         name="sessionId"
-                        defaultValue=""
+                        defaultValue={nextSessionId}
                         className={inputClass}
                       >
                         <option value="">Not tied to a session</option>
                         {sessions.map((s) => (
                           <option key={s.id} value={s.id}>
-                            {s.label}
+                            {s.id === nextSessionId
+                              ? `Next class · ${nextClassDate(s.scheduledAt)}`
+                              : s.label}
                           </option>
                         ))}
                       </select>

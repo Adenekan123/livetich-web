@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { Header } from '@/components/header';
 import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
 import type {
@@ -35,7 +34,6 @@ export default async function AssessmentPage(props: {
 
   return (
     <>
-      <Header />
       <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-10 sm:px-6">
         <Link
           href={`/courses/${id}`}

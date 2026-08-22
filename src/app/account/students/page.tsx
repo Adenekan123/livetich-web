@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Header } from '@/components/header';
 import { api } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
 import { cardClass, cn } from '@/lib/ui';
@@ -28,14 +27,14 @@ export default async function ManageStudentsPage(props: {
       { token },
     ),
     api<CatalogCourse[]>('/courses', { token }),
-    api<OrgInvite[]>('/organizations/invites', { token }),
+    // Workspace-level links only — program-scoped links live on the program page.
+    api<OrgInvite[]>('/organizations/invites?courseId=', { token }),
   ]);
 
   const programs = courses.map((c) => ({ id: c.id, title: c.title }));
 
   return (
     <>
-      <Header />
       <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-10 sm:px-6">
         <Link href="/account" className="text-sm text-neutral-500 hover:text-neutral-900">
           ← Account
@@ -70,15 +69,18 @@ export default async function ManageStudentsPage(props: {
           students={students}
           scoped={Boolean(courseId)}
           showPrograms
-          renderRowAction={(s) => (
-            <div className="flex items-center justify-end gap-2">
-              <ManageStudentProgramsButton
-                student={{ id: s.id, name: s.name }}
-                programs={programs}
-                enrolledCourseIds={s.enrolledCourseIds}
-              />
-              <MemberStatusToggle memberId={s.id} status={s.status} />
-            </div>
+          rowActions={Object.fromEntries(
+            students.map((s) => [
+              s.id,
+              <div key={s.id} className="flex items-center justify-end gap-2">
+                <ManageStudentProgramsButton
+                  student={{ id: s.id, name: s.name }}
+                  programs={programs}
+                  enrolledCourseIds={s.enrolledCourseIds}
+                />
+                <MemberStatusToggle memberId={s.id} status={s.status} />
+              </div>,
+            ]),
           )}
         />
       </main>

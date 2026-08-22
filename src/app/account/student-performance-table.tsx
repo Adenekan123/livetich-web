@@ -1,104 +1,167 @@
+'use client';
+
+import { useMemo, type ReactNode } from 'react';
+import type { TableColumn } from 'react-data-table-component';
+import { DataTable } from '@/components/data-table';
 import { avatarColor, cardClass, cn, initials } from '@/lib/ui';
 import type { StudentStat } from '@/lib/types';
 
-function Num({ value, muted }: { value: string | number; muted?: boolean }) {
+/** A right-aligned mono numeric cell, muted when the value is a zero/none. */
+function num(value: string | number, muted?: boolean): ReactNode {
   return (
-    <td className={cn('px-4 py-3.5 text-right font-mono text-sm', muted ? 'text-neutral-400' : 'text-neutral-800')}>
+    <span
+      className={cn(
+        'font-mono text-sm',
+        muted ? 'text-neutral-400' : 'text-neutral-800',
+      )}
+    >
       {value}
-    </td>
+    </span>
   );
+}
+
+/** Attendance/assignment ratios sort by fraction; untracked (0 total) sorts last. */
+const ratio = (done: number, total: number) => (total > 0 ? done / total : -1);
+
+function buildColumns(
+  showPrograms: boolean,
+  rowActions?: Record<string, ReactNode>,
+): TableColumn<StudentStat>[] {
+  const columns: TableColumn<StudentStat>[] = [
+    {
+      id: 'name',
+      name: 'Student',
+      sortable: true,
+      grow: 2,
+      selector: (s) => s.name.toLowerCase(),
+      cell: (s) => (
+        <div className="flex items-center gap-2.5 py-1">
+          <span
+            className={cn(
+              'grid h-8 w-8 shrink-0 place-items-center rounded-full text-[11px] font-semibold text-white',
+              avatarColor(s.id),
+            )}
+            aria-hidden
+          >
+            {initials(s.name)}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate font-medium text-neutral-900">{s.name}</p>
+            <p className="truncate text-xs text-neutral-400">{s.email}</p>
+          </div>
+        </div>
+      ),
+    },
+  ];
+
+  if (showPrograms) {
+    columns.push({
+      id: 'programs',
+      name: 'Programs',
+      sortable: true,
+      right: true,
+      selector: (s) => s.enrolledCourseIds.length,
+      cell: (s) => num(s.enrolledCourseIds.length),
+    });
+  }
+
+  columns.push(
+    {
+      id: 'points',
+      name: 'Points',
+      sortable: true,
+      right: true,
+      selector: (s) => s.points,
+      cell: (s) => num(s.points),
+    },
+    {
+      id: 'interactions',
+      name: 'Interactions',
+      sortable: true,
+      right: true,
+      selector: (s) => s.interactions,
+      cell: (s) => num(s.interactions),
+    },
+    {
+      id: 'attendance',
+      name: 'Attendance',
+      sortable: true,
+      right: true,
+      selector: (s) => ratio(s.attended, s.held),
+      cell: (s) =>
+        num(s.held > 0 ? `${s.attended}/${s.held}` : s.attended, s.attended === 0),
+    },
+    {
+      id: 'assignments',
+      name: 'Assignments',
+      sortable: true,
+      right: true,
+      selector: (s) => ratio(s.assignmentsSubmitted, s.assignmentsTotal),
+      cell: (s) =>
+        num(
+          s.assignmentsTotal > 0
+            ? `${s.assignmentsSubmitted}/${s.assignmentsTotal}`
+            : '—',
+          s.assignmentsSubmitted === 0,
+        ),
+    },
+  );
+
+  if (rowActions) {
+    columns.push({
+      id: 'actions',
+      name: '',
+      right: true,
+      cell: (s) => <>{rowActions[s.id]}</>,
+    });
+  }
+
+  return columns;
 }
 
 /**
  * Student roster with performance. Points, interactions (chat + quiz answers),
  * and attendance come from real data; assignment submissions have no model yet,
- * so that column is shown as not-tracked rather than fabricated.
+ * so that column shows not-tracked rather than fabricated numbers.
+ *
+ * A table earns its keep by letting the instructor rank a cohort, so every
+ * metric column is sortable (default: points, highest first). Row actions are
+ * passed as pre-rendered nodes keyed by student id — this is a Client Component,
+ * so a function render-prop can't cross the boundary from the server.
  */
 export function StudentPerformanceTable({
   students,
   showPrograms = false,
   emptyLabel = 'No students yet.',
-  renderRowAction,
+  rowActions,
 }: {
   students: StudentStat[];
   scoped?: boolean;
   showPrograms?: boolean;
   emptyLabel?: string;
-  renderRowAction?: (student: StudentStat) => React.ReactNode;
+  rowActions?: Record<string, ReactNode>;
 }) {
-  const cols = 5 + (showPrograms ? 1 : 0) + (renderRowAction ? 1 : 0);
+  const columns = useMemo(
+    () => buildColumns(showPrograms, rowActions),
+    [showPrograms, rowActions],
+  );
+
   return (
     <>
-      <div className={cn(cardClass, 'mt-6 overflow-hidden')}>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-neutral-100 text-xs font-semibold uppercase tracking-wide text-neutral-400">
-                <th className="px-4 py-3">Student</th>
-                {showPrograms && <th className="px-4 py-3 text-right">Programs</th>}
-                <th className="px-4 py-3 text-right">Points</th>
-                <th className="px-4 py-3 text-right">Interactions</th>
-                <th className="px-4 py-3 text-right">Attendance</th>
-                <th className="px-4 py-3 text-right">Assignments</th>
-                {renderRowAction && <th className="px-4 py-3 text-right" />}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-100">
-              {students.length === 0 ? (
-                <tr>
-                  <td colSpan={cols} className="px-4 py-12 text-center text-neutral-500">
-                    {emptyLabel}
-                  </td>
-                </tr>
-              ) : (
-                students.map((s) => (
-                  <tr key={s.id}>
-                    <td className="px-4 py-3.5">
-                      <div className="flex items-center gap-2.5">
-                        <span
-                          className={cn(
-                            'grid h-8 w-8 shrink-0 place-items-center rounded-full text-[11px] font-semibold text-white',
-                            avatarColor(s.id),
-                          )}
-                          aria-hidden
-                        >
-                          {initials(s.name)}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="truncate font-medium text-neutral-900">{s.name}</p>
-                          <p className="truncate text-xs text-neutral-400">{s.email}</p>
-                        </div>
-                      </div>
-                    </td>
-                    {showPrograms && <Num value={s.enrolledCourseIds.length} />}
-                    <Num value={s.points} />
-                    <Num value={s.interactions} />
-                    <Num
-                      value={s.held > 0 ? `${s.attended}/${s.held}` : s.attended}
-                      muted={s.attended === 0}
-                    />
-                    <Num
-                      value={
-                        s.assignmentsTotal > 0
-                          ? `${s.assignmentsSubmitted}/${s.assignmentsTotal}`
-                          : '—'
-                      }
-                      muted={s.assignmentsSubmitted === 0}
-                    />
-                    {renderRowAction && (
-                      <td className="px-4 py-3.5 text-right">{renderRowAction(s)}</td>
-                    )}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+      <div className={cn(cardClass, 'mt-6 overflow-hidden px-2 py-1 sm:px-3')}>
+        <DataTable
+          columns={columns}
+          data={students}
+          defaultSortFieldId="points"
+          defaultSortAsc={false}
+          noDataText={emptyLabel}
+        />
       </div>
       <p className="mt-2 text-xs text-neutral-400">
-        Points are earned in live sessions; interactions count chat messages and quiz/buzzer
-        answers; attendance counts live sessions joined out of sessions held; assignments show
-        submissions out of assignments set.
+        Points are earned in live sessions; interactions count chat messages and
+        quiz/buzzer answers; attendance counts live sessions joined out of
+        sessions held; assignments show submissions out of assignments set. Click
+        a column to sort.
       </p>
     </>
   );

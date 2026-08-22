@@ -1,10 +1,9 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { Header } from '@/components/header';
 import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
-import type { Certificate, CourseDetail, OrgMember } from '@/lib/types';
-import { CourseRosterPanel, type RosterRow } from '../course-roster-panel';
+import type { CourseAttendance, CourseDetail } from '@/lib/types';
+import { AttendanceTable } from '../attendance-table';
 
 export default async function RosterPage(props: {
   params: Promise<{ id: string }>;
@@ -12,8 +11,6 @@ export default async function RosterPage(props: {
   const { id } = await props.params;
   const [user, token] = await Promise.all([getCurrentUser(), getToken()]);
   if (!user || !token) redirect('/login');
-  // Roster management is admin-only.
-  if (user.role !== 'ORG_ADMIN') redirect(`/courses/${id}`);
 
   let course: CourseDetail;
   try {
@@ -23,15 +20,25 @@ export default async function RosterPage(props: {
     throw e;
   }
 
-  const [roster, orgStudents, certs] = await Promise.all([
-    api<RosterRow[]>(`/courses/${id}/students`, { token }),
-    api<OrgMember[]>('/organizations/students', { token }),
-    api<Certificate[]>(`/certificates/course/${id}`, { token }),
-  ]);
+  // Attendance is for the org-admin or the instructor who owns this course.
+  const isOwner = user.sub === course.instructorId;
+  const isAdmin = user.role === 'ORG_ADMIN';
+  if (!isAdmin && !isOwner) redirect(`/courses/${id}`);
+
+  // Default view: the latest session (the endpoint defaults when sessionId is omitted).
+  let attendance: CourseAttendance;
+  try {
+    attendance = await api<CourseAttendance>(
+      `/sessions/course/${id}/attendance`,
+      { token },
+    );
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 403) redirect(`/courses/${id}`);
+    throw e;
+  }
 
   return (
     <>
-      <Header />
       <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-10 sm:px-6">
         <Link
           href={`/courses/${id}`}
@@ -39,12 +46,13 @@ export default async function RosterPage(props: {
         >
           ← {course.title}
         </Link>
-        <CourseRosterPanel
-          courseId={id}
-          enrolled={roster}
-          allStudents={orgStudents}
-          certifiedIds={certs.map((c) => c.studentId)}
-        />
+        <h1 className="mt-3 font-display text-2xl font-bold tracking-tight text-neutral-950 sm:text-3xl">
+          Class attendance
+        </h1>
+        <p className="mt-1.5 text-sm text-neutral-500">
+          Who joined each session for {course.title}.
+        </p>
+        <AttendanceTable courseId={id} initial={attendance} />
       </main>
     </>
   );

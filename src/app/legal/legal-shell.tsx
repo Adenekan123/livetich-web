@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Logo } from '@/components/logo';
+import { BrandLogo } from '@/components/brand-logo';
 
 /** Simple centered reading shell for the legal pages (public, no auth). */
 export function LegalShell({
@@ -16,10 +16,7 @@ export function LegalShell({
       <header className="border-b border-neutral-200">
         <div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-5">
           <Link href="/" className="flex items-center gap-2.5">
-            <Logo className="h-7 w-7" />
-            <span className="font-semibold tracking-tight text-neutral-950">
-              livetich
-            </span>
+            <BrandLogo />
           </Link>
           <nav className="flex items-center gap-5 text-sm text-neutral-500">
             <Link href="/privacy" className="hover:text-neutral-900">

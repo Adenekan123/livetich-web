@@ -1,7 +1,8 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { Fragment, useMemo, useState, useTransition } from 'react';
+import { PiCaretDown } from 'react-icons/pi';
 import {
   createExam,
   deleteExam,
@@ -20,21 +21,37 @@ import type {
 import { Rich } from './rich-text';
 
 // ALOC v1 exam types (exact slugs the API expects).
+// Only the exam types ALOC actually serves. `neco` and `wassce` 404 on the
+// provider, so offering them guaranteed a failed import.
 const EXAM_TYPES = [
   { value: 'jamb', label: 'JAMB' },
   { value: 'waec', label: 'WAEC' },
-  { value: 'neco', label: 'NECO' },
   { value: 'post_utme', label: 'Post-UTME' },
 ] as const;
-// ALOC v1 subject slugs (exact). Free text is still allowed via the datalist.
-const SUBJECTS = [
-  'mathematics', 'english-language', 'literature-in-english', 'physics',
-  'chemistry', 'biology', 'commerce', 'accounting', 'economics',
-  'government', 'geography', 'history', 'civic-education',
-  'christian-religious-studies', 'insurance',
+// ALOC subject slugs (exact) that the provider actually serves — each verified
+// to return questions. `history`, `civic-education` and `insurance` were dropped
+// because ALOC 404s them (they made "Import" fail for those subjects).
+const SUBJECTS: { value: string; label: string }[] = [
+  { value: 'mathematics', label: 'Mathematics' },
+  { value: 'english-language', label: 'English Language' },
+  { value: 'literature-in-english', label: 'Literature in English' },
+  { value: 'physics', label: 'Physics' },
+  { value: 'chemistry', label: 'Chemistry' },
+  { value: 'biology', label: 'Biology' },
+  { value: 'commerce', label: 'Commerce' },
+  { value: 'accounting', label: 'Accounting' },
+  { value: 'economics', label: 'Economics' },
+  { value: 'government', label: 'Government' },
+  { value: 'geography', label: 'Geography' },
+  {
+    value: 'christian-religious-studies',
+    label: 'Christian Religious Studies',
+  },
 ];
 
 type Draft = ExamQuestionInput;
+
+type ExamSortKey = 'title' | 'questionCount' | 'durationMinutes' | 'submissions' | 'averageScore';
 
 export function ExamManager({
   courseId,
@@ -45,11 +62,72 @@ export function ExamManager({
 }) {
   const [building, setBuilding] = useState(exams.length === 0);
   const [editing, setEditing] = useState<ExamDetail | null>(null);
+  const [sort, setSort] = useState<{ key: ExamSortKey; dir: 'asc' | 'desc' }>({
+    key: 'submissions',
+    dir: 'desc',
+  });
   const inBuilder = building || editing !== null;
   const close = () => {
     setBuilding(false);
     setEditing(null);
   };
+
+  const sortedExams = useMemo(() => {
+    const val = (e: ExamListRow): number | string =>
+      sort.key === 'title'
+        ? e.title.toLowerCase()
+        : sort.key === 'averageScore'
+          ? e.averageScore ?? -1
+          : e[sort.key];
+    return [...exams].sort((a, b) => {
+      const av = val(a);
+      const bv = val(b);
+      const cmp =
+        typeof av === 'string' && typeof bv === 'string'
+          ? av.localeCompare(bv)
+          : (av as number) - (bv as number);
+      return sort.dir === 'asc' ? cmp : -cmp;
+    });
+  }, [exams, sort]);
+
+  function toggleSort(key: ExamSortKey) {
+    setSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: key === 'title' ? 'asc' : 'desc' },
+    );
+  }
+
+  function SortTh({
+    label,
+    sortKey,
+    align = 'right',
+  }: {
+    label: string;
+    sortKey: ExamSortKey;
+    align?: 'left' | 'right';
+  }) {
+    const active = sort.key === sortKey;
+    return (
+      <th
+        className={cn('px-4 py-3', align === 'right' ? 'text-right' : 'text-left')}
+        aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      >
+        <button
+          type="button"
+          onClick={() => toggleSort(sortKey)}
+          className={cn(
+            'inline-flex items-center gap-1 rounded transition hover:text-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-500',
+            align === 'right' && 'flex-row-reverse',
+            active ? 'text-signal-700' : 'text-neutral-400',
+          )}
+        >
+          {label}
+          <PiCaretDown className={cn('h-3 w-3', active && sort.dir === 'asc' && 'rotate-180')} />
+        </button>
+      </th>
+    );
+  }
 
   return (
     <div className="mt-4">
@@ -76,15 +154,39 @@ export function ExamManager({
           onCancel={exams.length || editing ? close : undefined}
         />
       ) : (
-        <ul className="mt-6 space-y-3">
-          {exams.map((e) => (
-            <ExamRow key={e.id} courseId={courseId} exam={e} onEdit={setEditing} />
-          ))}
-        </ul>
+        <>
+          <div className={cn(cardClass, 'mt-6 overflow-hidden')}>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-neutral-100 text-xs font-semibold uppercase tracking-wide">
+                    <SortTh label="Exam" sortKey="title" align="left" />
+                    <SortTh label="Questions" sortKey="questionCount" />
+                    <SortTh label="Minutes" sortKey="durationMinutes" />
+                    <SortTh label="Submissions" sortKey="submissions" />
+                    <SortTh label="Avg score" sortKey="averageScore" />
+                    <th className="px-4 py-3 text-right" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {sortedExams.map((e) => (
+                    <ExamRow key={e.id} courseId={courseId} exam={e} onEdit={setEditing} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-neutral-400">
+            Click a column to sort; open “Results” to see per-student scores and
+            topic accuracy.
+          </p>
+        </>
       )}
     </div>
   );
 }
+
+const EXAM_COLS = 6;
 
 function ExamRow({
   courseId,
@@ -139,79 +241,100 @@ function ExamRow({
   }
 
   return (
-    <li className={cn(cardClass, 'p-5')}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h3 className="font-semibold text-neutral-950">{exam.title}</h3>
-          <p className="mt-0.5 text-xs text-neutral-400">
-            {exam.questionCount} questions · {exam.durationMinutes} min ·{' '}
-            {exam.submissions} submission{exam.submissions === 1 ? '' : 's'}
-            {exam.averageScore != null && ` · avg ${exam.averageScore}%`}
-          </p>
-          {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={edit} disabled={loadingEdit} className={btn('ghost', 'sm')}>
-            {loadingEdit ? '…' : 'Edit'}
-          </button>
-          <button onClick={del} disabled={deleting} className={btn('ghost', 'sm')}>
-            {deleting ? '…' : 'Delete'}
-          </button>
-          <button onClick={toggle} className={btn('secondary', 'sm')}>
-            {open ? 'Hide results' : 'Results'}
-          </button>
-        </div>
-      </div>
+    <Fragment>
+      <tr className={cn('transition hover:bg-neutral-50', open && 'bg-neutral-50')}>
+        <td className="px-4 py-3.5">
+          <p className="font-semibold text-neutral-950">{exam.title}</p>
+          {error && <p className="mt-0.5 text-xs text-red-600">{error}</p>}
+        </td>
+        <td className="px-4 py-3.5 text-right font-mono text-sm text-neutral-800">
+          {exam.questionCount}
+        </td>
+        <td className="px-4 py-3.5 text-right font-mono text-sm text-neutral-800">
+          {exam.durationMinutes}
+        </td>
+        <td className="px-4 py-3.5 text-right font-mono text-sm text-neutral-800">
+          {exam.submissions}
+        </td>
+        <td
+          className={cn(
+            'px-4 py-3.5 text-right font-mono text-sm',
+            exam.averageScore != null ? 'text-neutral-800' : 'text-neutral-400',
+          )}
+        >
+          {exam.averageScore != null ? `${exam.averageScore}%` : '—'}
+        </td>
+        <td className="px-4 py-3.5">
+          <div className="flex items-center justify-end gap-2">
+            <button onClick={edit} disabled={loadingEdit} className={btn('ghost', 'sm')}>
+              {loadingEdit ? '…' : 'Edit'}
+            </button>
+            <button onClick={del} disabled={deleting} className={btn('ghost', 'sm')}>
+              {deleting ? '…' : 'Delete'}
+            </button>
+            <button onClick={toggle} aria-expanded={open} className={btn('secondary', 'sm')}>
+              {open ? 'Hide' : 'Results'}
+              <PiCaretDown className={cn('h-3.5 w-3.5 transition', open && 'rotate-180')} />
+            </button>
+          </div>
+        </td>
+      </tr>
 
       {open && (
-        <div className="mt-4 border-t border-neutral-100 pt-4">
-          {pending && !results ? (
-            <p className="text-sm text-neutral-400">Loading…</p>
-          ) : results && results.students.length ? (
-            <div className="grid gap-6 sm:grid-cols-2">
-              <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
-                  Scores
-                </p>
-                <ul className="space-y-1 text-sm">
-                  {results.students.map((s) => (
-                    <li key={s.studentId} className="flex justify-between">
-                      <span className="text-neutral-700">{s.name}</span>
-                      <span className="font-semibold text-neutral-900">{s.score}%</span>
-                    </li>
-                  ))}
-                </ul>
+        <tr className="bg-neutral-50/40">
+          <td colSpan={EXAM_COLS} className="px-5 py-4">
+            {pending && !results ? (
+              <p className="text-sm text-neutral-400">Loading…</p>
+            ) : results && results.students.length ? (
+              <div className="grid gap-6 sm:grid-cols-2">
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                    Scores
+                  </p>
+                  <table className="w-full text-sm">
+                    <tbody className="divide-y divide-neutral-100">
+                      {results.students.map((s) => (
+                        <tr key={s.studentId}>
+                          <td className="py-1.5 pr-4 text-neutral-700">{s.name}</td>
+                          <td className="py-1.5 text-right font-mono font-semibold text-neutral-900">
+                            {s.score == null ? '—' : `${s.score}%`}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                    By topic
+                  </p>
+                  <ul className="space-y-1.5">
+                    {results.topics.map((t) => (
+                      <li key={t.topic} className="text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-neutral-700">{t.topic}</span>
+                          <span className="text-neutral-500">
+                            {t.accuracy == null ? '—' : `${t.accuracy}%`}
+                          </span>
+                        </div>
+                        <div className="mt-1 h-1.5 rounded-full bg-neutral-100">
+                          <div
+                            className="h-1.5 rounded-full bg-signal-600"
+                            style={{ width: `${t.accuracy ?? 0}%` }}
+                          />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
-              <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
-                  By topic
-                </p>
-                <ul className="space-y-1.5">
-                  {results.topics.map((t) => (
-                    <li key={t.topic} className="text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-neutral-700">{t.topic}</span>
-                        <span className="text-neutral-500">
-                          {t.accuracy == null ? '—' : `${t.accuracy}%`}
-                        </span>
-                      </div>
-                      <div className="mt-1 h-1.5 rounded-full bg-neutral-100">
-                        <div
-                          className="h-1.5 rounded-full bg-signal-600"
-                          style={{ width: `${t.accuracy ?? 0}%` }}
-                        />
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-neutral-400">No submissions yet.</p>
-          )}
-        </div>
+            ) : (
+              <p className="text-sm text-neutral-400">No submissions yet.</p>
+            )}
+          </td>
+        </tr>
       )}
-    </li>
+    </Fragment>
   );
 }
 
@@ -360,17 +483,17 @@ function Builder({
         <div className="mt-3 flex flex-wrap items-end gap-3">
           <label className="block">
             <span className="text-xs font-medium text-neutral-500">Subject</span>
-            <input
-              list="aloc-subjects"
+            <select
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               className={cn(inputClass, 'mt-1 w-44')}
-            />
-            <datalist id="aloc-subjects">
+            >
               {SUBJECTS.map((s) => (
-                <option key={s} value={s} />
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
               ))}
-            </datalist>
+            </select>
           </label>
           <label className="block">
             <span className="text-xs font-medium text-neutral-500">Exam</span>

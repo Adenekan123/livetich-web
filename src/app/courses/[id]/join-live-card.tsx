@@ -17,6 +17,7 @@ export function JoinLiveCard({
   isLive,
   nextAt,
   timezone,
+  hasAssessment = true,
 }: {
   courseId: string;
   canJoin: boolean;
@@ -25,17 +26,31 @@ export function JoinLiveCard({
   isLive: boolean;
   nextAt: string | null;
   timezone: string | null;
+  /** Does the course have an authored class-end assessment? Instructors are
+   *  warned before going live without one (no quiz will materialize on end). */
+  hasAssessment?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
-  function onJoin() {
+  function join() {
     setError(null);
     startTransition(async () => {
       const res = await joinLiveSession(courseId);
       // Success redirects server-side; only an error state returns here.
       if (res?.error) setError(res.error);
     });
+  }
+
+  function onJoin() {
+    // Instructor about to go live (not rejoin) with no assessment configured:
+    // confirm first, since no post-class quiz will be generated.
+    if (isInstructor && !isLive && !hasAssessment) {
+      setConfirmOpen(true);
+      return;
+    }
+    join();
   }
 
   const when = nextAt
@@ -58,7 +73,7 @@ export function JoinLiveCard({
               {isLive ? (
                 <>
                   <span className="animate-live h-2 w-2 rounded-full bg-signal-500" />
-                  Class is live now
+                  Live now
                 </>
               ) : isInstructor ? (
                 'Ready to start'
@@ -92,6 +107,8 @@ export function JoinLiveCard({
             disabled={!joinableNow || pending}
             className={cn(
               btn('primary'),
+              // Pulse the CTA while the room is open/live to draw the eye.
+              joinableNow && !pending && 'animate-live',
               (!joinableNow || pending) && 'cursor-not-allowed opacity-50',
             )}
           >
@@ -109,6 +126,47 @@ export function JoinLiveCard({
       </div>
 
       {error && <p className="mt-3 text-sm text-rose-600">{error}</p>}
+
+      {confirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/60 p-4 backdrop-blur-sm">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="golive-confirm-title"
+            aria-describedby="golive-confirm-desc"
+            className="w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl sm:p-7"
+          >
+            <h2
+              id="golive-confirm-title"
+              className="font-display text-xl font-extrabold tracking-tight text-neutral-950"
+            >
+              Go live without an end-of-class assessment?
+            </h2>
+            <p id="golive-confirm-desc" className="mt-2 text-sm text-neutral-600">
+              This program has no assessment questions configured, so no
+              post-class quiz will be generated when this session ends. You can
+              add questions from the Assessments tool first, or continue anyway.
+            </p>
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => setConfirmOpen(false)}
+                className={btn('secondary')}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setConfirmOpen(false);
+                  join();
+                }}
+                className={btn('primary')}
+              >
+                Go live anyway →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { Fragment, useMemo, useState, useTransition } from 'react';
 import {
   PiCaretDown,
   PiPlus,
@@ -32,6 +32,8 @@ const fmtDate = (iso: string) =>
     year: 'numeric',
   });
 
+type HifzSortKey = 'name' | 'memorized' | 'surahs' | 'last' | 'targets';
+
 export function HifzManager({
   courseId,
   rows,
@@ -46,6 +48,10 @@ export function HifzManager({
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const [open, setOpen] = useState<string | null>(null);
+  const [sort, setSort] = useState<{ key: HifzSortKey; dir: 'asc' | 'desc' }>({
+    key: 'memorized',
+    dir: 'desc',
+  });
   const index = surahIndex(surahs);
 
   function act(fn: () => Promise<{ error: string | null }>) {
@@ -65,6 +71,69 @@ export function HifzManager({
     );
   }
 
+  const sortedRows = useMemo(() => {
+    const val = (r: HifzOverviewRow): number | string =>
+      sort.key === 'name'
+        ? r.student.name.toLowerCase()
+        : sort.key === 'memorized'
+          ? r.progress.ayahsMemorized
+          : sort.key === 'surahs'
+            ? r.progress.surahsTouched
+            : sort.key === 'targets'
+              ? r.targets.length
+              : r.progress.lastRecitedAt
+                ? new Date(r.progress.lastRecitedAt).getTime()
+                : -1;
+    return [...rows].sort((a, b) => {
+      const av = val(a);
+      const bv = val(b);
+      const cmp =
+        typeof av === 'string' && typeof bv === 'string'
+          ? av.localeCompare(bv)
+          : (av as number) - (bv as number);
+      return sort.dir === 'asc' ? cmp : -cmp;
+    });
+  }, [rows, sort]);
+
+  function toggleSort(key: HifzSortKey) {
+    setSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { key, dir: key === 'name' ? 'asc' : 'desc' },
+    );
+  }
+
+  function SortTh({
+    label,
+    sortKey,
+    align = 'right',
+  }: {
+    label: string;
+    sortKey: HifzSortKey;
+    align?: 'left' | 'right';
+  }) {
+    const active = sort.key === sortKey;
+    return (
+      <th
+        className={cn('px-4 py-3', align === 'right' ? 'text-right' : 'text-left')}
+        aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      >
+        <button
+          type="button"
+          onClick={() => toggleSort(sortKey)}
+          className={cn(
+            'inline-flex items-center gap-1 rounded transition hover:text-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-500',
+            align === 'right' && 'flex-row-reverse',
+            active ? 'text-signal-700' : 'text-neutral-400',
+          )}
+        >
+          {label}
+          <PiCaretDown className={cn('h-3 w-3', active && sort.dir === 'asc' && 'rotate-180')} />
+        </button>
+      </th>
+    );
+  }
+
   return (
     <section className="mt-8">
       {error && (
@@ -73,31 +142,53 @@ export function HifzManager({
         </p>
       )}
 
-      <div className="space-y-3">
-        {rows.map((row) => (
-          <StudentCard
-            key={row.student.id}
-            row={row}
-            surahs={surahs}
-            index={index}
-            totalAyahs={totalAyahs}
-            expanded={open === row.student.id}
-            pending={pending}
-            onToggle={() =>
-              setOpen((cur) => (cur === row.student.id ? null : row.student.id))
-            }
-            onAddTarget={(input) => act(() => createHifzTarget(courseId, input))}
-            onDeleteTarget={(id) => act(() => deleteHifzTarget(courseId, id))}
-            onLogEntry={(input) => act(() => logHifzEntry(courseId, input))}
-            onDeleteEntry={(id) => act(() => deleteHifzEntry(courseId, id))}
-          />
-        ))}
+      <div className={cn(cardClass, 'overflow-hidden')}>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-neutral-100 text-xs font-semibold uppercase tracking-wide">
+                <SortTh label="Student" sortKey="name" align="left" />
+                <SortTh label="Memorized" sortKey="memorized" />
+                <SortTh label="Surahs" sortKey="surahs" />
+                <SortTh label="Last recited" sortKey="last" />
+                <SortTh label="Targets" sortKey="targets" />
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100">
+              {sortedRows.map((row) => (
+                <StudentRow
+                  key={row.student.id}
+                  row={row}
+                  surahs={surahs}
+                  index={index}
+                  totalAyahs={totalAyahs}
+                  expanded={open === row.student.id}
+                  pending={pending}
+                  onToggle={() =>
+                    setOpen((cur) => (cur === row.student.id ? null : row.student.id))
+                  }
+                  onAddTarget={(input) => act(() => createHifzTarget(courseId, input))}
+                  onDeleteTarget={(id) => act(() => deleteHifzTarget(courseId, id))}
+                  onLogEntry={(input) => act(() => logHifzEntry(courseId, input))}
+                  onDeleteEntry={(id) => act(() => deleteHifzEntry(courseId, id))}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
+      <p className="mt-2 text-xs text-neutral-400">
+        Click a student to see and set their targets and recitation log; click a
+        column to sort.
+      </p>
     </section>
   );
 }
 
-function StudentCard({
+const HIFZ_COLS = 6;
+
+function StudentRow({
   row,
   surahs,
   index,
@@ -125,38 +216,50 @@ function StudentCard({
   const { student, targets, entries, progress } = row;
 
   return (
-    <div className={cn(cardClass, 'overflow-hidden')}>
-      {/* Header row (click to expand) */}
-      <button
+    <Fragment>
+      <tr
+        className={cn('cursor-pointer transition hover:bg-neutral-50', expanded && 'bg-neutral-50')}
         onClick={onToggle}
-        aria-expanded={expanded}
-        className="flex w-full items-center gap-4 px-5 py-4 text-left transition hover:bg-neutral-50"
       >
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-semibold text-neutral-950">{student.name}</p>
+        <td className="px-4 py-3.5">
+          <p className="font-semibold text-neutral-950">{student.name}</p>
           <p className="truncate text-xs text-neutral-400">{student.email}</p>
-        </div>
-        <div className="hidden w-56 shrink-0 sm:block">
-          <ProgressMeter progress={progress} totalAyahs={totalAyahs} />
-        </div>
-        <span className="shrink-0 text-xs text-neutral-400">
-          {targets.length} target{targets.length === 1 ? '' : 's'}
-        </span>
-        <PiCaretDown
-          className={cn(
-            'h-4 w-4 shrink-0 text-neutral-400 transition',
-            expanded && 'rotate-180',
-          )}
-        />
-      </button>
+        </td>
+        <td className="px-4 py-3.5 text-right font-mono text-sm text-neutral-800">
+          {progress.ayahsMemorized}
+        </td>
+        <td className="px-4 py-3.5 text-right font-mono text-sm text-neutral-800">
+          {progress.surahsTouched}
+        </td>
+        <td className={cn('px-4 py-3.5 text-right text-sm', progress.lastRecitedAt ? 'text-neutral-600' : 'text-neutral-400')}>
+          {progress.lastRecitedAt ? fmtDate(progress.lastRecitedAt) : '—'}
+        </td>
+        <td className="px-4 py-3.5 text-right font-mono text-sm text-neutral-800">
+          {targets.length}
+        </td>
+        <td className="px-4 py-3.5 text-right">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle();
+            }}
+            aria-expanded={expanded}
+            aria-label={`${expanded ? 'Hide' : 'Show'} ${student.name}'s targets and log`}
+            className="grid h-7 w-7 place-items-center rounded-full text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700"
+          >
+            <PiCaretDown className={cn('h-4 w-4 transition', expanded && 'rotate-180')} />
+          </button>
+        </td>
+      </tr>
 
       {expanded && (
-        <div className="border-t border-neutral-100 px-5 py-5">
-          <div className="sm:hidden">
-            <ProgressMeter progress={progress} totalAyahs={totalAyahs} />
-          </div>
-
-          <div className="mt-4 grid gap-6 lg:grid-cols-2">
+        <tr className="bg-neutral-50/40">
+          <td colSpan={HIFZ_COLS} className="px-5 py-5">
+            <div className="mb-4 max-w-sm">
+              <ProgressMeter progress={progress} totalAyahs={totalAyahs} />
+            </div>
+            <div className="grid gap-6 lg:grid-cols-2">
             {/* Targets */}
             <div>
               <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
@@ -246,9 +349,10 @@ function StudentCard({
               />
             </div>
           </div>
-        </div>
+          </td>
+        </tr>
       )}
-    </div>
+    </Fragment>
   );
 }
 

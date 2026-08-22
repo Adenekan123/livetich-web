@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Header } from '@/components/header';
 import { getCurrentUser } from '@/lib/auth';
 import { cardClass, cn } from '@/lib/ui';
 import { ChangePasswordForm } from '../change-password-form';
@@ -11,7 +10,6 @@ export default async function PasswordPage() {
   if (!(await getCurrentUser())) redirect('/login');
   return (
     <>
-      <Header />
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-10 sm:px-6">
         <Link href="/account" className="text-sm text-neutral-500 hover:text-neutral-900">
           ← Account

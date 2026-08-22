@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Header } from '@/components/header';
 import { api, ApiError } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import { avatarColor, cardClass, cn, initials } from '@/lib/ui';
@@ -38,7 +37,6 @@ export default async function AssignmentSubmissionsPage(props: {
 
   return (
     <>
-      <Header />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10 sm:px-6">
         <Link
           href={`/courses/${id}`}

@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { Header } from '@/components/header';
 import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
 import { isPluginEnabled, PLUGIN_TEST_PREP } from '@/lib/plugins';
@@ -33,7 +32,6 @@ export default async function ExamsPage(props: {
 
   return (
     <>
-      <Header />
       <main className="mx-auto w-full max-w-[1000px] flex-1 px-4 py-10 sm:px-6">
         <Link
           href={`/courses/${id}`}

@@ -17,6 +17,7 @@ import {
 } from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
 import { getRealtimeToken } from '@/lib/client-token';
+import { avatarColor, cn, initials } from '@/lib/ui';
 
 /** Media controls lifted up to the classroom's bottom bar. */
 export interface VideoControls {
@@ -144,14 +145,46 @@ function AudioSink({ track }: { track?: LKTrack }) {
   return <audio ref={ref} autoPlay />;
 }
 
+/** An initials avatar block — the default face of a tile whenever there is no
+ *  live camera track (camera off, or video still connecting/failed). Keeps the
+ *  room populated so a video hiccup never leaves the stage blank. */
+function InitialsFace({ tile, size = 'md' }: { tile: Tile; size?: 'sm' | 'md' }) {
+  return (
+    <div
+      className={cn(
+        'flex h-full w-full items-center justify-center',
+        avatarColor(tile.sid),
+      )}
+    >
+      <span
+        className={cn(
+          'grid place-items-center rounded-full bg-black/20 font-bold text-white',
+          size === 'sm' ? 'h-9 w-9 text-sm' : 'h-14 w-14 text-lg',
+        )}
+      >
+        {initials(tile.name)}
+      </span>
+    </div>
+  );
+}
+
 function ParticipantTile({ tile }: { tile: Tile }) {
   return (
     <div className="relative aspect-video overflow-hidden rounded-xl bg-neutral-800">
-      <VideoBox
-        track={tile.camera}
-        muted={tile.isLocal}
-        className="h-full w-full object-cover"
-      />
+      {tile.camera ? (
+        <VideoBox
+          track={tile.camera}
+          muted={tile.isLocal}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <InitialsFace tile={tile} />
+      )}
+      {tile.isInstructor && (
+        <span className="absolute right-1 top-1 rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+          Teach
+        </span>
+      )}
       <div className="absolute bottom-1 left-1 flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white">
         {tile.micMuted ? (
           <PiMicrophoneSlash className="h-3.5 w-3.5 text-neutral-300" />
@@ -175,14 +208,25 @@ export function VideoStage({
   sessionId,
   dataSaver,
   onControls,
+  compact = false,
+  canSpeak = true,
 }: {
   sessionId: string;
   /** Low-bandwidth mode: unsubscribe from all remote video, keep audio. */
   dataSaver: boolean;
   /** Reports the media controls (or null when not live) to the parent. */
   onControls?: (c: VideoControls | null) => void;
+  /** Render as a slim presence filmstrip (used while a non-video surface fills
+   *  the stage) instead of the full video grid. Audio still plays. */
+  compact?: boolean;
+  /** Whether the local user may use the mic. Students are muted until the
+   *  instructor grants them the mic; a revoke force-mutes them immediately. */
+  canSpeak?: boolean;
 }) {
   const roomRef = useRef<Room | null>(null);
+  // How many times we've silently auto-reconnected since the last good connect.
+  // Reset once we're live again; capped so a truly dead room still surfaces.
+  const autoRetryRef = useRef(0);
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [screen, setScreen] = useState<LKTrack | undefined>();
   const [status, setStatus] = useState<'connecting' | 'live' | 'error'>(
@@ -261,6 +305,23 @@ export function VideoStage({
         // a recoverable hiccup.
         .on(RoomEvent.Disconnected, (reason) => {
           if (cancelled || reason === DisconnectReason.CLIENT_INITIATED) return;
+          // Recoverable drops (the "fails a few seconds after joining" case)
+          // reconnect on their own a few times before we make the user act —
+          // the LiveKit auto-reconnect having already given up by this point.
+          const permanent =
+            reason === DisconnectReason.DUPLICATE_IDENTITY ||
+            reason === DisconnectReason.PARTICIPANT_REMOVED ||
+            reason === DisconnectReason.SERVER_SHUTDOWN ||
+            reason === DisconnectReason.ROOM_DELETED ||
+            reason === DisconnectReason.ROOM_CLOSED;
+          if (!permanent && autoRetryRef.current < 3) {
+            autoRetryRef.current += 1;
+            setReconnecting(true);
+            setTimeout(() => {
+              if (!cancelled) setRetryKey((k) => k + 1);
+            }, 1500);
+            return;
+          }
           setReconnecting(false);
           setError(disconnectMessage(reason));
           setStatus('error');
@@ -280,6 +341,7 @@ export function VideoStage({
         return;
       }
       roomRef.current = room;
+      autoRetryRef.current = 0;
       setReconnecting(false);
       setError(null);
       setStatus('live');
@@ -314,6 +376,19 @@ export function VideoStage({
     await room.localParticipant.setScreenShareEnabled(next);
     setScreenOn(next);
   }, []);
+
+  // Losing (or never having) mic permission force-mutes the local user — we
+  // can't let a student keep the mic live once the instructor revokes it.
+  useEffect(() => {
+    if (canSpeak) return;
+    const room = roomRef.current;
+    if (room?.localParticipant.isMicrophoneEnabled) {
+      void room.localParticipant.setMicrophoneEnabled(false);
+    }
+    // Deferred so it isn't a synchronous set-state inside the effect body.
+    const t = setTimeout(() => setMicOn(false), 0);
+    return () => clearTimeout(t);
+  }, [canSpeak, status]);
 
   // Report media controls up to the classroom bar (null while not live).
   useEffect(() => {
@@ -357,6 +432,62 @@ export function VideoStage({
     }
   }, [dataSaver, tiles]);
 
+  // Compact filmstrip: a slim column of on-camera tiles so faces stay visible
+  // while a non-video surface (board / mushaf / code) fills the stage. Audio for
+  // every remote keeps playing regardless of the mode.
+  if (compact) {
+    // Every attendee gets a tile — camera when live, initials otherwise — so the
+    // filmstrip mirrors the room even when nobody (or a failing feed) is on video.
+    const strip = tiles.slice(0, 5);
+    const hidden = tiles.length - strip.length;
+    return (
+      <div className="flex h-full w-full flex-col gap-2">
+        {tiles
+          .filter((t) => !t.isLocal)
+          .map((t) => (
+            <AudioSink key={`${t.sid}-audio`} track={t.mic} />
+          ))}
+        {strip.map((t) => (
+          <div
+            key={t.sid}
+            className="relative aspect-video w-full shrink-0 overflow-hidden rounded-xl border border-white/10 bg-neutral-800"
+          >
+            {t.camera && !dataSaver ? (
+              <VideoBox
+                track={t.camera}
+                muted={t.isLocal}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <InitialsFace tile={t} size="sm" />
+            )}
+            {t.isInstructor && (
+              <span className="absolute right-1 top-1 rounded bg-black/55 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+                Teach
+              </span>
+            )}
+            <div className="absolute bottom-1 left-1 flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-[11px] text-white">
+              {t.micMuted ? (
+                <PiMicrophoneSlash className="h-3 w-3 text-neutral-300" />
+              ) : (
+                <PiMicrophone className="h-3 w-3" />
+              )}
+              <span className="max-w-[96px] truncate">
+                {t.name}
+                {t.isLocal && ' (you)'}
+              </span>
+            </div>
+          </div>
+        ))}
+        {hidden > 0 && (
+          <div className="rounded-xl border border-white/10 bg-neutral-900/85 px-2.5 py-1.5 text-center text-[11px] font-medium text-neutral-300">
+            +{hidden} in the room
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (status === 'error') {
     return (
       <div className="flex h-full items-center justify-center rounded-2xl bg-neutral-900 text-center text-sm text-neutral-400">
@@ -398,8 +529,9 @@ export function VideoStage({
     );
   }
 
-  // Only participants actually on camera get a tile — no empty avatar boxes.
-  const camTiles = tiles.filter((t) => t.camera);
+  // Every attendee gets a tile — camera when live, an initials face otherwise —
+  // so the room always shows who is present, even if a video feed drops.
+  const roster = tiles;
 
   return (
     <div className="relative flex h-full flex-col gap-2">
@@ -427,7 +559,7 @@ export function VideoStage({
         </div>
       )}
 
-      {camTiles.length > 0 ? (
+      {roster.length > 0 ? (
         <div
           className={
             screen
@@ -435,16 +567,14 @@ export function VideoStage({
               : 'grid flex-1 auto-rows-min content-start gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3'
           }
         >
-          {camTiles.map((t) => (
+          {roster.map((t) => (
             <ParticipantTile key={t.sid} tile={t} />
           ))}
         </div>
       ) : (
         !screen && (
           <div className="flex flex-1 items-center justify-center text-sm text-neutral-500">
-            {status === 'connecting'
-              ? 'Connecting to video…'
-              : 'No one is on camera yet.'}
+            {status === 'connecting' ? 'Connecting to video…' : 'Waiting for others to join…'}
           </div>
         )
       )}

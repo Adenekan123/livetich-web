@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Header } from '@/components/header';
 import { api } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
 import { avatarColor, cardClass, cn, initials } from '@/lib/ui';
@@ -26,7 +25,6 @@ export default async function ProfilePage() {
 
   return (
     <>
-      <Header />
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-10 sm:px-6">
         <Link href="/account" className="text-sm text-neutral-500 hover:text-neutral-900">
           ← Account

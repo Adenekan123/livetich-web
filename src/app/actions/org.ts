@@ -23,15 +23,17 @@ export async function createInvite(
 ): Promise<{ error: string | null; invite?: OrgInvite }> {
   const role = formData.get('role');
   const label = formData.get('label') || undefined;
+  const courseId = formData.get('courseId') || undefined;
   try {
     const invite = await withToken((token) =>
       api<OrgInvite>('/organizations/invites', {
         method: 'POST',
         token,
-        body: { role, label },
+        body: { role, label, courseId },
       }),
     );
     revalidatePath('/dashboard');
+    if (typeof courseId === 'string') revalidatePath(`/courses/${courseId}`);
     return { error: null, invite };
   } catch (e) {
     if (e instanceof ApiError) return { error: e.message };
@@ -39,11 +41,12 @@ export async function createInvite(
   }
 }
 
-export async function revokeInvite(id: string): Promise<void> {
+export async function revokeInvite(id: string, courseId?: string): Promise<void> {
   await withToken((token) =>
     api(`/organizations/invites/${id}`, { method: 'DELETE', token }),
   );
   revalidatePath('/dashboard');
+  if (courseId) revalidatePath(`/courses/${courseId}`);
 }
 
 /** Admin enables/disables an org member. Returns an error message on failure. */

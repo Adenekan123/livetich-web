@@ -41,6 +41,8 @@ export interface InviteResolution {
   valid: boolean;
   role?: Exclude<Role, 'ORG_ADMIN'>;
   organization?: Organization;
+  /** Set when the link is scoped to one program (join straight into it). */
+  course?: { id: string; title: string } | null;
 }
 
 export type InviteStatus = 'ACTIVE' | 'EXPIRED' | 'USED_UP' | 'REVOKED';
@@ -49,6 +51,8 @@ export type InviteStatus = 'ACTIVE' | 'EXPIRED' | 'USED_UP' | 'REVOKED';
 export interface OrgInvite {
   id: string;
   role: Role;
+  /** Set when the link is scoped to one program. */
+  courseId: string | null;
   token: string;
   label: string | null;
   maxUses: number | null;
@@ -189,6 +193,18 @@ export interface StudentAssignment extends Assignment {
 /** GET /courses/:id/assignments as instructor/admin — includes submission count. */
 export interface ManagedAssignment extends Assignment {
   submissionCount: number;
+}
+
+/** GET /assignments/mine — a student's coursework across every course. */
+export interface MyAssignment {
+  id: string;
+  title: string;
+  courseId: string;
+  courseTitle: string;
+  sessionId: string | null;
+  sessionLive: boolean;
+  dueAt: string | null;
+  submitted: boolean;
 }
 
 export interface Section {
@@ -405,6 +421,24 @@ export interface LeaderboardRow {
   name: string;
   points: number;
   rank: number;
+}
+
+/** A course's attendance sheet, filterable by session (GET /sessions/course/:id/attendance). */
+export interface CourseAttendance {
+  sessions: {
+    id: string;
+    scheduledAt: string;
+    status: 'SCHEDULED' | 'LIVE' | 'ENDED';
+    sectionTitle: string | null;
+  }[];
+  /** The session these rows describe — the requested one, or the latest by default. */
+  sessionId: string | null;
+  rows: {
+    studentId: string;
+    name: string;
+    present: boolean;
+    joinedAt: string | null;
+  }[];
 }
 
 /** An add-on pack from the catalog, annotated with this org's enabled state. */

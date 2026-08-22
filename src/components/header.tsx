@@ -5,7 +5,7 @@ import { getCurrentUser, getToken } from '@/lib/auth';
 import { avatarColor, btn, initials } from '@/lib/ui';
 import type { Organization } from '@/lib/types';
 import { IdleLogout } from './idle-logout';
-import { Logo } from './logo';
+import { BrandLogo } from './brand-logo';
 import { NavLinks } from './nav-links';
 
 const ROLE_LABEL: Record<string, string> = {
@@ -33,10 +33,7 @@ export async function Header() {
             href="/"
             className="flex items-center gap-2 rounded-lg transition hover:opacity-80"
           >
-            <Logo className="h-8 w-8" />
-            <span className="text-lg font-semibold tracking-tight text-neutral-950">
-              livetich
-            </span>
+            <BrandLogo />
           </Link>
 
           {org && (

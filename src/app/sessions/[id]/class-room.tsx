@@ -12,6 +12,7 @@ import type {
   ChatMessage,
   ClientToServerEvents,
   LeaderboardEntry,
+  RoomScheme,
   RoomUser,
   ServerToClientEvents,
   StageView,
@@ -31,6 +32,7 @@ import {
   PiMicrophone,
   PiMicrophoneSlash,
   PiMicrophoneStage,
+  PiPalette,
   PiPhoneX,
   PiScreencast,
   PiShuffle,
@@ -42,6 +44,10 @@ import {
   PiX,
 } from 'react-icons/pi';
 import { VideoStage, type VideoControls } from './video-stage';
+import {
+  BuzzerQuestionModal,
+  type NewBuzzerQuestion,
+} from './buzzer-question-modal';
 import {
   LiveHifzPanel,
   submitHifzDraft,
@@ -84,6 +90,64 @@ interface BuzzerQuestion {
   timeLimitSec: number;
 }
 
+/** Short WebAudio cues for the buzzer — synthesized on the fly, no assets.
+ *  'open' = an attention buzz when a round appears; 'timeout' = a descending
+ *  "dying" tone when it auto-closes on time-up; 'win' = a quick rising chime
+ *  when someone answers first. Best-effort: never let a cue break the room. */
+function playBuzzerCue(
+  ctxRef: { current: AudioContext | null },
+  kind: 'open' | 'timeout' | 'win',
+) {
+  try {
+    type ACtor = typeof AudioContext;
+    const Ctor: ACtor | undefined =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: ACtor }).webkitAudioContext;
+    if (!Ctor) return;
+    const ctx = ctxRef.current ?? (ctxRef.current = new Ctor());
+    if (ctx.state === 'suspended') void ctx.resume();
+    const t0 = ctx.currentTime;
+
+    const beep = (
+      at: number,
+      dur: number,
+      from: number,
+      to: number,
+      type: OscillatorType,
+      peak = 0.18,
+    ) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(from, t0 + at);
+      if (to !== from) {
+        osc.frequency.exponentialRampToValueAtTime(
+          Math.max(1, to),
+          t0 + at + dur,
+        );
+      }
+      gain.gain.setValueAtTime(0.0001, t0 + at);
+      gain.gain.exponentialRampToValueAtTime(peak, t0 + at + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t0 + at);
+      osc.stop(t0 + at + dur + 0.03);
+    };
+
+    if (kind === 'open') {
+      beep(0, 0.12, 520, 520, 'square');
+      beep(0.14, 0.18, 780, 780, 'square');
+    } else if (kind === 'win') {
+      beep(0, 0.1, 660, 660, 'triangle', 0.16);
+      beep(0.11, 0.2, 990, 990, 'triangle', 0.16);
+    } else {
+      beep(0, 0.6, 440, 90, 'sawtooth', 0.16);
+    }
+  } catch {
+    /* audio unavailable — ignore */
+  }
+}
+
 interface Wave {
   id: string;
   name: string;
@@ -94,12 +158,26 @@ const MEDALS = ['🥇', '🥈', '🥉'];
 /** The shared surfaces the instructor can put the class on. Which ones actually
  *  appear depends on the org's add-on packs (see `views` in the component). */
 const VIEW_META = {
-  video: { label: 'Video', Icon: PiVideoCamera },
+  video: { label: 'Room', Icon: PiVideoCamera },
   board: { label: 'Chalkboard', Icon: PiChalkboardTeacher },
   quran: { label: 'Qur’an', Icon: PiBookOpenText },
   code: { label: 'Code', Icon: PiCode },
 } as const;
 const VIEWS = ['video', 'board', 'quran', 'code'] as const;
+
+/** Selectable room colour schemes. `swatch` is the accent shown in the picker;
+ *  `bg` previews the room background. Keep in sync with globals.css + the
+ *  RoomScheme contract. 'teal' is the classic default. */
+const SCHEME_META: Record<
+  RoomScheme,
+  { label: string; swatch: string; bg: string }
+> = {
+  teal: { label: 'Teal', swatch: '#0d9488', bg: '#0a0a0a' },
+  forest: { label: 'Forest', swatch: '#10b981', bg: '#071108' },
+  indigo: { label: 'Indigo', swatch: '#6366f1', bg: '#0a091d' },
+  plum: { label: 'Plum', swatch: '#f43f5e', bg: '#17070f' },
+};
+const SCHEMES = ['teal', 'forest', 'indigo', 'plum'] as const;
 
 /** A pill-shaped control button for the dark bottom bar. */
 function ctrl(
@@ -144,14 +222,22 @@ export function ClassRoom({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [locked, setLocked] = useState(false);
   const [hands, setHands] = useState<RoomUser[]>([]);
+  // Student ids the instructor has granted the mic. Students are muted by
+  // default and can only unmute once they appear here (or are picked to speak).
+  const [speakers, setSpeakers] = useState<string[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [buzzer, setBuzzer] = useState<BuzzerState | null>(null);
   const [picked, setPicked] = useState<RoomUser | null>(null);
   const [answerResult, setAnswerResult] = useState<boolean | null>(null);
+  // Ticking clock (ms) that drives the buzzer countdown while a round is open.
+  const [now, setNow] = useState(() => Date.now());
   const [notice, setNotice] = useState<string | null>(null);
   // Counter bumped on every `submission:new`; drives the grading panel reload.
   const [submissionPing, setSubmissionPing] = useState(0);
   const [view, setView] = useState<StageView>('video');
+  // Instructor-driven room colour scheme, synced to everyone via the gateway.
+  const [scheme, setScheme] = useState<RoomScheme>('teal');
+  const [schemePicker, setSchemePicker] = useState(false);
   const [quranPos, setQuranPos] = useState<{ surah: number; ayah: number }>({
     surah: 1,
     ayah: 1,
@@ -176,6 +262,10 @@ export function ClassRoom({
   });
   const [questions, setQuestions] = useState<BuzzerQuestion[]>([]);
   const [selectedQuestion, setSelectedQuestion] = useState('');
+  // Inline "create a buzzer question" modal. `startBuzzerOnCreate` launches the
+  // round as soon as the new question saves (the empty-state flow).
+  const [buzzerForm, setBuzzerForm] = useState(false);
+  const [startBuzzerOnCreate, setStartBuzzerOnCreate] = useState(false);
   const [panel, setPanel] = useState<
     'chat' | 'people' | 'points' | 'hifz' | 'work' | null
   >('chat');
@@ -185,8 +275,22 @@ export function ClassRoom({
   const handsRef = useRef<RoomUser[]>([]);
   const handsSeededRef = useRef(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  // Buzzer sound + auto-close plumbing.
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const prevBuzzerPhaseRef = useRef<BuzzerState['phase'] | null>(null);
+  const buzzerDismissRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cue = (kind: 'open' | 'timeout' | 'win') =>
+    playBuzzerCue(audioCtxRef, kind);
+  // Voice-note recording (chat).
+  const [recording, setRecording] = useState(false);
+  const [uploadingVoice, setUploadingVoice] = useState(false);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const voiceChunksRef = useRef<Blob[]>([]);
 
   const isInstructor = me.role === 'INSTRUCTOR';
+  // Admins shadow-join: hidden from everyone, read-only. They watch and listen
+  // but never publish, raise a hand, or post — so their presence stays unseen.
+  const isShadow = me.role === 'ORG_ADMIN';
   // Pack-gated surfaces: the mushaf needs Islamic Education, the code editor
   // needs Code Instruction. Everything else (video, chalkboard) is core.
   const views = VIEWS.filter(
@@ -194,6 +298,21 @@ export function ClassRoom({
       (v !== 'quran' || islamicEducation) && (v !== 'code' || codeInstruction),
   );
   const myHandRaised = hands.some((h) => h.userId === me.userId);
+  // Seconds left on the open buzzer round (null when none is running).
+  const buzzerRemaining =
+    buzzer?.phase === 'QUESTION_OPEN' && buzzer.question
+      ? Math.max(
+          0,
+          Math.ceil(
+            (new Date(buzzer.question.openedAt).getTime() +
+              buzzer.question.timeLimitSec * 1000 -
+              now) /
+              1000,
+          ),
+        )
+      : null;
+  // Instructors always have the mic; students only once granted (or picked).
+  const canSpeak = isInstructor || speakers.includes(me.userId);
   // Students can join before the instructor arrives; until a host is present in
   // the room, they wait rather than staring at an empty call.
   const instructorPresent = users.some((u) => u.role === 'INSTRUCTOR');
@@ -235,6 +354,7 @@ export function ClassRoom({
     socket.on('chat:message', (m) => setMessages((prev) => [...prev, m]));
     socket.on('chat:locked', (p) => setLocked(p.locked));
     socket.on('view:changed', (p) => setView(p.view));
+    socket.on('theme:changed', (p) => setScheme(p.scheme));
     socket.on('quran:position', (p) =>
       setQuranPos({ surah: p.surah, ayah: p.ayah }),
     );
@@ -260,9 +380,30 @@ export function ClassRoom({
       setHands(p.raised);
     });
     socket.on('leaderboard:update', (p) => setLeaderboard(p.entries));
+    socket.on('mic:speakers', (p) => setSpeakers(p.userIds));
     socket.on('buzzer:state', (p) => {
+      const prev = prevBuzzerPhaseRef.current;
+      prevBuzzerPhaseRef.current = p.state.phase;
       setBuzzer(p.state);
-      if (p.state.phase === 'QUESTION_OPEN') setAnswerResult(null);
+
+      // Cancel any pending auto-close from an earlier terminal state.
+      if (buzzerDismissRef.current) {
+        clearTimeout(buzzerDismissRef.current);
+        buzzerDismissRef.current = null;
+      }
+
+      if (p.state.phase === 'QUESTION_OPEN') {
+        setAnswerResult(null);
+        setNow(Date.now()); // reset the countdown baseline
+        if (prev !== 'QUESTION_OPEN') cue('open'); // buzz on a new round
+      } else if (p.state.phase === 'WINNER' || p.state.phase === 'TIMEOUT') {
+        cue(p.state.phase === 'WINNER' ? 'win' : 'timeout');
+        // Show the outcome briefly, then close the card for everyone.
+        buzzerDismissRef.current = setTimeout(() => {
+          setBuzzer(null);
+          buzzerDismissRef.current = null;
+        }, 3500);
+      }
     });
     socket.on('quiz:answer-result', (p) => setAnswerResult(p.isCorrect));
     socket.on('student:picked', (p) => {
@@ -326,6 +467,23 @@ export function ClassRoom({
     })();
   }, [isInstructor, sessionId]);
 
+  // Drive the buzzer countdown: tick the clock while a round is open. The
+  // baseline is reset in the socket handler, so this only advances `now`.
+  useEffect(() => {
+    if (buzzer?.phase !== 'QUESTION_OPEN') return;
+    const t = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(t);
+  }, [buzzer?.phase, buzzer?.question?.questionId]);
+
+  // Tear down the audio context + any pending auto-close on unmount.
+  useEffect(
+    () => () => {
+      if (buzzerDismissRef.current) clearTimeout(buzzerDismissRef.current);
+      void audioCtxRef.current?.close().catch(() => {});
+    },
+    [],
+  );
+
   const send = (form: HTMLFormElement) => {
     const input = form.elements.namedItem('body') as HTMLInputElement;
     const body = input.value.trim();
@@ -334,11 +492,93 @@ export function ClassRoom({
     input.value = '';
   };
 
+  // Record a chat voice note: capture from the mic, upload the blob, then post
+  // the returned URL over the socket (see chat:voice). A second tap stops + sends.
+  const uploadVoice = async (blob: Blob) => {
+    setUploadingVoice(true);
+    try {
+      const token = await getRealtimeToken();
+      const form = new FormData();
+      form.append('file', blob, 'voice.webm');
+      const res = await fetch(`${API_URL}/sessions/${sessionId}/voice`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token ?? ''}` },
+        body: form,
+      });
+      if (!res.ok) throw new Error(`upload failed (${res.status})`);
+      const { audioUrl } = (await res.json()) as { audioUrl: string };
+      socketRef.current?.emit('chat:voice', { sessionId, audioUrl });
+    } catch {
+      setNotice('Could not send the voice note. Try again.');
+      setTimeout(() => setNotice(null), 4000);
+    } finally {
+      setUploadingVoice(false);
+    }
+  };
+
+  const startRecording = async () => {
+    if (recording || uploadingVoice) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const rec = new MediaRecorder(stream);
+      voiceChunksRef.current = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) voiceChunksRef.current.push(e.data);
+      };
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(voiceChunksRef.current, {
+          type: rec.mimeType || 'audio/webm',
+        });
+        if (blob.size > 0) void uploadVoice(blob);
+      };
+      recorderRef.current = rec;
+      rec.start();
+      setRecording(true);
+    } catch {
+      setNotice('Microphone access is needed to record a voice note.');
+      setTimeout(() => setNotice(null), 4000);
+    }
+  };
+
+  const stopRecording = () => {
+    recorderRef.current?.stop();
+    recorderRef.current = null;
+    setRecording(false);
+  };
+
   // Instructor drives the surface for the whole room; students just follow.
   const changeView = (next: StageView) => {
     if (!isInstructor) return;
     setView(next);
     socketRef.current?.emit('view:change', { sessionId, view: next });
+  };
+
+  // Kick off a buzzer round from the dock. Open to every student in the room —
+  // first correct answer wins. Needs at least one authored question.
+  const startBuzzer = () => {
+    if (!isInstructor) return;
+    if (questions.length === 0) {
+      // Nothing authored yet — let the instructor create one on the spot and
+      // launch the round the moment it saves.
+      setStartBuzzerOnCreate(true);
+      setBuzzerForm(true);
+      return;
+    }
+    const questionId = selectedQuestion || questions[0].id;
+    socketRef.current?.emit('buzzer:start', { sessionId, questionId });
+    setPanel('points');
+  };
+
+  const onBuzzerCreated = (q: NewBuzzerQuestion, start: boolean) => {
+    setQuestions((prev) => [...prev, q]);
+    setSelectedQuestion(q.id);
+    setBuzzerForm(false);
+    setStartBuzzerOnCreate(false);
+    if (start) {
+      socketRef.current?.emit('buzzer:start', { sessionId, questionId: q.id });
+    }
+    setPanel('points');
   };
 
   // Instructor turns the shared mushaf; the position broadcasts to everyone.
@@ -368,10 +608,20 @@ export function ClassRoom({
   const chatLockedForMe = locked && !isInstructor;
 
   return (
-    <div className="fixed inset-0 z-40 flex flex-col bg-neutral-950 text-neutral-100">
+    <div
+      className="room-shell fixed inset-0 z-40 flex flex-col bg-[var(--room-bg)] text-neutral-100"
+      data-room-scheme={scheme}
+    >
       {/* ---------- Top bar ---------- */}
       <header className="flex items-center gap-3 border-b border-white/10 px-4 py-2.5">
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
+          {/* On-air badge — the room is live once the host is present. */}
+          {connected && instructorPresent && (
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-rose-500/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-rose-300">
+              <span className="animate-live h-1.5 w-1.5 rounded-full bg-rose-400" aria-hidden />
+              Live
+            </span>
+          )}
           {/* Connection status: visible label + colour (not colour-alone, not
               hover-only) and aria-live so state changes are announced. */}
           <span
@@ -395,48 +645,97 @@ export function ClassRoom({
               {connected ? 'Connected' : 'Connecting…'}
             </span>
           </span>
+          {isShadow && (
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-accent-500/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-accent-300">
+              Shadowing · hidden
+            </span>
+          )}
           <h1 className="truncate text-sm font-semibold text-white">
             {courseTitle}
           </h1>
         </div>
 
-        {/* Center: the surface switch (instructor drives it; students follow). */}
-        <div className="flex shrink-0 items-center justify-center">
-          {isInstructor ? (
-            <div className="inline-flex rounded-full bg-white/10 p-1">
-              {views.map((v) => {
-                const { label, Icon } = VIEW_META[v];
-                return (
-                  <button
-                    key={v}
-                    onClick={() => changeView(v)}
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition',
-                      view === v
-                        ? 'bg-white text-neutral-950'
-                        : 'text-neutral-300 hover:text-white',
-                    )}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            (() => {
-              const { label, Icon } = VIEW_META[view];
-              return (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3.5 py-1.5 text-sm font-medium text-neutral-200">
-                  <Icon className="h-4 w-4" />
-                  {label}
+        {/* Right: instructor colour-scheme picker + participant count. */}
+        <div className="flex shrink-0 items-center gap-2">
+          {isInstructor && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setSchemePicker((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={schemePicker}
+                aria-label="Change room colour scheme"
+                title="Room colour scheme"
+                className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-neutral-200 transition hover:bg-white/15"
+              >
+                <PiPalette className="h-3.5 w-3.5" />
+                <span
+                  className="h-3 w-3 rounded-full ring-1 ring-white/30"
+                  style={{ backgroundColor: SCHEME_META[scheme].swatch }}
+                  aria-hidden
+                />
+                <span className="hidden sm:inline">
+                  {SCHEME_META[scheme].label}
                 </span>
-              );
-            })()
+              </button>
+              {schemePicker && (
+                <>
+                  {/* Click-away layer. */}
+                  <button
+                    type="button"
+                    aria-hidden
+                    tabIndex={-1}
+                    onClick={() => setSchemePicker(false)}
+                    className="fixed inset-0 z-40 cursor-default"
+                  />
+                  <div
+                    role="menu"
+                    aria-label="Room colour scheme"
+                    className="absolute right-0 z-50 mt-2 w-44 overflow-hidden rounded-xl border border-white/10 bg-neutral-900 p-1.5 shadow-2xl"
+                  >
+                    <p className="px-2 py-1 text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
+                      Room colour
+                    </p>
+                    {SCHEMES.map((s) => (
+                      <button
+                        key={s}
+                        role="menuitemradio"
+                        aria-checked={scheme === s}
+                        onClick={() => {
+                          setScheme(s); // optimistic; server echoes to all
+                          socketRef.current?.emit('theme:change', {
+                            sessionId,
+                            scheme: s,
+                          });
+                          setSchemePicker(false);
+                        }}
+                        className={cn(
+                          'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm transition',
+                          scheme === s
+                            ? 'bg-white/10 text-white'
+                            : 'text-neutral-300 hover:bg-white/5',
+                        )}
+                      >
+                        <span
+                          className="h-4 w-4 shrink-0 rounded-full ring-1 ring-white/20"
+                          style={{
+                            background: `linear-gradient(135deg, ${SCHEME_META[s].swatch} 55%, ${SCHEME_META[s].bg} 55%)`,
+                          }}
+                          aria-hidden
+                        />
+                        <span className="flex-1">{SCHEME_META[s].label}</span>
+                        {scheme === s && (
+                          <span className="text-signal-400" aria-hidden>
+                            ✓
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           )}
-        </div>
-
-        <div className="flex flex-1 items-center justify-end">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-xs font-medium text-neutral-300">
             <PiUsers className="h-3.5 w-3.5" />
             {users.length}
@@ -448,11 +747,28 @@ export function ClassRoom({
       <div className="flex min-h-0 flex-1">
         <main className="relative min-w-0 flex-1 p-3">
           {/* Both surfaces stay mounted so switching never drops call or board. */}
-          <div className={cn('absolute inset-3', view === 'video' ? '' : 'hidden')}>
+          {/* Video stays mounted always. In the Video view it fills the stage;
+              on any other surface it shrinks to a presence filmstrip in the
+              corner (pointer-events off so it never blocks the board). */}
+          <div
+            aria-hidden={view !== 'video'}
+            className={cn(
+              view === 'video'
+                ? 'absolute inset-3'
+                : // On board / mushaf / code the presence filmstrip is hidden —
+                  // faces already live in the Room tab, and a floating strip only
+                  // collided with those surfaces' own toolbars. Kept mounted (not
+                  // unmounted) so audio keeps playing and switching back to Room
+                  // is instant.
+                  'pointer-events-none absolute h-0 w-0 overflow-hidden opacity-0',
+            )}
+          >
             <VideoStage
               sessionId={sessionId}
               dataSaver={dataSaver}
               onControls={setVideoControls}
+              compact={view !== 'video'}
+              canSpeak={canSpeak}
             />
           </div>
           <div className={cn('absolute inset-3', view === 'board' ? '' : 'hidden')}>
@@ -522,16 +838,57 @@ export function ClassRoom({
             </div>
           )}
 
+          {/* Raised-hand queue — surfaced on the stage so the instructor can
+              call on someone without opening a panel. Uses the existing
+              pick-random event; the buzzer card (below) sits centre-bottom. */}
+          {isInstructor && hands.length > 0 && (
+            <div className="absolute bottom-4 left-4 z-30 flex items-center gap-2.5 rounded-2xl border border-white/15 bg-neutral-900/90 px-3 py-2 backdrop-blur">
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-white">
+                <PiHandPalm className="h-4 w-4 text-signal-400" />
+                {hands.length} {hands.length === 1 ? 'hand' : 'hands'}
+              </span>
+              <span className="max-w-[150px] truncate text-sm text-neutral-300">
+                {hands[0].name}
+                {hands.length > 1 && ` +${hands.length - 1}`}
+              </span>
+              <button
+                onClick={() =>
+                  socketRef.current?.emit('student:pick-random', { sessionId })
+                }
+                className={ctrl('on', 'py-1.5')}
+              >
+                <PiShuffle className="h-4 w-4" />
+                Pick to speak
+              </button>
+            </div>
+          )}
+
           {/* Buzzer question card floats at the bottom of the stage. */}
           {buzzer?.question &&
             (buzzer.phase === 'QUESTION_OPEN' ||
               buzzer.phase === 'WINNER' ||
               buzzer.phase === 'TIMEOUT') && (
               <div className="absolute inset-x-4 bottom-4 z-30 mx-auto max-w-xl overflow-hidden rounded-2xl bg-white text-neutral-900 shadow-2xl">
-                <div className="flex items-center gap-2 border-b border-neutral-100 bg-signal-50 px-5 py-2.5">
+                <div className="flex items-center justify-between gap-2 border-b border-neutral-100 bg-signal-50 px-5 py-2.5">
                   <span className="flex items-center gap-1.5 text-sm font-semibold text-signal-700">
                     <PiLightning className="h-4 w-4" /> Buzzer round
+                    <span className="text-signal-600/70">
+                      · {buzzer.question.points} pts
+                    </span>
                   </span>
+                  {buzzerRemaining !== null && (
+                    <span
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-mono text-xs font-bold tabular-nums',
+                        buzzerRemaining <= 5
+                          ? 'animate-pulse bg-rose-100 text-rose-700'
+                          : 'bg-white text-signal-700',
+                      )}
+                      aria-live="off"
+                    >
+                      ⏱ {buzzerRemaining}s
+                    </span>
+                  )}
                 </div>
                 <div className="p-5">
                   <p className="font-medium text-neutral-900">
@@ -545,6 +902,7 @@ export function ClassRoom({
                           disabled={
                             isInstructor ||
                             answerResult !== null ||
+                            buzzerRemaining === 0 ||
                             !buzzer.eligibleUserIds.includes(me.userId)
                           }
                           onClick={() =>
@@ -565,7 +923,8 @@ export function ClassRoom({
                     </div>
                   ) : buzzer.phase === 'WINNER' ? (
                     <div className="mt-4 flex items-center gap-2 rounded-xl bg-signal-50 px-4 py-3 text-sm font-medium text-signal-700">
-                      🏆 {buzzer.winner?.name} answered first and earns the mic!
+                      🏆 {buzzer.winner?.name} answered first — +
+                      {buzzer.question.points} points!
                     </div>
                   ) : (
                     <div className="mt-4 flex items-center gap-2 rounded-xl bg-neutral-50 px-4 py-3 text-sm text-neutral-500">
@@ -596,7 +955,7 @@ export function ClassRoom({
 
         {/* ---------- Right panel: chat / people ---------- */}
         {panel && (
-          <aside className="flex w-full max-w-[360px] shrink-0 flex-col border-l border-white/10 bg-neutral-900">
+          <aside className="flex w-full max-w-[360px] shrink-0 flex-col border-l border-white/10 bg-[var(--room-panel)]">
             <div className="flex items-center gap-1 border-b border-white/10 p-2">
               {(['chat', 'people', 'points'] as const).map((t) => (
                 <button
@@ -665,7 +1024,7 @@ export function ClassRoom({
                     </p>
                   )}
                   {messages.map((m) => (
-                    <p key={m.id} className="leading-relaxed">
+                    <div key={m.id} className="leading-relaxed">
                       <span
                         className={cn(
                           'font-semibold',
@@ -676,11 +1035,27 @@ export function ClassRoom({
                       >
                         {m.user.name}
                       </span>
-                      <span className="text-neutral-300"> {m.body}</span>
-                    </p>
+                      {m.audioUrl ? (
+                        <span className="mt-1 block">
+                          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                          <audio
+                            controls
+                            src={m.audioUrl}
+                            className="h-9 w-full max-w-[240px]"
+                          />
+                        </span>
+                      ) : (
+                        <span className="text-neutral-300"> {m.body}</span>
+                      )}
+                    </div>
                   ))}
                   <div ref={chatEndRef} />
                 </div>
+                {isShadow ? (
+                  <p className="border-t border-white/10 p-3 text-center text-xs text-neutral-500">
+                    You&apos;re shadowing this class — read only.
+                  </p>
+                ) : (
                 <form
                   className="flex gap-2 border-t border-white/10 p-2.5"
                   onSubmit={(e) => {
@@ -696,6 +1071,27 @@ export function ClassRoom({
                     className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder:text-neutral-500 focus:border-signal-500 focus:outline-none focus:ring-4 focus:ring-signal-500/10 disabled:opacity-50"
                   />
                   <button
+                    type="button"
+                    onClick={recording ? stopRecording : startRecording}
+                    disabled={chatLockedForMe || uploadingVoice}
+                    className={ctrl(recording ? 'danger' : 'default', 'px-3 py-1.5')}
+                    aria-label={
+                      recording ? 'Stop and send voice note' : 'Record voice note'
+                    }
+                    title={recording ? 'Stop & send' : 'Record a voice note'}
+                  >
+                    {uploadingVoice ? (
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                    ) : recording ? (
+                      <span className="flex items-center gap-1.5">
+                        <span className="animate-live h-2 w-2 rounded-full bg-white" />
+                        Stop
+                      </span>
+                    ) : (
+                      <PiMicrophone className="h-4 w-4" />
+                    )}
+                  </button>
+                  <button
                     disabled={chatLockedForMe}
                     className={ctrl('on', 'px-4 py-1.5')}
                     aria-label="Send message"
@@ -703,6 +1099,7 @@ export function ClassRoom({
                     Send
                   </button>
                 </form>
+                )}
               </>
             ) : panel === 'people' ? (
               <div className="flex-1 overflow-y-auto p-4">
@@ -730,9 +1127,52 @@ export function ClassRoom({
                         </span>
                         {handUp && (
                           <PiHandPalm
-                            className="h-4 w-4 text-signal-400"
+                            className="h-4 w-4 shrink-0 text-signal-400"
                             title="Hand raised"
                           />
+                        )}
+                        {/* Instructor grants / revokes the mic per student. */}
+                        {isInstructor && u.role === 'STUDENT' ? (
+                          <button
+                            onClick={() =>
+                              socketRef.current?.emit(
+                                speakers.includes(u.userId)
+                                  ? 'mic:revoke'
+                                  : 'mic:grant',
+                                { sessionId, userId: u.userId },
+                              )
+                            }
+                            aria-label={
+                              speakers.includes(u.userId)
+                                ? `Mute ${u.name}`
+                                : `Let ${u.name} speak`
+                            }
+                            title={
+                              speakers.includes(u.userId)
+                                ? 'Revoke mic'
+                                : 'Grant mic'
+                            }
+                            className={cn(
+                              'grid h-7 w-7 shrink-0 place-items-center rounded-lg transition',
+                              speakers.includes(u.userId)
+                                ? 'bg-signal-600 text-white hover:bg-signal-500'
+                                : 'text-neutral-400 hover:bg-white/10 hover:text-white',
+                            )}
+                          >
+                            {speakers.includes(u.userId) ? (
+                              <PiMicrophone className="h-4 w-4" />
+                            ) : (
+                              <PiMicrophoneSlash className="h-4 w-4" />
+                            )}
+                          </button>
+                        ) : (
+                          !isInstructor &&
+                          speakers.includes(u.userId) && (
+                            <PiMicrophone
+                              className="h-4 w-4 shrink-0 text-signal-400"
+                              title="Can speak"
+                            />
+                          )
                         )}
                       </li>
                     );
@@ -790,41 +1230,58 @@ export function ClassRoom({
                 )}
 
                 {/* Buzzer (instructor) */}
-                {isInstructor && questions.length > 0 && (
+                {isInstructor && (
                   <div className="border-t border-white/10 pt-3">
-                    <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-signal-400">
-                      <PiLightning className="h-3.5 w-3.5" /> Buzzer
-                    </h3>
-                    <select
-                      value={selectedQuestion}
-                      onChange={(e) => setSelectedQuestion(e.target.value)}
-                      className="mt-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-signal-500 focus:outline-none focus:ring-4 focus:ring-signal-500/10"
-                    >
-                      {questions.map((q) => (
-                        <option
-                          key={q.id}
-                          value={q.id}
-                          className="text-neutral-900"
+                    <div className="flex items-center justify-between">
+                      <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-signal-400">
+                        <PiLightning className="h-3.5 w-3.5" /> Buzzer
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setStartBuzzerOnCreate(false);
+                          setBuzzerForm(true);
+                        }}
+                        className="text-xs font-semibold text-signal-400 transition hover:text-signal-300"
+                      >
+                        + New question
+                      </button>
+                    </div>
+                    {questions.length === 0 ? (
+                      <p className="mt-2 text-xs text-neutral-500">
+                        No buzzer questions yet. Add one to run a round.
+                      </p>
+                    ) : (
+                      <>
+                        <select
+                          value={selectedQuestion}
+                          onChange={(e) => setSelectedQuestion(e.target.value)}
+                          className="mt-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-signal-500 focus:outline-none focus:ring-4 focus:ring-signal-500/10"
                         >
-                          {q.body} ({q.timeLimitSec}s)
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() =>
-                        socketRef.current?.emit('buzzer:start', {
-                          sessionId,
-                          questionId: selectedQuestion,
-                        })
-                      }
-                      disabled={
-                        hands.length === 0 || buzzer?.phase === 'QUESTION_OPEN'
-                      }
-                      title={hands.length === 0 ? 'Needs raised hands' : undefined}
-                      className={ctrl('on', 'mt-2 w-full justify-center')}
-                    >
-                      Start round
-                    </button>
+                          {questions.map((q) => (
+                            <option
+                              key={q.id}
+                              value={q.id}
+                              className="text-neutral-900"
+                            >
+                              {q.body} ({q.timeLimitSec}s)
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() =>
+                            socketRef.current?.emit('buzzer:start', {
+                              sessionId,
+                              questionId: selectedQuestion || questions[0].id,
+                            })
+                          }
+                          disabled={buzzer?.phase === 'QUESTION_OPEN'}
+                          className={ctrl('on', 'mt-2 w-full justify-center')}
+                        >
+                          Start round
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -849,8 +1306,8 @@ export function ClassRoom({
 
       {/* ---------- Bottom control bar ---------- */}
       <footer className="flex flex-wrap items-center gap-2 border-t border-white/10 px-4 py-3">
-        {/* Center: media + hand */}
-        <div className="mx-auto flex flex-wrap items-center justify-center gap-2">
+        {/* Left: media controls */}
+        <div className="flex flex-wrap items-center gap-2">
           {/* Data saver — everyone can toggle; drops video to save bandwidth. */}
           <button
             onClick={() => setDataSaver((v) => !v)}
@@ -860,18 +1317,26 @@ export function ClassRoom({
             <PiVideoCameraSlash className="h-4 w-4" />
             {dataSaver ? 'Data saver on' : 'Data saver'}
           </button>
-          {videoControls?.canPublishMedia && (
+          {!isShadow && videoControls?.canPublishMedia && (
             <>
               <button
                 onClick={videoControls.toggleMic}
-                className={ctrl(videoControls.micOn ? 'on' : 'default')}
+                disabled={!canSpeak}
+                title={
+                  canSpeak
+                    ? undefined
+                    : 'The instructor grants the mic — raise your hand to ask to speak'
+                }
+                className={ctrl(
+                  !canSpeak ? 'default' : videoControls.micOn ? 'on' : 'default',
+                )}
               >
-                {videoControls.micOn ? (
+                {videoControls.micOn && canSpeak ? (
                   <PiMicrophone className="h-4 w-4" />
                 ) : (
                   <PiMicrophoneSlash className="h-4 w-4" />
                 )}
-                {videoControls.micOn ? 'Mic on' : 'Mic'}
+                {!canSpeak ? 'Mic locked' : videoControls.micOn ? 'Mic on' : 'Mic'}
               </button>
               <button
                 onClick={videoControls.toggleCam}
@@ -886,7 +1351,7 @@ export function ClassRoom({
               </button>
             </>
           )}
-          {videoControls?.canShareScreen && (
+          {!isShadow && videoControls?.canShareScreen && (
             <button
               onClick={videoControls.toggleScreen}
               className={ctrl(videoControls.screenOn ? 'on' : 'default')}
@@ -895,7 +1360,44 @@ export function ClassRoom({
               {videoControls.screenOn ? 'Stop sharing' : 'Share screen'}
             </button>
           )}
-          {!isInstructor && (
+        </div>
+
+        {/* Center: surface switch (instructor drives; students follow) + the
+            role's primary action. */}
+        <div className="mx-auto flex flex-wrap items-center justify-center gap-2">
+          {isInstructor ? (
+            <div className="inline-flex rounded-full bg-white/10 p-1">
+              {views.map((v) => {
+                const { label, Icon } = VIEW_META[v];
+                return (
+                  <button
+                    key={v}
+                    onClick={() => changeView(v)}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition',
+                      view === v
+                        ? 'bg-white text-neutral-950'
+                        : 'text-neutral-300 hover:text-white',
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            (() => {
+              const { label, Icon } = VIEW_META[view];
+              return (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3.5 py-1.5 text-sm font-medium text-neutral-200">
+                  <Icon className="h-4 w-4" />
+                  Following · {label}
+                </span>
+              );
+            })()
+          )}
+          {!isInstructor && !isShadow && (
             <button
               onClick={() =>
                 socketRef.current?.emit(
@@ -903,7 +1405,12 @@ export function ClassRoom({
                   { sessionId },
                 )
               }
-              className={ctrl(myHandRaised ? 'on' : 'default')}
+              className={cn(
+                'inline-flex items-center gap-2 rounded-full px-6 py-2 text-sm font-semibold transition',
+                myHandRaised
+                  ? 'bg-signal-600 text-white hover:bg-signal-500'
+                  : 'bg-white text-neutral-950 hover:bg-neutral-100',
+              )}
             >
               <PiHandPalm className="h-4 w-4" />
               {myHandRaised ? 'Lower hand' : 'Raise hand'}
@@ -911,6 +1418,19 @@ export function ClassRoom({
           )}
           {isInstructor && (
             <>
+              <button
+                onClick={startBuzzer}
+                disabled={buzzer?.phase === 'QUESTION_OPEN'}
+                className="inline-flex items-center gap-2 rounded-full bg-accent-500 px-4 py-2 text-sm font-semibold text-neutral-950 transition hover:bg-accent-400 disabled:cursor-not-allowed disabled:opacity-40"
+                title={
+                  buzzer?.phase === 'QUESTION_OPEN'
+                    ? 'A buzzer question is already open'
+                    : 'Start a buzzer round'
+                }
+              >
+                <PiLightning className="h-4 w-4" />
+                Start buzzer
+              </button>
               <button
                 onClick={() =>
                   socketRef.current?.emit('chat:lock', {
@@ -926,16 +1446,6 @@ export function ClassRoom({
                   <PiLockSimple className="h-4 w-4" />
                 )}
                 {locked ? 'Unlock chat' : 'Lock chat'}
-              </button>
-              <button
-                onClick={() =>
-                  socketRef.current?.emit('student:pick-random', { sessionId })
-                }
-                disabled={hands.length === 0}
-                className={ctrl('default')}
-              >
-                <PiShuffle className="h-4 w-4" />
-                Pick hand ({hands.length})
               </button>
             </>
           )}
@@ -999,6 +1509,19 @@ export function ClassRoom({
           </button>
         </div>
       </footer>
+
+      {/* Create-a-buzzer-question modal (instructor) */}
+      {isInstructor && buzzerForm && (
+        <BuzzerQuestionModal
+          courseId={courseId}
+          startOnCreate={startBuzzerOnCreate}
+          onClose={() => {
+            setBuzzerForm(false);
+            setStartBuzzerOnCreate(false);
+          }}
+          onCreated={onBuzzerCreated}
+        />
+      )}
 
       {/* Confirm before ending / leaving the class */}
       {confirmLeave && (
