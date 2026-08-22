@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { resetPassword, type ResetPasswordState } from '@/app/actions/auth';
 import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
-import { inputClass, labelClass } from '@/lib/ui';
+import { inputClassLg, labelClassLg } from '@/lib/ui';
 
 const initial: ResetPasswordState = { error: null };
 
@@ -29,11 +29,11 @@ export function ResetPasswordForm({ token }: { token: string }) {
   }
 
   return (
-    <form action={action} className="mt-8 space-y-5">
+    <form action={action} className="mt-8 space-y-6">
       <FormError message={state.error} />
       <input type="hidden" name="token" value={token} />
-      <div className="space-y-1.5">
-        <label htmlFor="newPassword" className={labelClass}>
+      <div className="space-y-2">
+        <label htmlFor="newPassword" className={labelClassLg}>
           New password
         </label>
         <input
@@ -44,11 +44,11 @@ export function ResetPasswordForm({ token }: { token: string }) {
           minLength={8}
           autoComplete="new-password"
           placeholder="••••••••"
-          className={inputClass}
+          className={inputClassLg}
         />
       </div>
-      <div className="space-y-1.5">
-        <label htmlFor="confirm" className={labelClass}>
+      <div className="space-y-2">
+        <label htmlFor="confirm" className={labelClassLg}>
           Confirm new password
         </label>
         <input
@@ -59,10 +59,10 @@ export function ResetPasswordForm({ token }: { token: string }) {
           minLength={8}
           autoComplete="new-password"
           placeholder="••••••••"
-          className={inputClass}
+          className={inputClassLg}
         />
       </div>
-      <SubmitButton size="lg" className="w-full" pendingLabel="Updating…">
+      <SubmitButton size="xl" className="w-full" pendingLabel="Updating…">
         Update password
       </SubmitButton>
     </form>

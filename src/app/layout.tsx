@@ -26,6 +26,15 @@ export const metadata: Metadata = {
   title: "livetich — teach skills live",
   description:
     "One live room for your whole cohort: video, a shared chalkboard, buzzer quizzes, and a live leaderboard that keeps everyone in it.",
+  // Two marks, chosen by the browser/tab colour scheme: the dark mark reads on
+  // light chrome, the light mark on dark chrome.
+  icons: {
+    icon: [
+      { url: "/favicon-dark.png", media: "(prefers-color-scheme: light)", type: "image/png" },
+      { url: "/favicon-light.png", media: "(prefers-color-scheme: dark)", type: "image/png" },
+    ],
+    apple: { url: "/favicon-dark.png" },
+  },
 };
 
 export default function RootLayout({

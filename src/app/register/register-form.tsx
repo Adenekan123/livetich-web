@@ -5,7 +5,7 @@ import { registerOrganization, type AuthFormState } from '@/app/actions/auth';
 import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
 import { PasswordInput } from '@/components/password-input';
-import { inputClass, labelClass } from '@/lib/ui';
+import { inputClassLg, labelClassLg } from '@/lib/ui';
 
 const initial: AuthFormState = { error: null };
 
@@ -19,11 +19,11 @@ export function RegisterForm() {
   const [state, action] = useActionState(registerOrganization, initial);
 
   return (
-    <form action={action} className="mt-8 space-y-5">
+    <form action={action} className="mt-8 space-y-6">
       <FormError message={state.error} />
 
-      <div className="space-y-1.5">
-        <label htmlFor="organizationName" className={labelClass}>
+      <div className="space-y-2">
+        <label htmlFor="organizationName" className={labelClassLg}>
           Your school or teaching space
         </label>
         <input
@@ -32,15 +32,15 @@ export function RegisterForm() {
           required
           autoComplete="organization"
           placeholder="e.g. Bright Future Institute, or your own name"
-          className={inputClass}
+          className={inputClassLg}
         />
-        <p className="text-xs text-neutral-400">
+        <p className="text-[13px] text-neutral-400">
           This is the name your students will see. You can change it anytime.
         </p>
       </div>
 
-      <div className="space-y-1.5">
-        <label htmlFor="name" className={labelClass}>
+      <div className="space-y-2">
+        <label htmlFor="name" className={labelClassLg}>
           Your name
         </label>
         <input
@@ -49,12 +49,12 @@ export function RegisterForm() {
           required
           autoComplete="name"
           placeholder="Amara Okafor"
-          className={inputClass}
+          className={inputClassLg}
         />
       </div>
 
-      <div className="space-y-1.5">
-        <label htmlFor="email" className={labelClass}>
+      <div className="space-y-2">
+        <label htmlFor="email" className={labelClassLg}>
           Email
         </label>
         <input
@@ -64,11 +64,11 @@ export function RegisterForm() {
           required
           autoComplete="email"
           placeholder="you@example.com"
-          className={inputClass}
+          className={inputClassLg}
         />
       </div>
-      <div className="space-y-1.5">
-        <label htmlFor="password" className={labelClass}>
+      <div className="space-y-2">
+        <label htmlFor="password" className={labelClassLg}>
           Password
         </label>
         <PasswordInput
@@ -79,13 +79,14 @@ export function RegisterForm() {
           autoComplete="new-password"
           placeholder="Create a password"
           showRequirement
+          size="lg"
         />
       </div>
 
-      <SubmitButton size="lg" className="w-full" pendingLabel="Setting up…">
+      <SubmitButton size="xl" className="w-full" pendingLabel="Setting up…">
         Create my teaching space
       </SubmitButton>
-      <p className="text-xs text-neutral-400">
+      <p className="text-[13px] text-neutral-400">
         Next, you&apos;ll add your logo and brand colour, then invite instructors
         and students with a link — all from your dashboard.
       </p>

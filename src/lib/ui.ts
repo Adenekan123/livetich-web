@@ -12,7 +12,7 @@ export function cn(...parts: Array<string | false | null | undefined>): string {
 }
 
 type Variant = 'primary' | 'accent' | 'secondary' | 'ghost' | 'danger';
-type Size = 'sm' | 'md' | 'lg';
+type Size = 'sm' | 'md' | 'lg' | 'xl';
 
 const BTN_BASE =
   'inline-flex select-none items-center justify-center gap-2 rounded-full font-semibold transition duration-150 ease-out active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:pointer-events-none disabled:opacity-50';
@@ -21,6 +21,9 @@ const BTN_SIZES: Record<Size, string> = {
   sm: 'px-3.5 py-1.5 text-sm',
   md: 'px-4.5 py-2.5 text-sm',
   lg: 'px-6 py-3 text-[15px]',
+  // Roomy on phones, settling to `lg` from sm up — pairs with the auth fields,
+  // which only enlarge in mobile mode.
+  xl: 'px-6 py-3.5 text-base sm:py-3 sm:text-[15px]',
 };
 
 const BTN_VARIANTS: Record<Variant, string> = {
@@ -48,6 +51,17 @@ export const inputClass =
   'w-full rounded-xl border border-neutral-300 bg-white px-3.5 py-2.5 text-sm text-neutral-950 shadow-sm transition placeholder:text-neutral-400 focus:border-signal-600 focus:outline-none focus:ring-4 focus:ring-signal-600/15';
 
 export const labelClass = 'block text-sm font-medium text-neutral-700';
+
+/**
+ * Auth field styling that only enlarges in mobile mode: a taller hit area and
+ * 16px text on phones (16px also stops iOS zooming on focus), settling back to
+ * the standard `inputClass` metrics from sm up.
+ */
+export const inputClassLg =
+  'w-full rounded-xl border border-neutral-300 bg-white px-4 py-3.5 text-base text-neutral-950 shadow-sm transition placeholder:text-neutral-400 focus:border-signal-600 focus:outline-none focus:ring-4 focus:ring-signal-600/15 sm:px-3.5 sm:py-2.5 sm:text-sm';
+
+export const labelClassLg =
+  'block text-[15px] font-semibold text-neutral-800 sm:text-sm sm:font-medium sm:text-neutral-700';
 
 export const cardClass = 'rounded-2xl border border-neutral-200 bg-white shadow-sm';
 

@@ -16,7 +16,7 @@ export function SubmitButton({
 }: {
   children: React.ReactNode;
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
   className?: string;
   pendingLabel?: string;
 }) {

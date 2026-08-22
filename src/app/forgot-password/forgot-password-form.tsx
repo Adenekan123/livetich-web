@@ -7,7 +7,7 @@ import {
 } from '@/app/actions/auth';
 import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
-import { inputClass, labelClass } from '@/lib/ui';
+import { inputClassLg, labelClassLg } from '@/lib/ui';
 
 const initial: ForgotPasswordState = { error: null };
 
@@ -24,10 +24,10 @@ export function ForgotPasswordForm() {
   }
 
   return (
-    <form action={action} className="mt-8 space-y-5">
+    <form action={action} className="mt-8 space-y-6">
       <FormError message={state.error} />
-      <div className="space-y-1.5">
-        <label htmlFor="email" className={labelClass}>
+      <div className="space-y-2">
+        <label htmlFor="email" className={labelClassLg}>
           Email
         </label>
         <input
@@ -37,10 +37,10 @@ export function ForgotPasswordForm() {
           required
           autoComplete="email"
           placeholder="you@example.com"
-          className={inputClass}
+          className={inputClassLg}
         />
       </div>
-      <SubmitButton size="lg" className="w-full" pendingLabel="Sending…">
+      <SubmitButton size="xl" className="w-full" pendingLabel="Sending…">
         Send reset link
       </SubmitButton>
     </form>

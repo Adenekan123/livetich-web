@@ -1,10 +1,11 @@
 import { cn } from '@/lib/ui';
 
 /**
- * The Livetich wordmark (`public/livetich-logo.png`). The asset is a light
- * wordmark built for dark surfaces, so on light backgrounds we sit it on a
- * compact dark chip rather than recolouring the raster (which would shift the
- * green play accent). Use `onDark` on already-dark surfaces to drop the chip.
+ * The Livetich wordmark. Two production assets, picked by surface:
+ *   - `onDark`  → `livetich-logo.png`, the light wordmark for dark grounds.
+ *   - default   → `logo-daek.png`, the dark wordmark for light grounds.
+ * Each renders directly (no chip / no recolouring) so the green play accent
+ * stays true. `className` fully controls the height when passed.
  */
 export function BrandLogo({
   onDark = false,
@@ -13,21 +14,12 @@ export function BrandLogo({
   onDark?: boolean;
   className?: string;
 }) {
-  // The asset carries generous transparent padding, so heights run large to
-  // give the wordmark real presence. `className` (when passed) fully controls
-  // the height to avoid clashing with the default.
-  const img = (
+  return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src="/livetich-logo.png"
+      src={onDark ? '/livetich-logo.png' : '/logo-daek.png'}
       alt="Livetich"
       className={cn('w-auto object-contain', className ?? (onDark ? 'h-18' : 'h-9'))}
     />
-  );
-  if (onDark) return img;
-  return (
-    <span className="inline-flex items-center rounded-lg bg-neutral-950 px-1.5 py-0.5">
-      {img}
-    </span>
   );
 }

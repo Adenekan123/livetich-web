@@ -247,11 +247,11 @@ async function LandingNav() {
   const user = await getCurrentUser().catch(() => null);
   return (
     <div id="landing-nav" className="sticky top-0 z-50">
-      <nav className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-5">
-        <Link href="/" className="nav-brand flex items-center gap-2.5">
-          <BrandLogo onDark className="h-22" />
+      <nav className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 sm:px-5 lg:h-20">
+        <Link href="/" className="nav-brand flex shrink-0 items-center gap-2.5">
+          <BrandLogo onDark className="h-20 w-auto sm:h-14 lg:h-20" />
         </Link>
-        <div className="flex items-center gap-1 sm:gap-2">
+        <div className="flex items-center gap-0.5 sm:gap-2">
           <Link
             href="#features"
             className="nav-link hidden rounded-full px-4 py-2 text-sm font-medium md:block"
@@ -274,7 +274,7 @@ async function LandingNav() {
           {user ? (
             <Link
               href="/dashboard"
-              className="nav-cta rounded-full px-4 py-2 text-sm font-semibold shadow-sm transition duration-200 ease-out active:scale-95"
+              className="nav-cta whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-semibold shadow-sm transition duration-200 ease-out active:scale-95 sm:px-4"
             >
               Go to dashboard
             </Link>
@@ -282,13 +282,13 @@ async function LandingNav() {
             <>
               <Link
                 href="/login"
-                className="nav-link rounded-full px-4 py-2 text-sm font-medium"
+                className="nav-link whitespace-nowrap rounded-full px-2.5 py-2 text-sm font-medium sm:px-4"
               >
                 Log in
               </Link>
               <Link
                 href="/register"
-                className="nav-cta rounded-full px-4 py-2 text-sm font-semibold shadow-sm transition duration-200 ease-out active:scale-95"
+                className="nav-cta hidden whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-semibold shadow-sm transition duration-200 ease-out active:scale-95 sm:inline-block sm:px-4"
               >
                 Get started
               </Link>
@@ -1099,11 +1099,11 @@ export default async function Home() {
 
       {/* ============================ FOOTER ============================ */}
       <footer className="border-t border-lp-border bg-lp-bg">
-        <div className="mx-auto flex max-w-[1600px] flex-col items-center justify-between gap-4 px-5 py-8 sm:flex-row">
+        <div className="mx-auto flex max-w-[1600px] flex-col items-center gap-6 px-5 py-9 text-center sm:flex-row sm:justify-between sm:gap-4 sm:text-left">
           <Link href="/" className="flex items-center gap-2.5">
-            <BrandLogo onDark className="h-10" />
+            <BrandLogo onDark className="h-20 w-auto sm:h-12" />
           </Link>
-          <nav className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-lp-text-3">
+          <nav className="flex flex-wrap justify-center gap-x-5 gap-y-2.5 text-sm font-medium text-lp-text-3 sm:justify-start">
             <Link href="/courses" className="hover:text-lp-lime">Browse courses</Link>
             <Link href="/login" className="hover:text-lp-lime">Log in</Link>
             <Link href="/register" className="hover:text-lp-lime">Get started</Link>

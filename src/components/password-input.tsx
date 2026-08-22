@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { cn, inputClass } from '@/lib/ui';
+import { cn, inputClass, inputClassLg } from '@/lib/ui';
 
 /**
  * Password field with a show/hide toggle. Reduces typo-driven login failures
@@ -16,6 +16,7 @@ export function PasswordInput({
   minLength,
   required,
   showRequirement = false,
+  size = 'md',
 }: {
   id: string;
   name: string;
@@ -25,11 +26,14 @@ export function PasswordInput({
   required?: boolean;
   /** When true (with minLength), show a live "at least N characters" hint. */
   showRequirement?: boolean;
+  /** `lg` uses the roomier auth field styling + a larger toggle target. */
+  size?: 'md' | 'lg';
 }) {
   const [show, setShow] = useState(false);
   const [value, setValue] = useState('');
   const met = minLength ? value.length >= minLength : true;
   const hintId = `${id}-req`;
+  const lg = size === 'lg';
   return (
     <div className="relative">
       <input
@@ -42,14 +46,17 @@ export function PasswordInput({
         placeholder={placeholder}
         aria-describedby={showRequirement && minLength ? hintId : undefined}
         onChange={(e) => setValue(e.target.value)}
-        className={cn(inputClass, 'pr-11')}
+        className={cn(lg ? inputClassLg : inputClass, lg ? 'pr-12 sm:pr-11' : 'pr-11')}
       />
       <button
         type="button"
         onClick={() => setShow((s) => !s)}
         aria-label={show ? 'Hide password' : 'Show password'}
         aria-pressed={show}
-        className="absolute right-1 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-lg text-neutral-400 transition hover:text-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-500"
+        className={cn(
+          'absolute right-1 top-1/2 grid -translate-y-1/2 place-items-center rounded-lg text-neutral-400 transition hover:text-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-500',
+          lg ? 'h-11 w-11 sm:h-9 sm:w-9' : 'h-9 w-9',
+        )}
       >
         {show ? (
           <svg viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" aria-hidden>
