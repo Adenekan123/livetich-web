@@ -374,7 +374,7 @@ export default async function CoursePage(props: {
             {course.title}
           </h1>
           <StatusPill status={cohort.status} label={cohort.label} />
-          {canManage && (
+          {isAdmin && (
             <span className="sm:ml-auto">
               <EditProgramButton course={course} />
             </span>
