@@ -91,11 +91,15 @@ export function BoardTldraw({
   sessionId,
   canDraw,
   templates = [],
+  licenseKey,
 }: {
   sessionId: string;
   canDraw: boolean;
   /** Subject template keys available for this org (gated per plugin). */
   templates?: string[];
+  /** tldraw commercial license key (removes the watermark). Threaded from the
+   *  server page so it stays a runtime value, not a build-time inline. */
+  licenseKey?: string;
 }) {
   const [store] = useState(() => createTLStore());
   // Presenter tools (camera-follow + shared laser). Refs bridge the socket
@@ -357,7 +361,7 @@ export function BoardTldraw({
       ref={wrapperRef}
       className="relative h-full min-h-[320px] overflow-hidden rounded-xl border border-neutral-300 bg-white"
     >
-      <Tldraw store={store} onMount={handleMount} />
+      <Tldraw store={store} onMount={handleMount} licenseKey={licenseKey} />
 
       {/* Instructor board controls (top-center, clear of tldraw's menus). */}
       {canDraw && (

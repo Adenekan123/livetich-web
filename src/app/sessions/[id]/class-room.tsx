@@ -201,6 +201,7 @@ export function ClassRoom({
   islamicEducation = false,
   codeInstruction = false,
   testPrep = false,
+  tldrawLicenseKey,
 }: {
   sessionId: string;
   courseId: string;
@@ -213,6 +214,8 @@ export function ClassRoom({
   codeInstruction?: boolean;
   /** Test Prep pack on — adds exam-style chalkboard templates (axes). */
   testPrep?: boolean;
+  /** tldraw license key (from the server env) for the shared chalkboard. */
+  tldrawLicenseKey?: string;
 }) {
   const router = useRouter();
   const [ending, startEnding] = useTransition();
@@ -775,6 +778,7 @@ export function ClassRoom({
             <BoardTldraw
               sessionId={sessionId}
               canDraw={isInstructor}
+              licenseKey={tldrawLicenseKey}
               templates={[
                 'lined',
                 ...(testPrep ? ['axes'] : []),
