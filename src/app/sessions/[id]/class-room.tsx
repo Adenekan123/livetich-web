@@ -198,6 +198,7 @@ export function ClassRoom({
   courseId,
   courseTitle,
   me,
+  teaching = false,
   islamicEducation = false,
   codeInstruction = false,
   testPrep = false,
@@ -207,6 +208,9 @@ export function ClassRoom({
   courseId: string;
   courseTitle: string;
   me: RoomUser;
+  /** This user is an org admin entering in teach-mode: treat them as the
+   *  instructor (host UI + controls) rather than a hidden observer. */
+  teaching?: boolean;
   /** Islamic Education pack on for this org — unlocks the mushaf surface and
    *  the Hifz panel. Off = a general classroom (video, chalkboard). */
   islamicEducation?: boolean;
@@ -290,10 +294,11 @@ export function ClassRoom({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const voiceChunksRef = useRef<Blob[]>([]);
 
-  const isInstructor = me.role === 'INSTRUCTOR';
-  // Admins shadow-join: hidden from everyone, read-only. They watch and listen
-  // but never publish, raise a hand, or post — so their presence stays unseen.
-  const isShadow = me.role === 'ORG_ADMIN';
+  // A teach-mode admin acts as the instructor (host UI, publishes, controls).
+  const isInstructor = me.role === 'INSTRUCTOR' || teaching;
+  // Admins otherwise shadow-join: hidden from everyone, read-only. They watch
+  // and listen but never publish, raise a hand, or post — presence stays unseen.
+  const isShadow = me.role === 'ORG_ADMIN' && !teaching;
   // Pack-gated surfaces: the mushaf needs Islamic Education, the code editor
   // needs Code Instruction. Everything else (video, chalkboard) is core.
   const views = VIEWS.filter(
@@ -349,7 +354,10 @@ export function ClassRoom({
 
     socket.on('connect', () => {
       setConnected(true);
-      socket.emit('room:join', { sessionId });
+      socket.emit('room:join', {
+        sessionId,
+        ...(teaching ? { as: 'teach' as const } : {}),
+      });
     });
     socket.on('disconnect', () => setConnected(false));
     socket.on('room:presence', (p) => setUsers(p.users));
@@ -422,7 +430,7 @@ export function ClassRoom({
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [sessionId, me.userId]);
+  }, [sessionId, me.userId, teaching]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -768,6 +776,7 @@ export function ClassRoom({
           >
             <VideoStage
               sessionId={sessionId}
+              teaching={teaching}
               dataSaver={dataSaver}
               onControls={setVideoControls}
               compact={view !== 'video'}

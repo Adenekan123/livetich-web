@@ -254,20 +254,26 @@ export async function removeStudentFromCourse(
  * occurrence, then we route the user into the classroom. Only reachable on a
  * scheduled meeting day (the button is disabled otherwise).
  */
-export async function joinLiveSession(courseId: string): Promise<ActionState> {
+export async function joinLiveSession(
+  courseId: string,
+  /** 'teach' lets a solo-teacher admin enter as the instructor (go live);
+   *  omitted, an admin shadow-joins as a hidden observer. */
+  mode?: 'teach',
+): Promise<ActionState> {
   const token = await getToken();
   if (!token) redirect('/login');
+  const qs = mode === 'teach' ? '?as=teach' : '';
   let res: { sessionId: string };
   try {
-    res = await api<{ sessionId: string }>(`/sessions/course/${courseId}/join`, {
-      method: 'POST',
-      token,
-    });
+    res = await api<{ sessionId: string }>(
+      `/sessions/course/${courseId}/join${qs}`,
+      { method: 'POST', token },
+    );
   } catch (e) {
     if (e instanceof ApiError) return { error: e.message };
     throw e;
   }
-  redirect(`/sessions/${res.sessionId}`);
+  redirect(`/sessions/${res.sessionId}${qs}`);
 }
 
 export async function endSession(

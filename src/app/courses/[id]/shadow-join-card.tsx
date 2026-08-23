@@ -5,9 +5,12 @@ import { joinLiveSession } from '@/app/actions/courses';
 import { btn, cardClass, cn } from '@/lib/ui';
 
 /**
- * Admin-only entry into a live class as a hidden observer. The join resolves
- * the current session (server-side admins are allowed) and the room mints a
- * hidden LiveKit token — neither the instructor nor the students see the admin.
+ * Admin entry into a live class. Two ways in:
+ *  • Shadow join — a hidden LiveKit token; neither the instructor nor students
+ *    see the admin. For oversight.
+ *  • Join as instructor — a solo-teacher admin enters as the host (visible,
+ *    publishing, host controls) and going live this way opens the room. Lets an
+ *    owner teach any program without assigning a separate instructor.
  */
 export function ShadowJoinCard({
   courseId,
@@ -21,10 +24,10 @@ export function ShadowJoinCard({
   const [pending, startJoin] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  function onJoin() {
+  function onJoin(mode?: 'teach') {
     setError(null);
     startJoin(async () => {
-      const res = await joinLiveSession(courseId);
+      const res = await joinLiveSession(courseId, mode);
       // Success redirects server-side; only an error returns here.
       if (res?.error) setError(res.error);
     });
@@ -37,21 +40,33 @@ export function ShadowJoinCard({
       </p>
       <p className="mb-3 mt-1.5 text-sm text-neutral-500">
         {live
-          ? 'A class is live. Drop in to observe — you stay hidden from the instructor and students.'
+          ? 'A class is live. Drop in to observe, or take over teaching.'
           : joinableNow
-            ? 'Class is open. Shadow-join to observe without being seen.'
+            ? 'Class is open. Observe unseen, or join as the instructor to teach.'
             : 'No class in session right now.'}
       </p>
-      <button
-        onClick={onJoin}
-        disabled={!joinableNow || pending}
-        className={cn(
-          btn('primary', 'sm'),
-          (!joinableNow || pending) && 'cursor-not-allowed opacity-50',
-        )}
-      >
-        {pending ? 'Joining…' : 'Shadow join →'}
-      </button>
+      <div className="flex flex-col gap-2">
+        <button
+          onClick={() => onJoin('teach')}
+          disabled={!joinableNow || pending}
+          className={cn(
+            btn('primary', 'sm'),
+            (!joinableNow || pending) && 'cursor-not-allowed opacity-50',
+          )}
+        >
+          {pending ? 'Joining…' : 'Join as instructor →'}
+        </button>
+        <button
+          onClick={() => onJoin()}
+          disabled={!joinableNow || pending}
+          className={cn(
+            btn('secondary', 'sm'),
+            (!joinableNow || pending) && 'cursor-not-allowed opacity-50',
+          )}
+        >
+          Shadow join →
+        </button>
+      </div>
       {error && <p className="mt-2 text-sm text-rose-600">{error}</p>}
     </div>
   );

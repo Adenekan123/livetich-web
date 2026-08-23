@@ -206,12 +206,16 @@ function ParticipantTile({ tile }: { tile: Tile }) {
  */
 export function VideoStage({
   sessionId,
+  teaching = false,
   dataSaver,
   onControls,
   compact = false,
   canSpeak = true,
 }: {
   sessionId: string;
+  /** Org admin in teach-mode: mint a visible, publishing instructor token
+   *  instead of the hidden observer token. */
+  teaching?: boolean;
   /** Low-bandwidth mode: unsubscribe from all remote video, keep audio. */
   dataSaver: boolean;
   /** Reports the media controls (or null when not live) to the parent. */
@@ -263,10 +267,13 @@ export function VideoStage({
       let token: string, url: string;
       try {
         const authToken = await getRealtimeToken();
-        const res = await fetch(`${API_URL}/sessions/${sessionId}/token`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${authToken ?? ''}` },
-        });
+        const res = await fetch(
+          `${API_URL}/sessions/${sessionId}/token${teaching ? '?as=teach' : ''}`,
+          {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${authToken ?? ''}` },
+          },
+        );
         if (!res.ok) throw new Error(`token request failed (${res.status})`);
         ({ token, url } = await res.json());
       } catch (e) {
@@ -353,7 +360,7 @@ export function VideoStage({
       room?.disconnect();
       roomRef.current = null;
     };
-  }, [sessionId, retryKey]);
+  }, [sessionId, teaching, retryKey]);
 
   const toggleCam = useCallback(async () => {
     const room = roomRef.current;

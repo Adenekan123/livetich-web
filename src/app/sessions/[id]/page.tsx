@@ -15,10 +15,16 @@ import { ClassRoom } from './class-room';
 
 export default async function SessionPage(props: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ as?: string }>;
 }) {
   const { id } = await props.params;
+  const { as } = await props.searchParams;
   const [user, token] = await Promise.all([getCurrentUser(), getToken()]);
   if (!user || !token) redirect('/login');
+  // A solo-teacher admin can enter as the instructor (?as=teach). The API
+  // re-validates org ownership when minting the token and on the socket join;
+  // this only drives which room UI the admin sees.
+  const teaching = user.role === 'ORG_ADMIN' && as === 'teach';
 
   let session: LiveSession;
   try {
@@ -85,6 +91,7 @@ export default async function SessionPage(props: {
       courseId={session.courseId}
       courseTitle={course.title}
       me={{ userId: user.sub, name: user.name, role: user.role }}
+      teaching={teaching}
       islamicEducation={islamicEducation}
       codeInstruction={codeInstruction}
       testPrep={testPrep}
