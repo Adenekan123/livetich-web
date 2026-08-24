@@ -24,6 +24,7 @@ import {
   PiCode,
   PiChatCircle,
   PiClipboardText,
+  PiDotsThreeOutline,
   PiHandPalm,
   PiHandWaving,
   PiLightning,
@@ -277,6 +278,9 @@ export function ClassRoom({
     'chat' | 'people' | 'points' | 'hifz' | 'work' | null
   >('chat');
   const [videoControls, setVideoControls] = useState<VideoControls | null>(null);
+  // Mobile bottom-bar overflow: secondary controls collapse behind a "More"
+  // toggle so the bar stays compact on phones (no effect at md+).
+  const [moreOpen, setMoreOpen] = useState(false);
   const [waves, setWaves] = useState<Wave[]>([]);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const handsRef = useRef<RoomUser[]>([]);
@@ -618,13 +622,115 @@ export function ClassRoom({
 
   const chatLockedForMe = locked && !isInstructor;
 
+  // Secondary bottom-bar controls — the ones a teacher touches occasionally, not
+  // every minute. Defined once and placed in two spots: inline on desktop (where
+  // there's room for everything) and inside the mobile "More" popover (where the
+  // bar keeps only the constantly-used actions). `labels` shows text in the
+  // roomy popover and hides it for the compact desktop icon row.
+  const mediaExtras = (
+    <>
+      <button
+        onClick={() => setDataSaver((v) => !v)}
+        className={ctrl(dataSaver ? 'on' : 'default')}
+        title="Turn video off to save data (audio + chalkboard stay live)"
+      >
+        <PiVideoCameraSlash className="h-4 w-4" />
+        {dataSaver ? 'Data saver on' : 'Data saver'}
+      </button>
+      {!isShadow && videoControls?.canPublishMedia && (
+        <button
+          onClick={videoControls.toggleCam}
+          className={ctrl(videoControls.camOn ? 'on' : 'default')}
+        >
+          {videoControls.camOn ? (
+            <PiVideoCamera className="h-4 w-4" />
+          ) : (
+            <PiVideoCameraSlash className="h-4 w-4" />
+          )}
+          {videoControls.camOn ? 'Camera on' : 'Camera'}
+        </button>
+      )}
+      {!isShadow && videoControls?.canShareScreen && (
+        <button
+          onClick={videoControls.toggleScreen}
+          className={ctrl(videoControls.screenOn ? 'on' : 'default')}
+        >
+          <PiScreencast className="h-4 w-4" />
+          {videoControls.screenOn ? 'Stop sharing' : 'Share screen'}
+        </button>
+      )}
+    </>
+  );
+  const panelExtras = (labels: boolean) => (
+    <>
+      <button
+        onClick={() => setPanel(panel === 'people' ? null : 'people')}
+        className={ctrl(panel === 'people' ? 'on' : 'default', labels ? '' : 'px-3')}
+        aria-label="Toggle people"
+        title="People"
+      >
+        <PiUsers className="h-5 w-5" />
+        {labels && <span>People</span>}
+      </button>
+      {isInstructor && islamicEducation && (
+        <button
+          onClick={() => setPanel(panel === 'hifz' ? null : 'hifz')}
+          className={ctrl(panel === 'hifz' ? 'on' : 'default', labels ? '' : 'px-3')}
+          aria-label="Toggle hifz"
+          title="Hifz progress"
+        >
+          <PiBookOpenText className="h-5 w-5" />
+          {labels && <span>Hifz</span>}
+        </button>
+      )}
+      {isInstructor && (
+        <button
+          onClick={() => setPanel(panel === 'work' ? null : 'work')}
+          className={ctrl(panel === 'work' ? 'on' : 'default', labels ? '' : 'px-3')}
+          aria-label="Toggle grading"
+          title="Grade assignments"
+        >
+          <PiClipboardText className="h-5 w-5" />
+          {labels && <span>Grading</span>}
+        </button>
+      )}
+      {isInstructor && (
+        <button
+          onClick={() =>
+            socketRef.current?.emit('chat:lock', { sessionId, locked: !locked })
+          }
+          className={ctrl('default', labels ? '' : 'px-3')}
+          aria-label={locked ? 'Unlock chat' : 'Lock chat'}
+          title={locked ? 'Unlock chat' : 'Lock chat'}
+        >
+          {locked ? (
+            <PiLockSimpleOpen className="h-5 w-5" />
+          ) : (
+            <PiLockSimple className="h-5 w-5" />
+          )}
+          {labels && <span>{locked ? 'Unlock chat' : 'Lock chat'}</span>}
+        </button>
+      )}
+    </>
+  );
+  // The mobile "More" button reads as active whenever one of the controls it
+  // hides is selected/on — so a folded-away open panel or toggle stays visible.
+  const moreActive =
+    panel === 'people' ||
+    panel === 'hifz' ||
+    panel === 'work' ||
+    dataSaver ||
+    locked ||
+    !!videoControls?.camOn ||
+    !!videoControls?.screenOn;
+
   return (
     <div
       className="room-shell fixed inset-0 z-40 flex flex-col bg-[var(--room-bg)] text-neutral-100"
       data-room-scheme={scheme}
     >
       {/* ---------- Top bar ---------- */}
-      <header className="flex items-center gap-3 border-b border-white/10 px-4 py-2.5">
+      <header className="relative flex items-center gap-3 border-b border-white/10 px-4 py-2.5">
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           {/* On-air badge — the room is live once the host is present. */}
           {connected && instructorPresent && (
@@ -669,7 +775,7 @@ export function ClassRoom({
         {/* Right: instructor colour-scheme picker + participant count. */}
         <div className="flex shrink-0 items-center gap-2">
           {isInstructor && (
-            <div className="relative">
+            <div>
               <button
                 type="button"
                 onClick={() => setSchemePicker((v) => !v)}
@@ -697,12 +803,16 @@ export function ClassRoom({
                     aria-hidden
                     tabIndex={-1}
                     onClick={() => setSchemePicker(false)}
-                    className="fixed inset-0 z-40 cursor-default"
+                    className="fixed inset-0 z-[998] cursor-default"
                   />
+                  {/* Anchored to the header (not the button) and pushed left of
+                      the board's top-right style panel (~180px) so the two never
+                      collide; elevated above tldraw so it can't be clipped. On a
+                      narrow viewport it clamps to the right edge instead. */}
                   <div
                     role="menu"
                     aria-label="Room colour scheme"
-                    className="absolute right-0 z-50 mt-2 w-44 overflow-hidden rounded-xl border border-white/10 bg-neutral-900 p-1.5 shadow-2xl"
+                    className="absolute right-2 top-full z-[999] mt-1 w-44 overflow-hidden rounded-xl border border-white/10 bg-neutral-900 p-1.5 shadow-2xl min-[560px]:right-[200px]"
                   >
                     <p className="px-2 py-1 text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
                       Room colour
@@ -755,7 +865,7 @@ export function ClassRoom({
       </header>
 
       {/* ---------- Body: stage + side panel ---------- */}
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         <main className="relative min-w-0 flex-1 p-3">
           {/* Both surfaces stay mounted so switching never drops call or board. */}
           {/* Video stays mounted always. In the Video view it fills the stage;
@@ -791,7 +901,6 @@ export function ClassRoom({
               templates={[
                 'lined',
                 ...(testPrep ? ['axes'] : []),
-                ...(islamicEducation ? ['ruling'] : []),
               ]}
             />
           </div>
@@ -966,9 +1075,21 @@ export function ClassRoom({
             )}
         </main>
 
-        {/* ---------- Right panel: chat / people ---------- */}
+        {/* ---------- Right panel: chat / people ----------
+            On phones it overlays the stage as a right-hand sheet (with a tap-
+            away scrim) instead of squeezing the stage; from md up it's an
+            in-flow column beside the stage as before. */}
         {panel && (
-          <aside className="flex w-full max-w-[360px] shrink-0 flex-col border-l border-white/10 bg-[var(--room-panel)]">
+          <button
+            type="button"
+            aria-hidden
+            tabIndex={-1}
+            onClick={() => setPanel(null)}
+            className="absolute inset-0 z-20 bg-black/50 md:hidden"
+          />
+        )}
+        {panel && (
+          <aside className="absolute inset-y-0 right-0 z-30 flex w-[86%] max-w-[22rem] flex-col border-l border-white/10 bg-[var(--room-panel)] shadow-2xl md:static md:z-auto md:w-full md:max-w-[360px] md:shrink-0 md:shadow-none">
             <div className="flex items-center gap-1 border-b border-white/10 p-2">
               {(['chat', 'people', 'points'] as const).map((t) => (
                 <button
@@ -1317,62 +1438,36 @@ export function ClassRoom({
         )}
       </div>
 
-      {/* ---------- Bottom control bar ---------- */}
-      <footer className="flex flex-wrap items-center gap-2 border-t border-white/10 px-4 py-3">
-        {/* Left: media controls */}
+      {/* ---------- Bottom control bar ----------
+          On phones the bar keeps only the constantly-used actions (mic, surface
+          switch, the role's primary action, chat, end); everything occasional
+          folds into a "More" popover. From md up there's room for it all inline,
+          so the extras sit in their normal clusters and More is hidden. */}
+      <footer className="relative flex flex-wrap items-center gap-2 border-t border-white/10 px-3 py-2.5 sm:px-4 sm:py-3">
+        {/* Left: mic (primary) + media extras (inline on desktop). */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Data saver — everyone can toggle; drops video to save bandwidth. */}
-          <button
-            onClick={() => setDataSaver((v) => !v)}
-            className={ctrl(dataSaver ? 'on' : 'default')}
-            title="Turn video off to save data (audio + chalkboard stay live)"
-          >
-            <PiVideoCameraSlash className="h-4 w-4" />
-            {dataSaver ? 'Data saver on' : 'Data saver'}
-          </button>
           {!isShadow && videoControls?.canPublishMedia && (
-            <>
-              <button
-                onClick={videoControls.toggleMic}
-                disabled={!canSpeak}
-                title={
-                  canSpeak
-                    ? undefined
-                    : 'The instructor grants the mic — raise your hand to ask to speak'
-                }
-                className={ctrl(
-                  !canSpeak ? 'default' : videoControls.micOn ? 'on' : 'default',
-                )}
-              >
-                {videoControls.micOn && canSpeak ? (
-                  <PiMicrophone className="h-4 w-4" />
-                ) : (
-                  <PiMicrophoneSlash className="h-4 w-4" />
-                )}
-                {!canSpeak ? 'Mic locked' : videoControls.micOn ? 'Mic on' : 'Mic'}
-              </button>
-              <button
-                onClick={videoControls.toggleCam}
-                className={ctrl(videoControls.camOn ? 'on' : 'default')}
-              >
-                {videoControls.camOn ? (
-                  <PiVideoCamera className="h-4 w-4" />
-                ) : (
-                  <PiVideoCameraSlash className="h-4 w-4" />
-                )}
-                {videoControls.camOn ? 'Camera on' : 'Camera'}
-              </button>
-            </>
-          )}
-          {!isShadow && videoControls?.canShareScreen && (
             <button
-              onClick={videoControls.toggleScreen}
-              className={ctrl(videoControls.screenOn ? 'on' : 'default')}
+              onClick={videoControls.toggleMic}
+              disabled={!canSpeak}
+              title={
+                canSpeak
+                  ? undefined
+                  : 'The instructor grants the mic — raise your hand to ask to speak'
+              }
+              className={ctrl(
+                !canSpeak ? 'default' : videoControls.micOn ? 'on' : 'default',
+              )}
             >
-              <PiScreencast className="h-4 w-4" />
-              {videoControls.screenOn ? 'Stop sharing' : 'Share screen'}
+              {videoControls.micOn && canSpeak ? (
+                <PiMicrophone className="h-4 w-4" />
+              ) : (
+                <PiMicrophoneSlash className="h-4 w-4" />
+              )}
+              {!canSpeak ? 'Mic locked' : videoControls.micOn ? 'Mic on' : 'Mic'}
             </button>
           )}
+          <div className="hidden items-center gap-2 md:flex">{mediaExtras}</div>
         </div>
 
         {/* Center: surface switch (instructor drives; students follow) + the
@@ -1387,14 +1482,16 @@ export function ClassRoom({
                     key={v}
                     onClick={() => changeView(v)}
                     className={cn(
-                      'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition',
+                      'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition sm:px-3.5',
                       view === v
                         ? 'bg-white text-neutral-950'
                         : 'text-neutral-300 hover:text-white',
                     )}
+                    aria-label={label}
+                    title={label}
                   >
                     <Icon className="h-4 w-4" />
-                    {label}
+                    <span className="hidden sm:inline">{label}</span>
                   </button>
                 );
               })}
@@ -1430,78 +1527,53 @@ export function ClassRoom({
             </button>
           )}
           {isInstructor && (
-            <>
-              <button
-                onClick={startBuzzer}
-                disabled={buzzer?.phase === 'QUESTION_OPEN'}
-                className="inline-flex items-center gap-2 rounded-full bg-accent-500 px-4 py-2 text-sm font-semibold text-neutral-950 transition hover:bg-accent-400 disabled:cursor-not-allowed disabled:opacity-40"
-                title={
-                  buzzer?.phase === 'QUESTION_OPEN'
-                    ? 'A buzzer question is already open'
-                    : 'Start a buzzer round'
-                }
-              >
-                <PiLightning className="h-4 w-4" />
-                Start buzzer
-              </button>
-              <button
-                onClick={() =>
-                  socketRef.current?.emit('chat:lock', {
-                    sessionId,
-                    locked: !locked,
-                  })
-                }
-                className={ctrl('default')}
-              >
-                {locked ? (
-                  <PiLockSimpleOpen className="h-4 w-4" />
-                ) : (
-                  <PiLockSimple className="h-4 w-4" />
-                )}
-                {locked ? 'Unlock chat' : 'Lock chat'}
-              </button>
-            </>
+            <button
+              onClick={startBuzzer}
+              disabled={buzzer?.phase === 'QUESTION_OPEN'}
+              className="inline-flex items-center gap-2 rounded-full bg-accent-500 px-4 py-2 text-sm font-semibold text-neutral-950 transition hover:bg-accent-400 disabled:cursor-not-allowed disabled:opacity-40"
+              title={
+                buzzer?.phase === 'QUESTION_OPEN'
+                  ? 'A buzzer question is already open'
+                  : 'Start a buzzer round'
+              }
+            >
+              <PiLightning className="h-4 w-4" />
+              Start buzzer
+            </button>
           )}
         </div>
 
-        {/* Right: panel toggles + leave/end */}
+        {/* Right: chat (primary) + panel extras (inline on desktop) + More
+            (mobile) + leave/end. */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => setPanel(panel === 'chat' ? null : 'chat')}
             className={ctrl(panel === 'chat' ? 'on' : 'default', 'px-3')}
             aria-label="Toggle chat"
+            title="Chat"
           >
             <PiChatCircle className="h-5 w-5" />
           </button>
+          <div className="hidden items-center gap-2 md:flex">
+            {panelExtras(false)}
+          </div>
+
+          {/* Mobile-only overflow toggle; the popover itself is a footer-width
+              sheet rendered below so it never gets clipped when the bar wraps. */}
           <button
-            onClick={() => setPanel(panel === 'people' ? null : 'people')}
-            className={ctrl(panel === 'people' ? 'on' : 'default', 'px-3')}
-            aria-label="Toggle people"
+            type="button"
+            onClick={() => setMoreOpen((v) => !v)}
+            className={cn(
+              ctrl(moreOpen || moreActive ? 'on' : 'default', 'px-3'),
+              'md:hidden',
+            )}
+            aria-label={moreOpen ? 'Hide more controls' : 'More controls'}
+            aria-haspopup="menu"
+            aria-expanded={moreOpen}
           >
-            <PiUsers className="h-5 w-5" />
+            <PiDotsThreeOutline className="h-5 w-5" />
           </button>
-          {isInstructor && (
-            <>
-              {islamicEducation && (
-                <button
-                  onClick={() => setPanel(panel === 'hifz' ? null : 'hifz')}
-                  className={ctrl(panel === 'hifz' ? 'on' : 'default', 'px-3')}
-                  aria-label="Toggle hifz"
-                  title="Hifz progress"
-                >
-                  <PiBookOpenText className="h-5 w-5" />
-                </button>
-              )}
-              <button
-                onClick={() => setPanel(panel === 'work' ? null : 'work')}
-                className={ctrl(panel === 'work' ? 'on' : 'default', 'px-3')}
-                aria-label="Toggle grading"
-                title="Grade assignments"
-              >
-                <PiClipboardText className="h-5 w-5" />
-              </button>
-            </>
-          )}
+
           <button
             onClick={() => setConfirmLeave(true)}
             disabled={ending}
@@ -1521,6 +1593,36 @@ export function ClassRoom({
                 : 'Leave'}
           </button>
         </div>
+
+        {/* Mobile "More" sheet — anchored to the footer's full width so it never
+            spills off-screen, whichever row the toggle wraps onto. */}
+        {moreOpen && (
+          <div className="md:hidden">
+            <button
+              type="button"
+              aria-hidden
+              tabIndex={-1}
+              onClick={() => setMoreOpen(false)}
+              className="fixed inset-0 z-40 cursor-default"
+            />
+            <div
+              role="menu"
+              aria-label="More controls"
+              className="absolute inset-x-2 bottom-full z-50 mb-2 rounded-2xl border border-white/10 bg-neutral-900 p-2 shadow-2xl"
+            >
+              <p className="px-1.5 pb-1.5 pt-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-neutral-500">
+                More controls
+              </p>
+              <div
+                className="flex flex-wrap gap-2"
+                onClick={() => setMoreOpen(false)}
+              >
+                {mediaExtras}
+                {panelExtras(true)}
+              </div>
+            </div>
+          </div>
+        )}
       </footer>
 
       {/* Create-a-buzzer-question modal (instructor) */}
