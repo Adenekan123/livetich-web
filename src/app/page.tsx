@@ -249,7 +249,7 @@ async function LandingNav() {
     <div id="landing-nav" className="sticky top-0 z-50">
       <nav className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 sm:px-5 lg:h-20">
         <Link href="/" className="nav-brand flex shrink-0 items-center gap-2.5">
-          <BrandLogo onDark className="h-20 w-auto sm:h-14 lg:h-20" />
+          <BrandLogo themed className="h-20 w-auto sm:h-14 lg:h-20" />
         </Link>
         <div className="flex items-center gap-0.5 sm:gap-2">
           <Link
@@ -1101,7 +1101,7 @@ export default async function Home() {
       <footer className="border-t border-lp-border bg-lp-bg">
         <div className="mx-auto flex max-w-[1600px] flex-col items-center gap-6 px-5 py-9 text-center sm:flex-row sm:justify-between sm:gap-4 sm:text-left">
           <Link href="/" className="flex items-center gap-2.5">
-            <BrandLogo onDark className="h-20 w-auto sm:h-12" />
+            <BrandLogo themed className="h-20 w-auto sm:h-12" />
           </Link>
           <nav className="flex flex-wrap justify-center gap-x-5 gap-y-2.5 text-sm font-medium text-lp-text-3 sm:justify-start">
             <Link href="/courses" className="hover:text-lp-lime">Browse courses</Link>

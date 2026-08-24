@@ -111,6 +111,15 @@
 }
 
 /*
+ * Theme-aware wordmark (BrandLogo themed): render both assets, show the one
+ * that reads on the current ground. Light wordmark on the dark theme, dark
+ * wordmark on the light theme. Driven by data-theme (always set by the
+ * pre-paint script), so no JS and no flash on toggle.
+ */
+:root[data-theme='light'] .logo-on-dark { display: none; }
+:root:not([data-theme='light']) .logo-on-light { display: none; }
+
+/*
  * Landing type scale bump — the marketing page reads a touch larger than the
  * app default. Tailwind v4's text-* utilities resolve `font-size` from these
  * --text-* custom properties, so redefining them on the landing root scales
