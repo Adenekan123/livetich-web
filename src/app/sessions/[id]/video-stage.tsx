@@ -75,30 +75,37 @@ function roleOf(p: Participant): boolean {
 }
 
 function tilesFrom(room: Room): { tiles: Tile[]; screen?: LKTrack } {
-  const build = (p: Participant, isLocal: boolean): Tile => ({
-    sid: p.sid,
-    name: p.name || p.identity,
-    isLocal,
-    isInstructor: roleOf(p),
-    camera: p.getTrackPublication(Track.Source.Camera)?.track,
-    mic: p.getTrackPublication(Track.Source.Microphone)?.track,
-    micMuted: p.getTrackPublication(Track.Source.Microphone)?.isMuted ?? true,
-  });
+  const build = (p: Participant, isLocal: boolean): Tile => {
+    // A camera turned off is muted (the publication lingers), which would other-
+    // wise render as a frozen/black frame. Treat a muted camera as no camera so
+    // the tile falls back to the initials face.
+    const camPub = p.getTrackPublication(Track.Source.Camera);
+    return {
+      sid: p.sid,
+      name: p.name || p.identity,
+      isLocal,
+      isInstructor: roleOf(p),
+      camera: camPub && !camPub.isMuted ? camPub.track : undefined,
+      mic: p.getTrackPublication(Track.Source.Microphone)?.track,
+      micMuted: p.getTrackPublication(Track.Source.Microphone)?.isMuted ?? true,
+    };
+  };
 
   const all = [
     build(room.localParticipant, true),
     ...[...room.remoteParticipants.values()].map((p) => build(p, false)),
   ];
 
-  // A screen share (from anyone) is promoted to the big stage.
+  // A screen share (from anyone) is promoted to the big stage. A muted/ended
+  // publication is skipped so a stopped share never lingers as a frozen frame.
   let screen: LKTrack | undefined;
   for (const p of [
     room.localParticipant,
     ...room.remoteParticipants.values(),
   ]) {
-    const s = p.getTrackPublication(Track.Source.ScreenShare)?.track;
-    if (s) {
-      screen = s;
+    const pub = p.getTrackPublication(Track.Source.ScreenShare);
+    if (pub?.track && !pub.isMuted) {
+      screen = pub.track;
       break;
     }
   }
@@ -261,6 +268,15 @@ export function VideoStage({
       const { tiles, screen } = tilesFrom(room);
       setTiles(tiles);
       setScreen(screen);
+      // Mirror the *actual* local publish state on every room event, so the
+      // bottom-bar toggles track reality even when media changes outside our
+      // handlers — the browser's native "Stop sharing", a revoked mic, a track
+      // that ended on its own. Optimistic sets in the toggles just make the flip
+      // feel instant; this is what keeps them honest.
+      const lp = room.localParticipant;
+      setCamOn(lp.isCameraEnabled);
+      setMicOn(lp.isMicrophoneEnabled);
+      setScreenOn(lp.isScreenShareEnabled);
     };
 
     (async () => {
