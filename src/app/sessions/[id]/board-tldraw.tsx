@@ -87,6 +87,66 @@ function isSharedRecord(r: unknown): r is TLRecord {
  * page) already exists before we reconcile with the shared Y.Doc — otherwise
  * synced shapes would reference a page that never got shared.
  */
+// Lazily load pdf.js (heavy) and wire its module worker once, on first import.
+// Kept out of the initial bundle — only pulled when someone imports a PDF.
+let pdfjsPromise: Promise<typeof import('pdfjs-dist')> | null = null;
+function loadPdfjs() {
+  if (!pdfjsPromise) {
+    pdfjsPromise = import('pdfjs-dist').then((pdfjs) => {
+      pdfjs.GlobalWorkerOptions.workerPort = new Worker(
+        new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url),
+        { type: 'module' },
+      );
+      return pdfjs;
+    });
+  }
+  return pdfjsPromise;
+}
+
+// Guard rails so a huge deck can't bloat the shared board (each page becomes a
+// synced PNG asset) or freeze a low-end device mid-class.
+const PDF_MAX_PAGES = 30;
+const PDF_TARGET_WIDTH = 1600; // px on the long edge — legible without being huge
+
+/**
+ * Rasterise a PDF into one PNG File per page, so document/slide imports land on
+ * the board as image shapes and sync to students over the same Yjs doc as any
+ * drawing (tldraw has no native PDF shape).
+ */
+async function pdfToImageFiles(file: File): Promise<File[]> {
+  const pdfjs = await loadPdfjs();
+  const data = await file.arrayBuffer();
+  const pdf = await pdfjs.getDocument({ data }).promise;
+  const stem = file.name.replace(/\.pdf$/i, '') || 'document';
+  const out: File[] = [];
+  try {
+    const count = Math.min(pdf.numPages, PDF_MAX_PAGES);
+    for (let n = 1; n <= count; n++) {
+      const page = await pdf.getPage(n);
+      const base = page.getViewport({ scale: 1 });
+      const scale = Math.min(2.5, PDF_TARGET_WIDTH / base.width);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) continue;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      const blob = await new Promise<Blob | null>((res) =>
+        canvas.toBlob(res, 'image/png'),
+      );
+      if (blob) {
+        out.push(
+          new File([blob], `${stem}-p${n}.png`, { type: 'image/png' }),
+        );
+      }
+    }
+  } finally {
+    await pdf.cleanup().catch(() => {});
+  }
+  return out;
+}
+
 export function BoardTldraw({
   sessionId,
   canDraw,
@@ -116,6 +176,14 @@ export function BoardTldraw({
   // Importing a document/PDF onto the board (rasterising can take a moment).
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
+  // Export menu (PNG image / PDF document) + a brief board-level status line.
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [boardMsg, setBoardMsg] = useState<string | null>(null);
+  const flash = (m: string) => {
+    setBoardMsg(m);
+    window.setTimeout(() => setBoardMsg(null), 2600);
+  };
   useEffect(() => {
     followingRef.current = following;
   }, [following]);
@@ -311,9 +379,9 @@ export function BoardTldraw({
     if (t) editorRef.current?.createShapes(t.make());
   };
 
-  // Import images onto the board — they drop in as image shapes/assets and sync
-  // to students over the same Yjs doc as any drawing. (Slides/PDF: export to
-  // images for now; native PDF rasterisation lands with the pdfjs dependency.)
+  // Import a PDF/document (or images) onto the board. PDFs are rasterised to one
+  // image per page; images drop straight in. Everything lands as image shapes/
+  // assets and syncs to students over the same Yjs doc as any drawing.
   const importFiles = async (list: FileList | null) => {
     const editor = editorRef.current;
     if (!editor || !list || list.length === 0) return;
@@ -322,13 +390,22 @@ export function BoardTldraw({
       const center = editor.getViewportPageBounds().center;
       let y = center.y;
       for (const file of Array.from(list)) {
-        if (!file.type.startsWith('image/')) continue;
-        await editor.putExternalContent({
-          type: 'files',
-          files: [file],
-          point: { x: center.x, y },
-        });
-        y += 620;
+        const isPdf =
+          file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+        // A PDF fans out into one image per page; an image is itself.
+        const images = isPdf
+          ? await pdfToImageFiles(file)
+          : file.type.startsWith('image/')
+            ? [file]
+            : [];
+        for (const img of images) {
+          await editor.putExternalContent({
+            type: 'files',
+            files: [img],
+            point: { x: center.x, y },
+          });
+          y += 620;
+        }
       }
     } catch {
       // Best-effort — a bad or oversized file simply doesn't land; the board
@@ -339,18 +416,52 @@ export function BoardTldraw({
     }
   };
 
-  const exportPng = async () => {
+  // Export the current board — as a PNG image, or wrapped into a one-page PDF
+  // sized to the board. Empty boards say so rather than silently doing nothing.
+  const exportBoard = async (format: 'png' | 'pdf') => {
     const editor = editorRef.current;
+    setExportOpen(false);
     if (!editor) return;
     const ids = editor.getCurrentPageShapeIds();
-    if (ids.size === 0) return;
-    const { blob } = await editor.toImage([...ids], { format: 'png', background: true });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `board-${sessionId}.png`;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (ids.size === 0) {
+      flash('Nothing on the board to export yet.');
+      return;
+    }
+    setExporting(true);
+    try {
+      const { blob, width, height } = await editor.toImage([...ids], {
+        format: 'png',
+        background: true,
+      });
+      if (format === 'png') {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `board-${sessionId}.png`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        const { jsPDF } = await import('jspdf');
+        const dataUrl = await new Promise<string>((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res(r.result as string);
+          r.onerror = () => rej(r.error);
+          r.readAsDataURL(blob);
+        });
+        const doc = new jsPDF({
+          orientation: width >= height ? 'landscape' : 'portrait',
+          unit: 'px',
+          format: [width, height],
+          hotfixes: ['px_scaling'],
+        });
+        doc.addImage(dataUrl, 'PNG', 0, 0, width, height);
+        doc.save(`board-${sessionId}.pdf`);
+      }
+    } catch {
+      flash('Export failed — please try again.');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const pill =
@@ -389,24 +500,63 @@ export function BoardTldraw({
             onClick={() => fileInputRef.current?.click()}
             disabled={importing}
             className={`pointer-events-auto ${pill} bg-white text-neutral-800 disabled:opacity-50`}
-            title="Import images onto the board (export slides or PDF pages as images)"
+            title="Import a PDF or document onto the board — each page drops in as a slide (images work too)"
           >
             {importing ? 'Importing…' : 'Import'}
           </button>
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="application/pdf,image/*"
             multiple
             className="hidden"
             onChange={(e) => void importFiles(e.currentTarget.files)}
           />
-          <button
-            onClick={exportPng}
-            className={`pointer-events-auto ${pill} bg-white text-neutral-800`}
-          >
-            Export
-          </button>
+          <div className="pointer-events-auto relative">
+            <button
+              onClick={() => setExportOpen((o) => !o)}
+              disabled={exporting}
+              aria-haspopup="menu"
+              aria-expanded={exportOpen}
+              className={`${pill} bg-white text-neutral-800 disabled:opacity-50`}
+            >
+              {exporting ? 'Exporting…' : 'Export ▾'}
+            </button>
+            {exportOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-[400]"
+                  onClick={() => setExportOpen(false)}
+                />
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full z-[401] mt-1.5 w-44 overflow-hidden rounded-xl bg-white py-1 shadow-lg ring-1 ring-neutral-200"
+                >
+                  <button
+                    role="menuitem"
+                    onClick={() => void exportBoard('pdf')}
+                    className="block w-full px-3.5 py-2 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-50"
+                  >
+                    PDF document
+                  </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => void exportBoard('png')}
+                    className="block w-full px-3.5 py-2 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-50"
+                  >
+                    PNG image
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Brief board-level status (export feedback), bottom-center. */}
+      {boardMsg && (
+        <div className="pointer-events-none absolute bottom-3 left-1/2 z-[401] -translate-x-1/2 rounded-full bg-neutral-900/90 px-3.5 py-1.5 text-xs font-medium text-white shadow-lg">
+          {boardMsg}
         </div>
       )}
 
