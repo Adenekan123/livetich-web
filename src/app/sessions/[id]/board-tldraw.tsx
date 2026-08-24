@@ -42,10 +42,6 @@ const TEMPLATES: Record<string, { label: string; make: () => TLShapePartial[] }>
     label: 'Lined',
     make: () => Array.from({ length: 12 }, (_, i) => bar(80, 80 + i * 44, 640, 2)),
   },
-  ruling: {
-    label: 'Arabic ruling',
-    make: () => Array.from({ length: 8 }, (_, i) => bar(80, 100 + i * 56, 640, 2)),
-  },
 };
 
 /**
@@ -178,6 +174,9 @@ export function BoardTldraw({
   const [importing, setImporting] = useState(false);
   // Export menu (PNG image / PDF document) + a brief board-level status line.
   const [exportOpen, setExportOpen] = useState(false);
+  // On phones the instructor controls collapse into a single "Tools" menu so
+  // they don't crowd tldraw's own top bar.
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [boardMsg, setBoardMsg] = useState<string | null>(null);
   const flash = (m: string) => {
@@ -512,42 +511,180 @@ export function BoardTldraw({
     'rounded-full px-3 py-1.5 text-xs font-semibold shadow ring-1 ring-neutral-200 transition';
 
   return (
+    // `isolate` keeps tldraw's internal z-index layers (its toolbar sits at 300,
+    // menus/header climb to 999) contained to this box, so they can't paint over
+    // the classroom's own overlays — the bottom-bar "More" sheet and the mobile
+    // chat panel — that stack above the board.
     <div
       ref={wrapperRef}
-      className="relative h-full min-h-[320px] overflow-hidden rounded-xl border border-neutral-300 bg-white"
+      className="relative isolate h-full min-h-[320px] overflow-hidden rounded-xl border border-neutral-300 bg-white"
     >
       <Tldraw store={store} onMount={handleMount} licenseKey={licenseKey} />
 
-      {/* Instructor board controls (top-center, clear of tldraw's menus). */}
+      {/* Instructor board controls. Desktop lays them out inline (top-centre);
+          phones collapse them into a single "Tools" menu so they don't crowd
+          tldraw's own page/menu bar. */}
       {canDraw && (
-        <div className="pointer-events-none absolute left-1/2 top-3 z-[400] flex -translate-x-1/2 flex-wrap items-center justify-center gap-1.5">
-          <button
-            onClick={toggleWritable}
-            className={`pointer-events-auto ${pill} ${
-              boardOpen ? 'bg-emerald-600 text-white ring-emerald-600' : 'bg-white text-neutral-800'
-            }`}
-          >
-            {boardOpen ? 'Students drawing ✓' : 'Let students draw'}
-          </button>
-          {templates
-            .filter((k) => TEMPLATES[k])
-            .map((k) => (
+        <>
+          {/* Desktop: inline row. */}
+          <div className="pointer-events-none absolute left-1/2 top-3 z-[400] hidden -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 md:flex">
+            <button
+              onClick={toggleWritable}
+              className={`pointer-events-auto ${pill} ${
+                boardOpen ? 'bg-emerald-600 text-white ring-emerald-600' : 'bg-white text-neutral-800'
+              }`}
+            >
+              {boardOpen ? 'Students drawing ✓' : 'Let students draw'}
+            </button>
+            {templates
+              .filter((k) => TEMPLATES[k])
+              .map((k) => (
+                <button
+                  key={k}
+                  onClick={() => insertTemplate(k)}
+                  className={`pointer-events-auto ${pill} bg-white text-neutral-800`}
+                >
+                  {TEMPLATES[k].label}
+                </button>
+              ))}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importing}
+              className={`pointer-events-auto ${pill} bg-white text-neutral-800 disabled:opacity-50`}
+              title="Import a PDF or document onto the board — each page drops in as a slide (images work too)"
+            >
+              {importing ? 'Importing…' : 'Import'}
+            </button>
+            <div className="pointer-events-auto relative">
               <button
-                key={k}
-                onClick={() => insertTemplate(k)}
-                className={`pointer-events-auto ${pill} bg-white text-neutral-800`}
+                onClick={() => setExportOpen((o) => !o)}
+                disabled={exporting}
+                aria-haspopup="menu"
+                aria-expanded={exportOpen}
+                className={`${pill} bg-white text-neutral-800 disabled:opacity-50`}
               >
-                {TEMPLATES[k].label}
+                {exporting ? 'Exporting…' : 'Export ▾'}
               </button>
-            ))}
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={importing}
-            className={`pointer-events-auto ${pill} bg-white text-neutral-800 disabled:opacity-50`}
-            title="Import a PDF or document onto the board — each page drops in as a slide (images work too)"
-          >
-            {importing ? 'Importing…' : 'Import'}
-          </button>
+              {exportOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-[400]"
+                    onClick={() => setExportOpen(false)}
+                  />
+                  <div
+                    role="menu"
+                    className="absolute right-0 top-full z-[401] mt-1.5 w-44 overflow-hidden rounded-xl bg-white py-1 shadow-lg ring-1 ring-neutral-200"
+                  >
+                    <button
+                      role="menuitem"
+                      onClick={() => void exportBoard('pdf')}
+                      className="block w-full px-3.5 py-2 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-50"
+                    >
+                      PDF document
+                    </button>
+                    <button
+                      role="menuitem"
+                      onClick={() => void exportBoard('png')}
+                      className="block w-full px-3.5 py-2 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-50"
+                    >
+                      PNG image
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Mobile: one "Tools" menu, centred up top and clear of tldraw's own
+              page/menu controls. */}
+          <div className="pointer-events-auto absolute left-1/2 top-3 z-[400] -translate-x-1/2 md:hidden">
+            <button
+              onClick={() => setToolsOpen((o) => !o)}
+              aria-haspopup="menu"
+              aria-expanded={toolsOpen}
+              className={`${pill} ${
+                toolsOpen ? 'bg-neutral-900 text-white ring-neutral-900' : 'bg-white text-neutral-800'
+              }`}
+            >
+              Tools ▾
+            </button>
+            {toolsOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-[400]"
+                  onClick={() => setToolsOpen(false)}
+                />
+                <div
+                  role="menu"
+                  className="absolute left-1/2 top-full z-[401] mt-1.5 w-56 -translate-x-1/2 overflow-hidden rounded-xl bg-white py-1 shadow-lg ring-1 ring-neutral-200"
+                >
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      toggleWritable();
+                      setToolsOpen(false);
+                    }}
+                    className="flex w-full items-center justify-between px-3.5 py-2 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-50"
+                  >
+                    Let students draw
+                    {boardOpen && <span className="text-emerald-600">✓</span>}
+                  </button>
+                  {templates
+                    .filter((k) => TEMPLATES[k])
+                    .map((k) => (
+                      <button
+                        key={k}
+                        role="menuitem"
+                        onClick={() => {
+                          insertTemplate(k);
+                          setToolsOpen(false);
+                        }}
+                        className="block w-full px-3.5 py-2 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-50"
+                      >
+                        {TEMPLATES[k].label} template
+                      </button>
+                    ))}
+                  <button
+                    role="menuitem"
+                    disabled={importing}
+                    onClick={() => {
+                      fileInputRef.current?.click();
+                      setToolsOpen(false);
+                    }}
+                    className="block w-full px-3.5 py-2 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-50 disabled:opacity-50"
+                  >
+                    {importing ? 'Importing…' : 'Import PDF / document'}
+                  </button>
+                  <div className="my-1 border-t border-neutral-100" />
+                  <button
+                    role="menuitem"
+                    disabled={exporting}
+                    onClick={() => {
+                      void exportBoard('pdf');
+                      setToolsOpen(false);
+                    }}
+                    className="block w-full px-3.5 py-2 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-50 disabled:opacity-50"
+                  >
+                    Export as PDF
+                  </button>
+                  <button
+                    role="menuitem"
+                    disabled={exporting}
+                    onClick={() => {
+                      void exportBoard('png');
+                      setToolsOpen(false);
+                    }}
+                    className="block w-full px-3.5 py-2 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-50 disabled:opacity-50"
+                  >
+                    Export as PNG
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Shared hidden file input, used by both the desktop and mobile
+              import controls. */}
           <input
             ref={fileInputRef}
             type="file"
@@ -556,45 +693,7 @@ export function BoardTldraw({
             className="hidden"
             onChange={(e) => void importFiles(e.currentTarget.files)}
           />
-          <div className="pointer-events-auto relative">
-            <button
-              onClick={() => setExportOpen((o) => !o)}
-              disabled={exporting}
-              aria-haspopup="menu"
-              aria-expanded={exportOpen}
-              className={`${pill} bg-white text-neutral-800 disabled:opacity-50`}
-            >
-              {exporting ? 'Exporting…' : 'Export ▾'}
-            </button>
-            {exportOpen && (
-              <>
-                <div
-                  className="fixed inset-0 z-[400]"
-                  onClick={() => setExportOpen(false)}
-                />
-                <div
-                  role="menu"
-                  className="absolute right-0 top-full z-[401] mt-1.5 w-44 overflow-hidden rounded-xl bg-white py-1 shadow-lg ring-1 ring-neutral-200"
-                >
-                  <button
-                    role="menuitem"
-                    onClick={() => void exportBoard('pdf')}
-                    className="block w-full px-3.5 py-2 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-50"
-                  >
-                    PDF document
-                  </button>
-                  <button
-                    role="menuitem"
-                    onClick={() => void exportBoard('png')}
-                    className="block w-full px-3.5 py-2 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-50"
-                  >
-                    PNG image
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+        </>
       )}
 
       {/* Brief board-level status (export feedback), bottom-center. */}
