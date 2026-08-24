@@ -382,13 +382,21 @@ export function BoardTldraw({
   // Import a PDF/document (or images) onto the board. PDFs are rasterised to one
   // image per page; images drop straight in. Everything lands as image shapes/
   // assets and syncs to students over the same Yjs doc as any drawing.
+  //
+  // Pages are stacked top-to-bottom without overlap: we can't know a page's
+  // on-board height until tldraw has placed it (it scales large images down),
+  // so after each drop we measure the new shape's real bounds and re-align it —
+  // top edge to the running cursor, centred on the column — then advance the
+  // cursor past it. A fixed y-step would overlap tall pages onto short ones.
+  const GAP = 48; // board units of breathing room between stacked pages
   const importFiles = async (list: FileList | null) => {
     const editor = editorRef.current;
     if (!editor || !list || list.length === 0) return;
     setImporting(true);
     try {
-      const center = editor.getViewportPageBounds().center;
-      let y = center.y;
+      const cx = editor.getViewportPageBounds().center.x;
+      let top = editor.getViewportPageBounds().center.y;
+      let firstCenter: { x: number; y: number } | null = null;
       for (const file of Array.from(list)) {
         const isPdf =
           file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
@@ -399,14 +407,50 @@ export function BoardTldraw({
             ? [file]
             : [];
         for (const img of images) {
+          const before = new Set(editor.getCurrentPageShapeIds());
           await editor.putExternalContent({
             type: 'files',
             files: [img],
-            point: { x: center.x, y },
+            point: { x: cx, y: top },
           });
-          y += 620;
+          const newIds = [...editor.getCurrentPageShapeIds()].filter(
+            (id) => !before.has(id),
+          );
+          if (newIds.length === 0) continue;
+          // Union bounds of whatever tldraw just created for this page.
+          let minX = Infinity,
+            minY = Infinity,
+            maxX = -Infinity,
+            maxY = -Infinity;
+          for (const id of newIds) {
+            const b = editor.getShapePageBounds(id);
+            if (!b) continue;
+            minX = Math.min(minX, b.minX);
+            minY = Math.min(minY, b.minY);
+            maxX = Math.max(maxX, b.maxX);
+            maxY = Math.max(maxY, b.maxY);
+          }
+          if (!Number.isFinite(minY)) continue;
+          // Re-align: top edge to `top`, centred horizontally on the column.
+          const dx = cx - (minX + maxX) / 2;
+          const dy = top - minY;
+          if (dx !== 0 || dy !== 0) {
+            editor.updateShapes(
+              newIds.map((id) => {
+                const s = editor.getShape(id)!;
+                return { id, type: s.type, x: s.x + dx, y: s.y + dy };
+              }),
+            );
+          }
+          const height = maxY - minY;
+          if (!firstCenter)
+            firstCenter = { x: cx, y: top + height / 2 };
+          top += height + GAP;
         }
       }
+      // Bring the first imported page into view for the presenter.
+      if (firstCenter)
+        editor.centerOnPoint(firstCenter, { animation: { duration: 200 } });
     } catch {
       // Best-effort — a bad or oversized file simply doesn't land; the board
       // (and everyone's connection) stays intact.
