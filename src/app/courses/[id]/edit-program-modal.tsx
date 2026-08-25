@@ -8,16 +8,11 @@ import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
 import { btn, inputClass, labelClass } from '@/lib/ui';
 import type { CourseDetail } from '@/lib/types';
+import { DurationField } from '../duration-field';
 
 const initial: ActionState = { error: null };
 
 const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']; // index = 0..6 (Sun..Sat)
-const DURATIONS = [
-  { w: 4, label: '4 weeks (1 month)' },
-  { w: 6, label: '6 weeks' },
-  { w: 8, label: '8 weeks (2 months)' },
-  { w: 12, label: '12 weeks (3 months)' },
-];
 const TIMEZONES = [
   'Africa/Lagos',
   'Africa/Nairobi',
@@ -42,13 +37,20 @@ function toDateInput(iso: string | null): string {
  * Pre-fills every field from the current course — including the cohort schedule
  * (meeting days, time, timezone) — and closes once the update lands.
  */
-export function EditProgramButton({ course }: { course: CourseDetail }) {
+export function EditProgramButton({
+  course,
+  className,
+}: {
+  course: CourseDetail;
+  /** Overrides the trigger button style (e.g. a full-width variant in the
+   *  details card). Defaults to a small secondary button. */
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [state, action] = useActionState(updateCourse, initial);
   const formRef = useRef<HTMLFormElement>(null);
 
   const days = course.meetingDays ?? [];
-  const durationInList = DURATIONS.some((d) => d.w === course.durationWeeks);
   const tzInList = !course.timezone || TIMEZONES.includes(course.timezone);
 
   // Close once the edit is saved (deferred a tick so it isn't a sync setState).
@@ -73,7 +75,7 @@ export function EditProgramButton({ course }: { course: CourseDetail }) {
     <>
       <button
         onClick={() => setOpen(true)}
-        className={btn('secondary', 'sm')}
+        className={className ?? btn('secondary', 'sm')}
       >
         <PiPencilSimple className="h-4 w-4" aria-hidden />
         Edit program
@@ -179,41 +181,12 @@ export function EditProgramButton({ course }: { course: CourseDetail }) {
                   Cohort schedule
                 </p>
 
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <label htmlFor="edit-startDate" className={labelClass}>
-                      Start date
-                    </label>
-                    <input
-                      id="edit-startDate"
-                      name="startDate"
-                      type="date"
-                      defaultValue={toDateInput(course.startDate)}
-                      className={inputClass}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label htmlFor="edit-durationWeeks" className={labelClass}>
-                      Duration
-                    </label>
-                    <select
-                      id="edit-durationWeeks"
-                      name="durationWeeks"
-                      defaultValue={course.durationWeeks ?? 8}
-                      className={inputClass}
-                    >
-                      {!durationInList && course.durationWeeks != null && (
-                        <option value={course.durationWeeks}>
-                          {course.durationWeeks} weeks
-                        </option>
-                      )}
-                      {DURATIONS.map((d) => (
-                        <option key={d.w} value={d.w}>
-                          {d.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                <div className="mt-3">
+                  <DurationField
+                    idPrefix="edit-"
+                    defaultStartDate={toDateInput(course.startDate)}
+                    defaultWeeks={course.durationWeeks ?? 8}
+                  />
                 </div>
 
                 <div className="mt-3 space-y-1.5">

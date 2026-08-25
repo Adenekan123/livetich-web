@@ -17,7 +17,7 @@ import {
   PLUGIN_ISLAMIC_EDUCATION,
   PLUGIN_TEST_PREP,
 } from '@/lib/plugins';
-import { cardClass, cn } from '@/lib/ui';
+import { btn, cardClass, cn } from '@/lib/ui';
 import type {
   AssessmentQuestion,
   Certificate,
@@ -156,12 +156,15 @@ function FactsCard({
   duration,
   dates,
   datesLabel,
+  footer,
 }: {
   schedule: string | null;
   tz: string | null;
   duration: string | null;
   dates: string | null;
   datesLabel: string;
+  /** Optional action rendered in a footer inside the card (e.g. Edit program). */
+  footer?: React.ReactNode;
 }) {
   const rows: { k: string; v: string; sub?: string | null }[] = [
     { k: 'Schedule', v: schedule ?? 'To be announced', sub: schedule ? tz : null },
@@ -185,6 +188,9 @@ function FactsCard({
           </div>
         ))}
       </dl>
+      {footer && (
+        <div className="border-t border-neutral-100 p-3">{footer}</div>
+      )}
     </div>
   );
 }
@@ -374,11 +380,6 @@ export default async function CoursePage(props: {
             {course.title}
           </h1>
           <StatusPill status={cohort.status} label={cohort.label} />
-          {isAdmin && (
-            <span className="sm:ml-auto">
-              <EditProgramButton course={course} />
-            </span>
-          )}
         </div>
         <p className="mt-2 text-sm text-neutral-500">
           Taught by{' '}
@@ -505,13 +506,21 @@ export default async function CoursePage(props: {
             <NextSessionCard live={sessionStatus.isLive} when={nextWhen} />
           )}
 
-          {/* Cohort facts */}
+          {/* Cohort facts — with the admin's Edit control docked in the footer. */}
           <FactsCard
             schedule={cadence}
             tz={tz}
             duration={duration}
             dates={dateRange}
             datesLabel={cohort.status === 'COMPLETED' ? 'Ran' : 'Dates'}
+            footer={
+              isAdmin ? (
+                <EditProgramButton
+                  course={course}
+                  className={btn('secondary', 'md', 'w-full')}
+                />
+              ) : undefined
+            }
           />
 
           {/* Student reminder */}

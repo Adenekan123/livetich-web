@@ -5,16 +5,11 @@ import { createCourse, type ActionState } from '@/app/actions/courses';
 import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
 import { inputClass, labelClass } from '@/lib/ui';
+import { DurationField } from './duration-field';
 
 const initial: ActionState = { error: null };
 
 const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']; // index = 0..6 (Sun..Sat)
-const DURATIONS = [
-  { w: 4, label: '4 weeks (1 month)' },
-  { w: 6, label: '6 weeks' },
-  { w: 8, label: '8 weeks (2 months)' },
-  { w: 12, label: '12 weeks (3 months)' },
-];
 const TIMEZONES = [
   'Africa/Lagos',
   'Africa/Nairobi',
@@ -99,30 +94,8 @@ export function NewProgramForm() {
           Cohort schedule
         </p>
 
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <label htmlFor="startDate" className={labelClass}>
-              Start date
-            </label>
-            <input id="startDate" name="startDate" type="date" className={inputClass} />
-          </div>
-          <div className="space-y-1.5">
-            <label htmlFor="durationWeeks" className={labelClass}>
-              Duration
-            </label>
-            <select
-              id="durationWeeks"
-              name="durationWeeks"
-              defaultValue="8"
-              className={inputClass}
-            >
-              {DURATIONS.map((d) => (
-                <option key={d.w} value={d.w}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div className="mt-3">
+          <DurationField defaultWeeks={8} />
         </div>
 
         <div className="mt-3 space-y-1.5">
