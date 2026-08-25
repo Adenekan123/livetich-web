@@ -169,6 +169,10 @@ export function BoardTldraw({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const followingRef = useRef(true);
   const lastCameraRef = useRef<{ x: number; y: number; z: number } | null>(null);
+  // The presenter's current page id, remembered so a following viewer can flip
+  // to it the instant that page syncs in — the presenter only announces a page
+  // change once, so a viewer must re-try rather than wait for another announce.
+  const presenterPageRef = useRef<string | null>(null);
   const [following, setFollowing] = useState(true);
   const [laser, setLaser] = useState<{ x: number; y: number } | null>(null);
   // Whether the instructor has opened the board for students to draw.
@@ -235,6 +239,22 @@ export function BoardTldraw({
           pages[0].id as Parameters<typeof editor.setCurrentPage>[0],
         );
       }
+    };
+
+    // Mirror the presenter's page + camera onto a following viewer. Called both
+    // when a presenter packet arrives AND whenever board records sync in — so a
+    // page switch or PDF import that raced ahead of its records (the presenter
+    // announces a change only once) still lands the moment the content exists
+    // locally, instead of stranding the viewer on the old page/scroll position.
+    const applyPresenterView = () => {
+      if (canDraw || !followingRef.current) return;
+      const page = presenterPageRef.current as
+        | Parameters<typeof editor.getPage>[0]
+        | null;
+      if (page && editor.getPage(page) && editor.getCurrentPageId() !== page) {
+        editor.setCurrentPage(page);
+      }
+      if (lastCameraRef.current) editor.setCamera(lastCameraRef.current);
     };
 
     // One-time reconcile once the server's initial doc has been merged in: the
@@ -314,6 +334,10 @@ export function BoardTldraw({
       // A viewer that hadn't seen the presenter's page yet (joined before any
       // content existed) lands on it as soon as it arrives here.
       followSharedPage();
+      // And a following viewer flips to a just-created page / re-scrolls to a
+      // just-imported PDF the instant those records land — closing the race
+      // where the presenter announced the change before the records synced.
+      applyPresenterView();
     };
     yStore.observe(onYChange);
 
@@ -374,12 +398,10 @@ export function BoardTldraw({
       // Students match the presenter's view (while following) + show the laser.
       socket.on('board:presenter', (p) => {
         lastCameraRef.current = p.camera;
-        if (followingRef.current) {
-          // Flip to the presenter's page first (if it has synced), then match view.
-          if (p.page && editor.getPage(p.page as Parameters<typeof editor.getPage>[0]))
-            editor.setCurrentPage(p.page as Parameters<typeof editor.setCurrentPage>[0]);
-          editor.setCamera(p.camera);
-        }
+        presenterPageRef.current = p.page ?? null;
+        // Flip to the presenter's page (once it has synced) and match the view.
+        // If the page hasn't arrived yet, onYChange retries this when it does.
+        applyPresenterView();
         if (p.cursor) {
           const s = editor.pageToScreen(p.cursor);
           setLaser({ x: s.x, y: s.y });
@@ -757,7 +779,14 @@ export function BoardTldraw({
               return;
             }
             setFollowing(true);
-            if (lastCameraRef.current) editorRef.current?.setCamera(lastCameraRef.current);
+            const ed = editorRef.current;
+            const page = presenterPageRef.current as
+              | Parameters<NonNullable<typeof ed>['getPage']>[0]
+              | null;
+            if (ed) {
+              if (page && ed.getPage(page)) ed.setCurrentPage(page);
+              if (lastCameraRef.current) ed.setCamera(lastCameraRef.current);
+            }
           }}
           className={`absolute left-1/2 top-3 z-[400] -translate-x-1/2 rounded-full px-3 py-1.5 text-xs font-semibold shadow transition ${
             following
