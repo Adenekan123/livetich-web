@@ -569,6 +569,22 @@ export function ClassRoom({
     socketRef.current?.emit('view:change', { sessionId, view: next });
   };
 
+  // When the instructor starts sharing their screen from a non-Room surface,
+  // pull the class to the Room view so students actually see the share — the
+  // board/mushaf would otherwise cover it. Only fires on the off→on edge, so the
+  // instructor can still switch surfaces again while sharing.
+  const prevScreenOnRef = useRef(false);
+  useEffect(() => {
+    const on = videoControls?.screenOn ?? false;
+    if (isInstructor && on && !prevScreenOnRef.current && view !== 'video') {
+      changeView('video');
+    }
+    prevScreenOnRef.current = on;
+    // changeView is intentionally omitted — it isn't memoised and the edge guard
+    // above already makes this fire once per share.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoControls?.screenOn, isInstructor, view]);
+
   // Kick off a buzzer round from the dock. Open to every student in the room —
   // first correct answer wins. Needs at least one authored question.
   const startBuzzer = () => {
@@ -897,6 +913,7 @@ export function ClassRoom({
             <BoardTldraw
               sessionId={sessionId}
               canDraw={isInstructor}
+              teaching={teaching}
               licenseKey={tldrawLicenseKey}
               templates={[
                 'lined',

@@ -146,11 +146,15 @@ async function pdfToImageFiles(file: File): Promise<File[]> {
 export function BoardTldraw({
   sessionId,
   canDraw,
+  teaching = false,
   templates = [],
   licenseKey,
 }: {
   sessionId: string;
   canDraw: boolean;
+  /** This user is an org admin presenting in teach-mode — tells the board
+   *  gateway to authorize them as the writer (mirrors the room join). */
+  teaching?: boolean;
   /** Subject template keys available for this org (gated per plugin). */
   templates?: string[];
   /** tldraw commercial license key (removes the watermark). Threaded from the
@@ -245,7 +249,12 @@ export function BoardTldraw({
     socketRef.current = socket;
     // Re-emitted on reconnect too (socket.io fires 'connect' again), so a
     // dropped student re-syncs board state via the board:state that follows.
-    socket.on('connect', () => socket.emit('board:join', { sessionId }));
+    socket.on('connect', () =>
+      socket.emit('board:join', {
+        sessionId,
+        ...(teaching ? { as: 'teach' as const } : {}),
+      }),
+    );
     socket.on('board:writable', (p) => setBoardOpen(p.open));
     socket.on('board:state', (p) => {
       applyRemote(p.update);
