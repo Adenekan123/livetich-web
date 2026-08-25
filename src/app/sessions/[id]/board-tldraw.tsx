@@ -219,13 +219,37 @@ export function BoardTldraw({
         'remote',
       );
 
-    // One-time reconcile once the server's initial doc has been merged in:
-    // seed the shared doc from our fresh store, or adopt the existing one.
+    // Non-presenters must always sit on a page that exists in the shared doc.
+    // tldraw gives every fresh store a *random* default page id, so a viewer
+    // left on its own local page would never see shapes the instructor draws on
+    // theirs — a blank board. Switch to the shared page whenever the current one
+    // isn't part of the shared doc.
+    const followSharedPage = () => {
+      if (canDraw) return;
+      const current = editor.getCurrentPageId();
+      const pages = [...yStore.values()].filter(
+        (r): r is TLRecord => isSharedRecord(r) && r.typeName === 'page',
+      );
+      if (pages.length && !pages.some((p) => p.id === current)) {
+        editor.setCurrentPage(
+          pages[0].id as Parameters<typeof editor.setCurrentPage>[0],
+        );
+      }
+    };
+
+    // One-time reconcile once the server's initial doc has been merged in: the
+    // presenter seeds the shared doc from its store; everyone else adopts it.
     const reconcile = () => {
       if (initialized) return;
       initialized = true;
       const yRecords = [...yStore.values()].filter(isSharedRecord);
       if (yRecords.length === 0) {
+        // Only the presenter seeds an empty board. If a student seeded its own
+        // default page, that page would win locally and the instructor's shapes
+        // (drawn on a *different* page id) would land on a page the student
+        // never views — the "students see a blank board" bug. Students wait and
+        // adopt the presenter's page via onYChange + followSharedPage instead.
+        if (!canDraw) return;
         doc.transact(() => {
           for (const record of editor.store.allRecords()) {
             if (isDocumentRecord(record)) yStore.set(record.id, record);
@@ -287,6 +311,9 @@ export function BoardTldraw({
         if (toRemove.length) editor.store.remove(toRemove);
         if (toPut.length) editor.store.put(toPut);
       });
+      // A viewer that hadn't seen the presenter's page yet (joined before any
+      // content existed) lands on it as soon as it arrives here.
+      followSharedPage();
     };
     yStore.observe(onYChange);
 
