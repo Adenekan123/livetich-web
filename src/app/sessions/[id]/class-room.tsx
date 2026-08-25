@@ -1204,6 +1204,8 @@ export function ClassRoom({
                     autoComplete="off"
                     className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white placeholder:text-neutral-500 focus:border-signal-500 focus:outline-none focus:ring-4 focus:ring-signal-500/10 disabled:opacity-50"
                   />
+                  {/* Voice-note recording temporarily disabled — re-enable by
+                      un-commenting this button (handlers/state are kept intact).
                   <button
                     type="button"
                     onClick={recording ? stopRecording : startRecording}
@@ -1225,6 +1227,7 @@ export function ClassRoom({
                       <PiMicrophone className="h-4 w-4" />
                     )}
                   </button>
+                  */}
                   <button
                     disabled={chatLockedForMe}
                     className={ctrl('on', 'px-4 py-1.5')}
