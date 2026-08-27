@@ -239,6 +239,12 @@ export function ClassRoom({
   const [answerResult, setAnswerResult] = useState<boolean | null>(null);
   // Ticking clock (ms) that drives the buzzer countdown while a round is open.
   const [now, setNow] = useState(() => Date.now());
+  // Local deadline (ms on THIS client's clock) for the open buzzer round —
+  // anchored to when we received QUESTION_OPEN, not the server's `openedAt`.
+  // Counting down against the server's absolute timestamp made rounds open
+  // already at 0s (and un-answerable) whenever the API host's clock ran behind
+  // the viewer's; a local deadline is immune to that skew.
+  const [buzzerDeadline, setBuzzerDeadline] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // Counter bumped on every `submission:new`; drives the grading panel reload.
   const [submissionPing, setSubmissionPing] = useState(0);
@@ -310,18 +316,12 @@ export function ClassRoom({
       (v !== 'quran' || islamicEducation) && (v !== 'code' || codeInstruction),
   );
   const myHandRaised = hands.some((h) => h.userId === me.userId);
-  // Seconds left on the open buzzer round (null when none is running).
+  // Seconds left on the open buzzer round (null when none is running). Measured
+  // against the local deadline set when this client saw the round open, so a
+  // server/client clock disagreement can't zero it out.
   const buzzerRemaining =
-    buzzer?.phase === 'QUESTION_OPEN' && buzzer.question
-      ? Math.max(
-          0,
-          Math.ceil(
-            (new Date(buzzer.question.openedAt).getTime() +
-              buzzer.question.timeLimitSec * 1000 -
-              now) /
-              1000,
-          ),
-        )
+    buzzer?.phase === 'QUESTION_OPEN' && buzzerDeadline !== null
+      ? Math.max(0, Math.ceil((buzzerDeadline - now) / 1000))
       : null;
   // Instructors always have the mic; students only once granted (or picked).
   const canSpeak = isInstructor || speakers.includes(me.userId);
@@ -410,8 +410,17 @@ export function ClassRoom({
       if (p.state.phase === 'QUESTION_OPEN') {
         setAnswerResult(null);
         setNow(Date.now()); // reset the countdown baseline
-        if (prev !== 'QUESTION_OPEN') cue('open'); // buzz on a new round
+        // Anchor the deadline to this client's clock on the first frame of the
+        // round (a reconnect that re-delivers the same open round keeps the
+        // original deadline). Immune to server/client clock skew.
+        if (prev !== 'QUESTION_OPEN') {
+          setBuzzerDeadline(
+            Date.now() + (p.state.question?.timeLimitSec ?? 0) * 1000,
+          );
+          cue('open'); // buzz on a new round
+        }
       } else if (p.state.phase === 'WINNER' || p.state.phase === 'TIMEOUT') {
+        setBuzzerDeadline(null);
         cue(p.state.phase === 'WINNER' ? 'win' : 'timeout');
         // Show the outcome briefly, then close the card for everyone.
         buzzerDismissRef.current = setTimeout(() => {
