@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import { Lexend, Source_Sans_3, Geist_Mono } from "next/font/google";
+import { ImpersonationBanner } from "@/components/impersonation-banner";
 import "./globals.css";
 
 // Display face for headings — Lexend is engineered for reading fluency, which
@@ -57,6 +58,7 @@ export default function RootLayout({
             "(function(){try{var t=localStorage.getItem('lp-theme');if(t!=='light'&&t!=='dark'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();"
           }
         </Script>
+        <ImpersonationBanner />
         {children}
       </body>
     </html>

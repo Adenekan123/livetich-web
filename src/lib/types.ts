@@ -11,6 +11,8 @@ export interface SessionUser {
   email: string;
   organizationId: string | null;
   emailVerified: boolean;
+  isSuperAdmin: boolean; // platform operator — unlocks /admin
+  impersonatedBy?: string; // present only while an operator is impersonating
 }
 
 export interface AuthResult {
@@ -601,4 +603,96 @@ export interface AlocDraftResult {
   questions: ExamQuestionInput[];
   creditsRemaining: number | null;
   fromCache: boolean;
+}
+
+// ---- Platform admin console (GET /admin/*) ----
+
+export interface AdminOverview {
+  orgs: number;
+  users: {
+    total: number;
+    active: number;
+    disabled: number;
+    instructors: number;
+    students: number;
+    admins: number;
+  };
+  courses: number;
+  liveSessions: number;
+  submissions30d: number;
+  ai: {
+    today: { calls: number; costUsd: number; tokens: number };
+    last30d: { calls: number; costUsd: number; tokens: number };
+  };
+}
+
+export interface AdminUserRow {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  status: UserStatus;
+  isSuperAdmin: boolean;
+  emailVerified: boolean;
+  createdAt: string;
+  organization: { id: string; name: string } | null;
+}
+
+export interface AdminUsersResult {
+  total: number;
+  page: number;
+  pageSize: number;
+  rows: AdminUserRow[];
+}
+
+export interface AdminOrg {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: string;
+  users: number;
+  courses: number;
+}
+
+export interface AuditLogRow {
+  id: string;
+  at: string;
+  actorId: string | null;
+  actorEmail: string | null;
+  actorRole: string | null;
+  orgId: string | null;
+  action: string;
+  targetType: string | null;
+  targetId: string | null;
+  metadata: Record<string, unknown> | null;
+  ip: string | null;
+  userAgent: string | null;
+}
+
+export interface AuditResult {
+  total: number;
+  page: number;
+  pageSize: number;
+  rows: AuditLogRow[];
+}
+
+export interface AiUsageResult {
+  range: { from: string; to: string };
+  totals: {
+    calls: number;
+    costUsd: number;
+    totalTokens: number;
+    promptTokens: number;
+    outputTokens: number;
+  };
+  byModel: { model: string; calls: number; costUsd: number; tokens: number }[];
+  byFeature: { feature: string; calls: number; costUsd: number; tokens: number }[];
+  byOrg: {
+    orgId: string | null;
+    orgName: string;
+    calls: number;
+    costUsd: number;
+    tokens: number;
+  }[];
+  daily: { day: string; costUsd: number; tokens: number; calls: number }[];
 }

@@ -27,6 +27,8 @@ interface ApiOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   token?: string | null;
   body?: unknown;
+  /** Extra request headers (e.g. the admin step-up token). */
+  headers?: Record<string, string>;
   /** Abort after this many ms so a down/misconfigured API fails fast. */
   timeoutMs?: number;
 }
@@ -43,6 +45,7 @@ export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
       headers: {
         'Content-Type': 'application/json',
         ...(opts.token && { Authorization: `Bearer ${opts.token}` }),
+        ...opts.headers,
       },
       ...(opts.body !== undefined && { body: JSON.stringify(opts.body) }),
       cache: 'no-store',

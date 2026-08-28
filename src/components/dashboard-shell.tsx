@@ -25,7 +25,12 @@ export async function DashboardShell({
 
   return (
     <ShellChrome
-      user={{ name: user.name, role: user.role, sub: user.sub }}
+      user={{
+        name: user.name,
+        role: user.role,
+        sub: user.sub,
+        isSuperAdmin: user.isSuperAdmin,
+      }}
       org={
         org
           ? { name: org.name, logoUrl: org.logoUrl, primaryColor: org.primaryColor }

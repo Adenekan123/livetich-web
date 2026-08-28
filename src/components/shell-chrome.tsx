@@ -12,6 +12,7 @@ import {
   PiListBold,
   PiMagnifyingGlassBold,
   PiPuzzlePieceBold,
+  PiShieldCheckBold,
   PiSignOutBold,
   PiSquaresFourBold,
   PiStudentBold,
@@ -64,6 +65,7 @@ export interface ShellUser {
   name: string;
   role: string;
   sub: string;
+  isSuperAdmin?: boolean;
 }
 export interface ShellOrg {
   name: string;
@@ -83,7 +85,19 @@ export function ShellChrome({
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
-  const items = NAV[user.role] ?? NAV.STUDENT;
+  const items: NavItem[] = [
+    ...(NAV[user.role] ?? NAV.STUDENT),
+    ...(user.isSuperAdmin
+      ? [
+          {
+            href: '/admin',
+            label: 'Platform admin',
+            icon: PiShieldCheckBold,
+            group: 'Platform',
+          },
+        ]
+      : []),
+  ];
   const activeHref = useMemo(() => {
     const matches = items.filter(
       (i) => pathname === i.href || pathname.startsWith(`${i.href}/`),
