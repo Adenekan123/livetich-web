@@ -1,0 +1,161 @@
+================================================================================
+  LIVETICH — APPLICATION OVERVIEW
+  A live-class platform for independent instructors
+  Status: live production pilot · livetich.nekan.dev · August 2026
+================================================================================
+
+
+01 · OVERVIEW — WHAT LIVETICH IS
+--------------------------------------------------------------------------------
+Livetich turns a program of live online classes into one connected loop: an
+instructor teaches live, students join from the same program page, coursework
+and quizzes flow out of each session, and completion earns a verifiable
+certificate.
+
+The heart of the product is a purpose-built live classroom — not a generic
+video call. Alongside camera and mic it carries a shared whiteboard, live
+buzzer-quiz rounds with a points leaderboard, text and voice chat, hand-raising,
+and — for the orgs that enable them — a shared Qur'an reader and a collaborative
+code editor. Everything is designed to stay usable on a slow or metered
+connection, with a built-in data-saver mode.
+
+
+02 · POSITIONING — WHO IT'S FOR
+--------------------------------------------------------------------------------
+Livetich is aimed at private and independent instructors rather than large
+institutions — a solo teacher or a small teaching organisation that needs to run
+recurring live cohorts without stitching together Zoom, a course tool, and a
+payments sheet.
+
+The go-to-market wedge is Islamic education (Qur'an, Hifz/memorisation, Islamic
+studies), where the specialised classroom tools are a genuine differentiator.
+The underlying platform is general-purpose and multi-tenant, so the same product
+serves any subject. It is local-first by design for a West-African audience:
+fast, light, and resilient on poor networks.
+
+
+03 · ARCHITECTURE — HOW IT'S BUILT
+--------------------------------------------------------------------------------
+A Next.js web app and a NestJS API, talking over a Socket.IO gateway for
+everything real-time, with third-party services handling the media, mail, and
+exam-question heavy lifting. The whole stack runs as one Docker Compose
+deployment on a single VPS.
+
+  Layer        Technology                          Role
+  ---------    --------------------------------    --------------------------------
+  Web          Next.js 16 · React 19 · Tailwind    App-Router frontend, server
+                                                   components, standalone Docker output
+  API          NestJS · Prisma · MySQL 8.4         Business logic, auth, org-scoped data
+  Real-time    Socket.IO gateway · Redis           Presence, chat, buzzer, hand-raise,
+                                                   board & view sync
+  Video        LiveKit Cloud                       Camera / mic / screen-share, per-
+                                                   session tokens
+  Whiteboard   tldraw (licensed)                   Shared, synced classroom board
+  Email        Resend                              Verification, password reset,
+                                                   notifications
+  Exams        ALOC API                            Past-question bank for the Test-Prep pack
+  Infra        Caddy · Docker Compose · Vultr      Single-VPS deploy, automatic TLS,
+                                                   Johannesburg region
+
+
+04 · ROLES & TENANCY
+--------------------------------------------------------------------------------
+Data is scoped per organisation — every account belongs to one org and only ever
+sees its own. Within an org there are three roles:
+
+  ORG_ADMIN    The owner. Creates and edits programs, invites people, assigns
+               instructors, issues certificates. Can drop into any live class
+               unseen (shadow-join) or — newly — join as the instructor to teach
+               a program solo.
+
+  INSTRUCTOR   Teaches assigned programs: runs the live room, builds coursework
+               and assessments, grades submissions. Manages teaching surfaces but
+               no longer reconfigures the program itself.
+
+  STUDENT      Enrols in a program, joins live classes, submits coursework, sits
+               quizzes, and earns a verifiable certificate on completion.
+
+
+05 · THE LIVE CLASSROOM
+--------------------------------------------------------------------------------
+Sessions are cadence-driven: a program's meeting schedule materialises today's
+session automatically — there's no manual "go live" ceremony. Joining is gated
+to the meeting day, the instructor's arrival flips the room live, and students
+can wait in the room beforehand.
+
+  - Video & screen : LiveKit camera, mic and screen-share, with a low-bandwidth
+                     data-saver mode that drops remote video but keeps audio.
+  - Shared board   : A licensed tldraw whiteboard synced to everyone, plus
+                     subject-specific templates (e.g. exam axes).
+  - Buzzer quizzes : Live timed buzzer rounds from a question bank, with points,
+                     a leaderboard, and sound cues.
+  - Chat & hands   : Text and voice-note chat (lockable by the host), raise-hand,
+                     mic grants, and live reactions.
+
+
+06 · PROGRAMS & THE TEACHING LOOP
+--------------------------------------------------------------------------------
+A program holds a curriculum, a cohort, a meeting cadence, and its enrolled
+students. Around each live session sits the teaching loop:
+
+  - Assignments  : a coursework lab with groups, submissions and grading.
+  - Assessments  : question banks and class-end quizzes that materialise
+                   automatically when a session ends, with AI-assisted authoring
+                   and remediation tasks.
+  - Attendance   : recorded on join and reportable per session.
+  - Certificates : issued by an admin from the roster, each with a verification
+                   code.
+
+Admins manage everything invite-first, with per-role shareable links that land
+people straight in a program.
+
+
+07 · ADD-ON PACKS
+--------------------------------------------------------------------------------
+Specialised capability ships as toggleable packs, so a plain classroom stays
+lean and each org turns on only what it teaches.
+
+  - Islamic Education : Hifz memorisation targets and recitation logging, a
+                        shared mushaf (Qur'an) reader with synced position,
+                        Qur'an reference, and recitation audio.
+  - Code Instruction  : A shared, collaborative code editor on the classroom
+                        board for teaching programming live.
+  - Test Prep         : Timed mock exams and past-question import via the ALOC
+                        bank, plus exam-style board templates.
+
+
+08 · SECURITY POSTURE
+--------------------------------------------------------------------------------
+The pilot ships with a solid baseline: httpOnly-cookie auth, email verification,
+password forgot/reset, account disable, and idle-logout. The API runs behind
+Helmet, uses native bcrypt, enforces per-user throttling and upload caps, and
+mints short-lived tokens for the real-time and media layers. Org scoping is
+re-validated at every hop — including the new admin-as-instructor path, so a
+join mode can't be spoofed.
+
+Hardening still ahead of general availability: business verification (KYB),
+Redis-backed throttle and multi-instance board state, refresh-token rotation,
+CI with automated backups, and an external pentest.
+
+
+09 · STATUS — WHERE IT STANDS
+--------------------------------------------------------------------------------
+Livetich is live in production on a single Vultr VPS (Johannesburg) via Docker
+Compose — Caddy, web, API, MySQL and Redis — with LiveKit Cloud for video and
+Resend for mail. It's in a free pilot phase.
+
+  [SHIPPED]  Core platform — programs, live classroom, assessments, assignments,
+             attendance, certificates, all three packs.
+  [SHIPPED]  Auth & security baseline — verification, reset, idle-logout,
+             throttling, upload caps, short-lived realtime tokens.
+  [SHIPPED]  Recent — auth/landing redesign, admin "join as instructor",
+             admin-only program edits, licensed whiteboard.
+  [OPEN]     Operations — nightly backup cron and firewall lockdown; the 1 GB box
+             is the build-time constraint (a 2 GB resize is the obvious relief).
+  [OPEN]     Scale & GA — multi-instance real-time state, refresh-token rotation,
+             KYB, CI/backups, and a pentest before general availability.
+
+
+================================================================================
+  Livetich — internal overview · live pilot · August 2026
+================================================================================

@@ -11,6 +11,7 @@ import type {
   BuzzerState,
   ChatMessage,
   ClientToServerEvents,
+  CodingPointEntry,
   LeaderboardEntry,
   RoomScheme,
   RoomUser,
@@ -55,6 +56,11 @@ import {
   type HifzDraft,
 } from './live-hifz-panel';
 import { LiveGradingPanel } from './live-grading-panel';
+import {
+  LiveCodingPanel,
+  type LiveCodingReview,
+  type LiveCodingTask,
+} from './live-coding-panel';
 import { QuranReader } from './quran-reader';
 
 // tldraw touches browser-only APIs, so it must not render on the server.
@@ -234,6 +240,11 @@ export function ClassRoom({
   // default and can only unmute once they appear here (or are picked to speak).
   const [speakers, setSpeakers] = useState<string[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  // Live coding task in the room: the announced task, the shared points board,
+  // and (staff only) the per-submission review cards.
+  const [codingTask, setCodingTask] = useState<LiveCodingTask | null>(null);
+  const [codingPoints, setCodingPoints] = useState<CodingPointEntry[]>([]);
+  const [codingReviews, setCodingReviews] = useState<LiveCodingReview[]>([]);
   const [buzzer, setBuzzer] = useState<BuzzerState | null>(null);
   const [picked, setPicked] = useState<RoomUser | null>(null);
   const [answerResult, setAnswerResult] = useState<boolean | null>(null);
@@ -281,7 +292,7 @@ export function ClassRoom({
   const [buzzerForm, setBuzzerForm] = useState(false);
   const [startBuzzerOnCreate, setStartBuzzerOnCreate] = useState(false);
   const [panel, setPanel] = useState<
-    'chat' | 'people' | 'points' | 'hifz' | 'work' | null
+    'chat' | 'people' | 'points' | 'hifz' | 'work' | 'coding' | null
   >('chat');
   const [videoControls, setVideoControls] = useState<VideoControls | null>(null);
   // Mobile bottom-bar overflow: secondary controls collapse behind a "More"
@@ -395,6 +406,34 @@ export function ClassRoom({
       setHands(p.raised);
     });
     socket.on('leaderboard:update', (p) => setLeaderboard(p.entries));
+    // Coding task in the room: announce, live points, and staff review cards.
+    socket.on('coding:task', (p) => {
+      setCodingTask({
+        assignmentId: p.assignmentId,
+        title: p.title,
+        language: p.language,
+        requirementCount: p.requirementCount,
+      });
+      setCodingReviews([]);
+    });
+    socket.on('coding:points', (p) => setCodingPoints(p.entries));
+    socket.on('coding:submission', (p) => {
+      // Keep only the latest event per submission (attempt-level state).
+      setCodingReviews((prev) => [
+        {
+          submissionId: p.submissionId,
+          assignmentId: p.assignmentId,
+          studentId: p.studentId,
+          studentName: p.studentName,
+          attemptNumber: p.attemptNumber,
+          status: p.status,
+          provisionalScore: p.provisionalScore,
+          finalScore: p.finalScore,
+          aiConfidence: p.aiConfidence,
+        },
+        ...prev.filter((r) => r.submissionId !== p.submissionId),
+      ]);
+    });
     socket.on('mic:speakers', (p) => setSpeakers(p.userIds));
     socket.on('buzzer:state', (p) => {
       const prev = prevBuzzerPhaseRef.current;
@@ -719,6 +758,17 @@ export function ClassRoom({
           {labels && <span>Grading</span>}
         </button>
       )}
+      {(isInstructor || codingTask) && (
+        <button
+          onClick={() => setPanel(panel === 'coding' ? null : 'coding')}
+          className={ctrl(panel === 'coding' ? 'on' : 'default', labels ? '' : 'px-3')}
+          aria-label="Toggle coding task"
+          title="Coding task"
+        >
+          <PiCode className="h-5 w-5" />
+          {labels && <span>Coding task</span>}
+        </button>
+      )}
       {isInstructor && (
         <button
           onClick={() =>
@@ -744,6 +794,7 @@ export function ClassRoom({
     panel === 'people' ||
     panel === 'hifz' ||
     panel === 'work' ||
+    panel === 'coding' ||
     dataSaver ||
     locked ||
     !!videoControls?.camOn ||
@@ -1166,6 +1217,21 @@ export function ClassRoom({
                     )}
                   </button>
                 ))}
+              {(isInstructor || codingTask) && (
+                <button
+                  onClick={() => setPanel('coding')}
+                  aria-label="Coding task"
+                  title="Coding task"
+                  className={cn(
+                    'grid h-8 w-9 shrink-0 place-items-center rounded-lg transition',
+                    panel === 'coding'
+                      ? 'bg-white/10 text-white'
+                      : 'text-neutral-400 hover:text-white',
+                  )}
+                >
+                  <PiCode className="h-4 w-4" />
+                </button>
+              )}
               <button
                 onClick={() => setPanel(null)}
                 aria-label="Close panel"
@@ -1455,6 +1521,15 @@ export function ClassRoom({
                 quranPos={quranPos}
                 draft={hifzDraft}
                 setDraft={setHifzDraft}
+              />
+            ) : panel === 'coding' ? (
+              <LiveCodingPanel
+                sessionId={sessionId}
+                courseId={courseId}
+                isInstructor={isInstructor}
+                task={codingTask}
+                points={codingPoints}
+                reviews={codingReviews}
               />
             ) : (
               <LiveGradingPanel
