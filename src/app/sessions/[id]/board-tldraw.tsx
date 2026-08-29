@@ -196,9 +196,44 @@ export function BoardTldraw({
     setBoardMsg(m);
     window.setTimeout(() => setBoardMsg(null), 2600);
   };
+  // Opt-in on-screen diagnostics for a student (add ?boarddebug to the URL) —
+  // lets us read the live follow/page/shape state on a phone where there's no
+  // dev console. `shapes:0` ⇒ nothing synced; `page ≠ pres` ⇒ page-follow issue;
+  // `follow:N` ⇒ the student isn't tracking the presenter's camera.
+  const [debug, setDebug] = useState<{
+    following: boolean;
+    open: boolean;
+    page: string;
+    pres: string;
+    shapes: number;
+    bounds: boolean;
+  } | null>(null);
   useEffect(() => {
     followingRef.current = following;
   }, [following]);
+  // Diagnostics poller — only runs for a student who opted in via ?boarddebug.
+  useEffect(() => {
+    if (canDraw) return;
+    if (
+      typeof window === 'undefined' ||
+      !new URLSearchParams(window.location.search).has('boarddebug')
+    ) {
+      return;
+    }
+    const t = setInterval(() => {
+      const ed = editorRef.current;
+      if (!ed) return;
+      setDebug({
+        following: followingRef.current,
+        open: boardOpen,
+        page: ed.getCurrentPageId().slice(-6),
+        pres: (presenterPageRef.current ?? '—').slice(-6),
+        shapes: ed.getCurrentPageShapeIds().size,
+        bounds: !!lastBoundsRef.current,
+      });
+    }, 500);
+    return () => clearInterval(t);
+  }, [canDraw, boardOpen]);
   // Students gain/lose drawing when the board opens/closes; opening also
   // releases follow so they can work without the view snapping around.
   useEffect(() => {
@@ -228,20 +263,28 @@ export function BoardTldraw({
         'remote',
       );
 
-    // Non-presenters must always sit on a page that exists in the shared doc.
-    // tldraw gives every fresh store a *random* default page id, so a viewer
-    // left on its own local page would never see shapes the instructor draws on
-    // theirs — a blank board. Switch to the shared page whenever the current one
-    // isn't part of the shared doc.
+    // Keep a non-presenter on the presenter's page. tldraw gives every fresh
+    // store a *random* default page id, so a viewer left on its own local page
+    // would only ever see a blank board. This runs on EVERY doc change and is
+    // deliberately NOT gated on the follow flag (unlike the camera mirror): the
+    // page must track the presenter even for a student who has tapped away to
+    // explore, otherwise a page switch (or a PDF dropped on page 2) would never
+    // reach them. Prefer the presenter's announced page; fall back to the first
+    // shared page if we haven't heard from the presenter yet.
     const followSharedPage = () => {
       if (canDraw) return;
-      const current = editor.getCurrentPageId();
       const pages = [...yStore.values()].filter(
         (r): r is TLRecord => isSharedRecord(r) && r.typeName === 'page',
       );
-      if (pages.length && !pages.some((p) => p.id === current)) {
+      if (!pages.length) return;
+      const presenterPage = presenterPageRef.current;
+      const target =
+        presenterPage && pages.some((p) => p.id === presenterPage)
+          ? presenterPage
+          : pages[0].id;
+      if (editor.getCurrentPageId() !== target) {
         editor.setCurrentPage(
-          pages[0].id as Parameters<typeof editor.setCurrentPage>[0],
+          target as Parameters<typeof editor.setCurrentPage>[0],
         );
       }
     };
@@ -387,11 +430,12 @@ export function BoardTldraw({
     const onLeave = () => {
       pointerInside = false;
     };
-    // A student deliberately panning/zooming means they want to explore — release
-    // follow. But a *tap* must not: on a phone the board is a touch surface, so
-    // students constantly tapped it and got silently kicked out of following
-    // (then missed page turns and live drawing). So only a real drag past a
-    // small threshold (or a wheel/pinch-zoom) releases; taps keep them following.
+    // A student deliberately panning/zooming with a MOUSE means they want to
+    // explore — release follow. Touch is deliberately excluded: on a phone the
+    // board is a touch surface, so any tap/scroll would silently kick students
+    // out of following and strand them on a blank/old page (they'd then miss
+    // page turns, live drawing and PDFs — seeing only the presenter's laser).
+    // On touch, only the explicit "Follow presenter" button releases.
     const onInteract = () => {
       if (followingRef.current) setFollowing(false);
     };
@@ -400,11 +444,13 @@ export function BoardTldraw({
     let dragTracking = false;
     const DRAG_RELEASE_PX = 24;
     const onDragStart = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return; // never auto-release on touch
       dragTracking = true;
       dragFromX = e.clientX;
       dragFromY = e.clientY;
     };
     const onDragMove = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return;
       if (!dragTracking || !followingRef.current) return;
       if (Math.hypot(e.clientX - dragFromX, e.clientY - dragFromY) > DRAG_RELEASE_PX) {
         dragTracking = false;
@@ -442,8 +488,10 @@ export function BoardTldraw({
         lastCameraRef.current = p.camera;
         lastBoundsRef.current = p.bounds ?? null;
         presenterPageRef.current = p.page ?? null;
-        // Flip to the presenter's page (once it has synced) and match the view.
-        // If the page hasn't arrived yet, onYChange retries this when it does.
+        // Track the presenter's page even if this student has stopped following
+        // (page must always mirror), then match the camera only while following.
+        // If the page/records haven't synced yet, onYChange retries both.
+        followSharedPage();
         applyPresenterView();
         if (p.cursor) {
           const s = editor.pageToScreen(p.cursor);
@@ -807,6 +855,16 @@ export function BoardTldraw({
       {boardMsg && (
         <div className="pointer-events-none absolute bottom-3 left-1/2 z-[401] -translate-x-1/2 rounded-full bg-neutral-900/90 px-3.5 py-1.5 text-xs font-medium text-white shadow-lg">
           {boardMsg}
+        </div>
+      )}
+
+      {/* Opt-in diagnostics (?boarddebug) — student only. */}
+      {debug && (
+        <div className="pointer-events-none absolute left-2 top-12 z-[402] rounded-lg bg-black/85 px-2 py-1 font-mono text-[10px] leading-tight text-white shadow-lg">
+          follow:{debug.following ? 'Y' : 'N'} open:{debug.open ? 'Y' : 'N'}{' '}
+          bounds:{debug.bounds ? 'Y' : 'N'}
+          <br />
+          page:{debug.page} pres:{debug.pres} shapes:{debug.shapes}
         </div>
       )}
 
