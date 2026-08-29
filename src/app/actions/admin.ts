@@ -5,14 +5,9 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { getToken, TOKEN_COOKIE } from '@/lib/auth';
-import { ADMIN_STEP_COOKIE, getStepUp } from '@/lib/admin-api';
+import { ADMIN_STEP_COOKIE, ADMIN_TOKEN_COOKIE, getStepUp } from '@/lib/admin-api';
 import type { Role, UserStatus } from '@/lib/types';
 
-/**
- * While an operator impersonates a user, their OWN token is parked here so they
- * can return to their admin session. Presence of this cookie == "impersonating".
- */
-export const ADMIN_TOKEN_COOKIE = 'lt_admin_token';
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const STEP_MAX_AGE = 30 * 60; // matches the API step-up token TTL
 

@@ -7,6 +7,14 @@ import { getToken } from './auth';
 /** Parked step-up token proving a recent password re-auth for the admin console. */
 export const ADMIN_STEP_COOKIE = 'lt_admin_step';
 
+/**
+ * While an operator impersonates a user, their own token is parked under this
+ * cookie so they can return. Lives here (not in the 'use server' actions file,
+ * which may only export async functions) so both the actions and the banner can
+ * import it.
+ */
+export const ADMIN_TOKEN_COOKIE = 'lt_admin_token';
+
 export async function getStepUp(): Promise<string | null> {
   return (await cookies()).get(ADMIN_STEP_COOKIE)?.value ?? null;
 }

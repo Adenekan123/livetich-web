@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers';
-import { ADMIN_TOKEN_COOKIE, stopImpersonating } from '@/app/actions/admin';
+import { stopImpersonating } from '@/app/actions/admin';
+import { ADMIN_TOKEN_COOKIE } from '@/lib/admin-api';
 import { getCurrentUser } from '@/lib/auth';
 
 /**
