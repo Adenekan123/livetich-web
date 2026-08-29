@@ -245,6 +245,12 @@ export interface BoardPresenter {
   cursor: { x: number; y: number } | null;
   /** The presenter's current page id, so followers flip pages together. */
   page?: string;
+  /** The presenter's visible page rectangle (page coords). Followers fit *this*
+   *  to their own viewport, so the same region fills a phone and a laptop alike
+   *  regardless of screen size/aspect — instead of copying the raw camera, which
+   *  left shared PDFs tiny/off-screen on small devices. Optional for back-compat
+   *  with older presenters (followers fall back to `camera`). */
+  bounds?: { x: number; y: number; w: number; h: number };
 }
 
 export interface BoardClientToServerEvents {

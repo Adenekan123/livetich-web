@@ -169,6 +169,11 @@ export function BoardTldraw({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const followingRef = useRef(true);
   const lastCameraRef = useRef<{ x: number; y: number; z: number } | null>(null);
+  // The presenter's visible page rectangle. Followers fit this to their own
+  // screen (see applyPresenterView), so shared content is legible on any device.
+  const lastBoundsRef = useRef<{ x: number; y: number; w: number; h: number } | null>(
+    null,
+  );
   // The presenter's current page id, remembered so a following viewer can flip
   // to it the instant that page syncs in — the presenter only announces a page
   // change once, so a viewer must re-try rather than wait for another announce.
@@ -254,7 +259,19 @@ export function BoardTldraw({
       if (page && editor.getPage(page) && editor.getCurrentPageId() !== page) {
         editor.setCurrentPage(page);
       }
-      if (lastCameraRef.current) editor.setCamera(lastCameraRef.current);
+      // Fit the presenter's visible rectangle to *this* viewport so the same
+      // region fills the follower's screen whatever its size (a phone shows the
+      // same content a laptop does, just scaled). Fall back to the raw camera
+      // only for an older presenter that doesn't send bounds.
+      if (lastBoundsRef.current) {
+        editor.zoomToBounds(lastBoundsRef.current, {
+          inset: 0,
+          force: true,
+          immediate: true,
+        });
+      } else if (lastCameraRef.current) {
+        editor.setCamera(lastCameraRef.current);
+      }
     };
 
     // One-time reconcile once the server's initial doc has been merged in: the
@@ -370,9 +387,32 @@ export function BoardTldraw({
     const onLeave = () => {
       pointerInside = false;
     };
-    // A student panning/zooming means they want to explore — release follow.
+    // A student deliberately panning/zooming means they want to explore — release
+    // follow. But a *tap* must not: on a phone the board is a touch surface, so
+    // students constantly tapped it and got silently kicked out of following
+    // (then missed page turns and live drawing). So only a real drag past a
+    // small threshold (or a wheel/pinch-zoom) releases; taps keep them following.
     const onInteract = () => {
       if (followingRef.current) setFollowing(false);
+    };
+    let dragFromX = 0;
+    let dragFromY = 0;
+    let dragTracking = false;
+    const DRAG_RELEASE_PX = 24;
+    const onDragStart = (e: PointerEvent) => {
+      dragTracking = true;
+      dragFromX = e.clientX;
+      dragFromY = e.clientY;
+    };
+    const onDragMove = (e: PointerEvent) => {
+      if (!dragTracking || !followingRef.current) return;
+      if (Math.hypot(e.clientX - dragFromX, e.clientY - dragFromY) > DRAG_RELEASE_PX) {
+        dragTracking = false;
+        setFollowing(false);
+      }
+    };
+    const onDragEnd = () => {
+      dragTracking = false;
     };
 
     if (canDraw) {
@@ -384,8 +424,10 @@ export function BoardTldraw({
         if (!socket.connected) return;
         const cam = editor.getCamera();
         const pt = editor.inputs.currentPagePoint;
+        const vb = editor.getViewportPageBounds();
         const payload = {
           camera: { x: cam.x, y: cam.y, z: cam.z },
+          bounds: { x: vb.x, y: vb.y, w: vb.w, h: vb.h },
           cursor: pointerInside ? { x: pt.x, y: pt.y } : null,
           page: editor.getCurrentPageId(),
         };
@@ -398,6 +440,7 @@ export function BoardTldraw({
       // Students match the presenter's view (while following) + show the laser.
       socket.on('board:presenter', (p) => {
         lastCameraRef.current = p.camera;
+        lastBoundsRef.current = p.bounds ?? null;
         presenterPageRef.current = p.page ?? null;
         // Flip to the presenter's page (once it has synced) and match the view.
         // If the page hasn't arrived yet, onYChange retries this when it does.
@@ -410,7 +453,10 @@ export function BoardTldraw({
         }
       });
       el?.addEventListener('wheel', onInteract, { passive: true });
-      el?.addEventListener('pointerdown', onInteract);
+      el?.addEventListener('pointerdown', onDragStart);
+      el?.addEventListener('pointermove', onDragMove);
+      el?.addEventListener('pointerup', onDragEnd);
+      el?.addEventListener('pointercancel', onDragEnd);
     }
 
     return () => {
@@ -419,7 +465,10 @@ export function BoardTldraw({
       el?.removeEventListener('pointerenter', onEnter);
       el?.removeEventListener('pointerleave', onLeave);
       el?.removeEventListener('wheel', onInteract);
-      el?.removeEventListener('pointerdown', onInteract);
+      el?.removeEventListener('pointerdown', onDragStart);
+      el?.removeEventListener('pointermove', onDragMove);
+      el?.removeEventListener('pointerup', onDragEnd);
+      el?.removeEventListener('pointercancel', onDragEnd);
       unlisten();
       yStore.unobserve(onYChange);
       doc.off('update', onDocUpdate);
@@ -785,7 +834,15 @@ export function BoardTldraw({
               | null;
             if (ed) {
               if (page && ed.getPage(page)) ed.setCurrentPage(page);
-              if (lastCameraRef.current) ed.setCamera(lastCameraRef.current);
+              if (lastBoundsRef.current) {
+                ed.zoomToBounds(lastBoundsRef.current, {
+                  inset: 0,
+                  force: true,
+                  immediate: true,
+                });
+              } else if (lastCameraRef.current) {
+                ed.setCamera(lastCameraRef.current);
+              }
             }
           }}
           className={`absolute left-1/2 top-3 z-[400] -translate-x-1/2 rounded-full px-3 py-1.5 text-xs font-semibold shadow transition ${

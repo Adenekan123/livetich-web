@@ -234,6 +234,9 @@ export function ClassRoom({
   const [connected, setConnected] = useState(false);
   const [users, setUsers] = useState<RoomUser[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Unread chat count — messages that arrived while the chat tab wasn't open.
+  // Drives the badge on both the chat toggle (bar) and the chat tab (panel).
+  const [unreadChat, setUnreadChat] = useState(0);
   const [locked, setLocked] = useState(false);
   const [hands, setHands] = useState<RoomUser[]>([]);
   // Student ids the instructor has granted the mic. Students are muted by
@@ -248,6 +251,10 @@ export function ClassRoom({
   const [buzzer, setBuzzer] = useState<BuzzerState | null>(null);
   const [picked, setPicked] = useState<RoomUser | null>(null);
   const [answerResult, setAnswerResult] = useState<boolean | null>(null);
+  // The option index this student tapped in the current buzzer round — gives
+  // immediate visual feedback (there's no hover on touch) and stays highlighted
+  // once locked in. Reset when a new round opens.
+  const [pickedAnswer, setPickedAnswer] = useState<number | null>(null);
   // Ticking clock (ms) that drives the buzzer countdown while a round is open.
   const [now, setNow] = useState(() => Date.now());
   // Local deadline (ms on THIS client's clock) for the open buzzer round —
@@ -294,6 +301,10 @@ export function ClassRoom({
   const [panel, setPanel] = useState<
     'chat' | 'people' | 'points' | 'hifz' | 'work' | 'coding' | null
   >('chat');
+  // Live mirror of `panel` for the socket handler (registered once, so it can't
+  // close over a stale value) — used to decide whether an incoming chat message
+  // counts as unread.
+  const panelRef = useRef(panel);
   const [videoControls, setVideoControls] = useState<VideoControls | null>(null);
   // Mobile bottom-bar overflow: secondary controls collapse behind a "More"
   // toggle so the bar stays compact on phones (no effect at md+).
@@ -377,7 +388,14 @@ export function ClassRoom({
     socket.on('disconnect', () => setConnected(false));
     socket.on('room:presence', (p) => setUsers(p.users));
     socket.on('chat:history', (p) => setMessages(p.messages));
-    socket.on('chat:message', (m) => setMessages((prev) => [...prev, m]));
+    socket.on('chat:message', (m) => {
+      setMessages((prev) => [...prev, m]);
+      // Count it as unread unless the chat tab is the one on screen (and never
+      // count our own messages).
+      if (panelRef.current !== 'chat' && m.user.userId !== me.userId) {
+        setUnreadChat((n) => n + 1);
+      }
+    });
     socket.on('chat:locked', (p) => setLocked(p.locked));
     socket.on('view:changed', (p) => setView(p.view));
     socket.on('theme:changed', (p) => setScheme(p.scheme));
@@ -448,6 +466,7 @@ export function ClassRoom({
 
       if (p.state.phase === 'QUESTION_OPEN') {
         setAnswerResult(null);
+        setPickedAnswer(null);
         setNow(Date.now()); // reset the countdown baseline
         // Anchor the deadline to this client's clock on the first frame of the
         // round (a reconnect that re-delivers the same open round keeps the
@@ -487,6 +506,20 @@ export function ClassRoom({
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Keep the ref in sync so the (once-registered) socket handler reads the live
+  // panel. Clearing the unread badge is done where chat is opened (openChat), not
+  // here, to avoid a setState-in-effect cascade.
+  useEffect(() => {
+    panelRef.current = panel;
+  }, [panel]);
+
+  // Open the chat tab and clear the unread badge in one go. Used by both the
+  // bottom-bar chat toggle and the panel's own Chat tab.
+  const openChat = () => {
+    setPanel('chat');
+    setUnreadChat(0);
+  };
 
   // Grow the active recitation to cover wherever the mushaf goes: same surah →
   // widen the ayah span to include the current ayah; a new surah → restart the
@@ -537,6 +570,40 @@ export function ClassRoom({
     const t = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(t);
   }, [buzzer?.phase, buzzer?.question?.questionId]);
+
+  // Prime the WebAudio context on the first user gesture. Mobile browsers start
+  // every AudioContext suspended and only let it resume from inside a user
+  // gesture — so the buzzer cue (which fires later, from a socket event) stayed
+  // silent on phones. Creating + resuming it here, on the first tap/key, unlocks
+  // audio for the rest of the session. One-shot: it removes itself once done.
+  useEffect(() => {
+    const unlock = () => {
+      try {
+        type ACtor = typeof AudioContext;
+        const Ctor: ACtor | undefined =
+          window.AudioContext ??
+          (window as unknown as { webkitAudioContext?: ACtor })
+            .webkitAudioContext;
+        if (Ctor) {
+          const ctx = audioCtxRef.current ?? (audioCtxRef.current = new Ctor());
+          if (ctx.state === 'suspended') void ctx.resume();
+        }
+      } catch {
+        /* audio unavailable — ignore */
+      }
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('touchstart', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('touchstart', unlock);
+    window.addEventListener('keydown', unlock);
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('touchstart', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, []);
 
   // Tear down the audio context + any pending auto-close on unmount.
   useEffect(
@@ -1095,30 +1162,48 @@ export function ClassRoom({
                   </p>
                   {buzzer.phase === 'QUESTION_OPEN' ? (
                     <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
-                      {buzzer.question.options.map((opt, i) => (
-                        <button
-                          key={i}
-                          disabled={
-                            isInstructor ||
-                            answerResult !== null ||
-                            buzzerRemaining === 0 ||
-                            !buzzer.eligibleUserIds.includes(me.userId)
-                          }
-                          onClick={() =>
-                            socketRef.current?.emit('quiz:answer', {
-                              sessionId,
-                              questionId: buzzer.question!.questionId,
-                              answerIndex: i,
-                            })
-                          }
-                          className="flex items-center gap-3 rounded-xl border border-neutral-300 bg-white px-4 py-3 text-left text-sm font-medium text-neutral-800 transition hover:border-signal-400 disabled:opacity-50 disabled:hover:border-neutral-300"
-                        >
-                          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-neutral-100 text-xs font-semibold text-neutral-500">
-                            {String.fromCharCode(65 + i)}
-                          </span>
-                          {opt}
-                        </button>
-                      ))}
+                      {buzzer.question.options.map((opt, i) => {
+                        const isPicked = pickedAnswer === i;
+                        return (
+                          <button
+                            key={i}
+                            disabled={
+                              isInstructor ||
+                              answerResult !== null ||
+                              buzzerRemaining === 0 ||
+                              !buzzer.eligibleUserIds.includes(me.userId)
+                            }
+                            onClick={() => {
+                              setPickedAnswer(i);
+                              socketRef.current?.emit('quiz:answer', {
+                                sessionId,
+                                questionId: buzzer.question!.questionId,
+                                answerIndex: i,
+                              });
+                            }}
+                            className={cn(
+                              'flex items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm font-medium text-neutral-800 transition',
+                              'hover:border-signal-400 hover:bg-signal-50 active:scale-[0.98]',
+                              'disabled:hover:border-neutral-300 disabled:hover:bg-white',
+                              isPicked
+                                ? 'border-signal-500 bg-signal-50 ring-2 ring-signal-500/40 disabled:opacity-100 disabled:hover:border-signal-500 disabled:hover:bg-signal-50'
+                                : 'border-neutral-300 bg-white disabled:opacity-50',
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                'grid h-6 w-6 shrink-0 place-items-center rounded-md text-xs font-semibold',
+                                isPicked
+                                  ? 'bg-signal-600 text-white'
+                                  : 'bg-neutral-100 text-neutral-500',
+                              )}
+                            >
+                              {String.fromCharCode(65 + i)}
+                            </span>
+                            {opt}
+                          </button>
+                        );
+                      })}
                     </div>
                   ) : buzzer.phase === 'WINNER' ? (
                     <div className="mt-4 flex items-center gap-2 rounded-xl bg-signal-50 px-4 py-3 text-sm font-medium text-signal-700">
@@ -1171,7 +1256,7 @@ export function ClassRoom({
               {(['chat', 'people', 'points'] as const).map((t) => (
                 <button
                   key={t}
-                  onClick={() => setPanel(t)}
+                  onClick={() => (t === 'chat' ? openChat() : setPanel(t))}
                   className={cn(
                     'flex flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold transition',
                     panel === t
@@ -1182,6 +1267,14 @@ export function ClassRoom({
                   {t === 'chat' ? (
                     <>
                       <PiChatCircle className="h-4 w-4" /> Chat
+                      {unreadChat > 0 && panel !== 'chat' && (
+                        <span
+                          className="grid h-4 min-w-[16px] place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white"
+                          aria-label={`${unreadChat} unread`}
+                        >
+                          {unreadChat > 9 ? '9+' : unreadChat}
+                        </span>
+                      )}
                     </>
                   ) : t === 'people' ? (
                     <>
@@ -1547,7 +1640,7 @@ export function ClassRoom({
           switch, the role's primary action, chat, end); everything occasional
           folds into a "More" popover. From md up there's room for it all inline,
           so the extras sit in their normal clusters and More is hidden. */}
-      <footer className="relative flex flex-wrap items-center gap-2 border-t border-white/10 px-3 py-2.5 sm:px-4 sm:py-3">
+      <footer className="relative flex flex-wrap items-center justify-between gap-2 border-t border-white/10 px-3 py-2.5 sm:px-4 sm:py-3">
         {/* Left: mic (primary) + media extras (inline on desktop). */}
         <div className="flex flex-wrap items-center gap-2">
           {!isShadow && videoControls?.canPublishMedia && (
@@ -1575,8 +1668,11 @@ export function ClassRoom({
         </div>
 
         {/* Center: surface switch (instructor drives; students follow) + the
-            role's primary action. */}
-        <div className="mx-auto flex flex-wrap items-center justify-center gap-2">
+            role's primary action. On phones this drops to its own full-width row
+            *below* the primary controls (order-last basis-full) so "Following"
+            and "Raise hand" sit at the bottom, clear of mic/chat/leave up top;
+            from md up it centers inline between the side clusters. */}
+        <div className="order-last mx-auto flex basis-full flex-wrap items-center justify-center gap-2 md:order-none md:basis-auto">
           {isInstructor ? (
             <div className="inline-flex rounded-full bg-white/10 p-1">
               {views.map((v) => {
@@ -1651,12 +1747,24 @@ export function ClassRoom({
             (mobile) + leave/end. */}
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setPanel(panel === 'chat' ? null : 'chat')}
-            className={ctrl(panel === 'chat' ? 'on' : 'default', 'px-3')}
-            aria-label="Toggle chat"
+            onClick={() => (panel === 'chat' ? setPanel(null) : openChat())}
+            className={cn(ctrl(panel === 'chat' ? 'on' : 'default', 'px-3'), 'relative')}
+            aria-label={
+              unreadChat > 0
+                ? `Toggle chat, ${unreadChat} unread message${unreadChat === 1 ? '' : 's'}`
+                : 'Toggle chat'
+            }
             title="Chat"
           >
             <PiChatCircle className="h-5 w-5" />
+            {unreadChat > 0 && (
+              <span
+                className="absolute -right-1 -top-1 grid h-4 min-w-[16px] place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-[var(--room-bg)]"
+                aria-hidden
+              >
+                {unreadChat > 9 ? '9+' : unreadChat}
+              </span>
+            )}
           </button>
           <div className="hidden items-center gap-2 md:flex">
             {panelExtras(false)}
