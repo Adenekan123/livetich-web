@@ -6,6 +6,7 @@ import {
   Tldraw,
   createTLStore,
   type Editor,
+  type TLAssetStore,
   type TLRecord,
   type TLShapePartial,
 } from 'tldraw';
@@ -143,6 +144,36 @@ async function pdfToImageFiles(file: File): Promise<File[]> {
   return out;
 }
 
+/**
+ * Board asset store backed by our API. tldraw's default store hands out `blob:`
+ * URLs that are private to the uploader's browser session — so a PDF page/image
+ * the instructor dropped on the board was invisible to every student (their
+ * browser can't fetch another client's blob). Here each imported page/image is
+ * uploaded to `sessions/:id/board-asset`, and only the resulting same-origin URL
+ * (`/api/files/board-asset/:id`, served through the authed /api/files proxy) is
+ * stored in the tldraw record — so the Yjs doc stays small AND every client can
+ * load it. `resolve` is left default (returns the stored src URL).
+ */
+function makeBoardAssetStore(sessionId: string): TLAssetStore {
+  return {
+    async upload(_asset, file) {
+      const token = await getRealtimeToken();
+      const form = new FormData();
+      form.append('file', file, file.name || 'asset.png');
+      const res = await fetch(`${API_URL}/sessions/${sessionId}/board-asset`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token ?? ''}` },
+        body: form,
+      });
+      if (!res.ok) {
+        throw new Error(`board asset upload failed (${res.status})`);
+      }
+      const { url } = (await res.json()) as { url: string };
+      return { src: url };
+    },
+  };
+}
+
 export function BoardTldraw({
   sessionId,
   canDraw,
@@ -161,7 +192,12 @@ export function BoardTldraw({
    *  server page so it stays a runtime value, not a build-time inline. */
   licenseKey?: string;
 }) {
-  const [store] = useState(() => createTLStore());
+  // Assets (imported PDF pages / images) upload to our API and sync only their
+  // URL — see makeBoardAssetStore. Without this, shared images used blob: URLs
+  // that no other client could load (the "PDF invisible to students" bug).
+  const [store] = useState(() =>
+    createTLStore({ assets: makeBoardAssetStore(sessionId) }),
+  );
   // Presenter tools (camera-follow + shared laser). Refs bridge the socket
   // handlers in onMount to React state for the overlay + follow button.
   const editorRef = useRef<Editor | null>(null);
