@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import Link from 'next/link';
+import Link, { useLinkStatus } from 'next/link';
 import { btn, cn } from '@/lib/ui';
 import type { ClassItem, CohortStatus } from './catalog-lib';
 import { NewProgramButton } from './new-program-modal';
@@ -120,6 +120,36 @@ function MetaRow({ icon, children }: { icon: React.ReactNode; children: React.Re
   );
 }
 
+/**
+ * "Join live" swaps to a "Joining…" spinner the moment it's clicked, so the
+ * student gets feedback while the (heavy, un-prefetched) session route loads —
+ * matching the course page's JoinLiveCard. `useLinkStatus` must read from a
+ * descendant of the Link, so the label lives in its own component.
+ */
+function JoinLiveLabel() {
+  const { pending } = useLinkStatus();
+  if (!pending) return <>Join live</>;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 animate-spin" aria-hidden>
+        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+        <path d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+      </svg>
+      Joining…
+    </span>
+  );
+}
+
+function JoinLiveButton({ sessionId }: { sessionId: string }) {
+  // prefetch={false}: the room is a heavy, dynamic route we don't want to warm
+  // in the background — and a prefetched route would skip the pending state.
+  return (
+    <Link href={`/sessions/${sessionId}`} prefetch={false} className={btn('primary', 'sm')}>
+      <JoinLiveLabel />
+    </Link>
+  );
+}
+
 function CohortCard({ c }: { c: ClassItem }) {
   const dim = c.status === 'COMPLETED';
   return (
@@ -161,33 +191,46 @@ function CohortCard({ c }: { c: ClassItem }) {
         </p>
       </div>
 
-      {/* Schedule block */}
+      {/* Schedule block — a program that runs in batches has no cadence of its
+          own (each batch does), so point the student at the batch picker. */}
       <div className="mt-4 space-y-2 border-t border-neutral-100 pt-4 text-sm">
-        {c.scheduleLabel ? (
-          <MetaRow icon={<CalendarIcon />}>
-            {c.scheduleLabel}
-            {c.tzLabel && <span className="text-neutral-400"> {c.tzLabel}</span>}
-          </MetaRow>
+        {c.batchCount > 0 ? (
+          <>
+            <MetaRow icon={<CalendarIcon />}>
+              Runs in {c.batchCount} {c.batchCount === 1 ? 'batch' : 'batches'} —
+              choose a time
+            </MetaRow>
+            <MetaRow icon={<CapIcon />}>Certificate on completion</MetaRow>
+          </>
         ) : (
-          <MetaRow icon={<CalendarIcon />}>
-            <span className="text-neutral-400">Schedule to be announced</span>
-          </MetaRow>
-        )}
-
-        <MetaRow icon={<ClockIcon />}>
-          {c.durationLabel ?? 'Self-paced length'}
-          {c.startText &&
-            (c.status === 'ENROLLING' ||
-              c.status === 'STARTING_SOON' ||
-              c.status === 'OPEN') && (
-              <span className="text-neutral-400"> · starts {c.startText}</span>
+          <>
+            {c.scheduleLabel ? (
+              <MetaRow icon={<CalendarIcon />}>
+                {c.scheduleLabel}
+                {c.tzLabel && <span className="text-neutral-400"> {c.tzLabel}</span>}
+              </MetaRow>
+            ) : (
+              <MetaRow icon={<CalendarIcon />}>
+                <span className="text-neutral-400">Schedule to be announced</span>
+              </MetaRow>
             )}
-          {c.status === 'IN_PROGRESS' && c.statusHint && (
-            <span className="text-neutral-400"> · {c.statusHint}</span>
-          )}
-        </MetaRow>
 
-        <MetaRow icon={<CapIcon />}>Certificate on completion</MetaRow>
+            <MetaRow icon={<ClockIcon />}>
+              {c.durationLabel ?? 'Self-paced length'}
+              {c.startText &&
+                (c.status === 'ENROLLING' ||
+                  c.status === 'STARTING_SOON' ||
+                  c.status === 'OPEN') && (
+                  <span className="text-neutral-400"> · starts {c.startText}</span>
+                )}
+              {c.status === 'IN_PROGRESS' && c.statusHint && (
+                <span className="text-neutral-400"> · {c.statusHint}</span>
+              )}
+            </MetaRow>
+
+            <MetaRow icon={<CapIcon />}>Certificate on completion</MetaRow>
+          </>
+        )}
       </div>
 
       {/* Footer */}
@@ -196,9 +239,7 @@ function CohortCard({ c }: { c: ClassItem }) {
           {c.enrollments} {c.enrollments === 1 ? 'student' : 'students'}
         </span>
         {c.isLive && c.liveSessionId ? (
-          <Link href={`/sessions/${c.liveSessionId}`} className={btn('primary', 'sm')}>
-            Join live
-          </Link>
+          <JoinLiveButton sessionId={c.liveSessionId} />
         ) : (
           <Link href={`/courses/${c.courseId}`} className={btn('secondary', 'sm')}>
             {c.status === 'COMPLETED' ? 'View' : 'View program'}

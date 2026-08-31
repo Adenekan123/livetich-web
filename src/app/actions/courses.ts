@@ -67,6 +67,47 @@ export async function createCourse(
 }
 
 /**
+ * Create a batch (a scheduled instance) of an existing program. The batch
+ * inherits the program's identity + content; here we send only its label and
+ * schedule. On success we jump to the new batch's page.
+ */
+export async function createBatch(
+  programId: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const token = await getToken();
+  if (!token) redirect('/login');
+  const meetingDays = formData
+    .getAll('meetingDays')
+    .map((d) => Number(d))
+    .filter((d) => !Number.isNaN(d));
+  const durationWeeks = formData.get('durationWeeks');
+  const startDate = formData.get('startDate') as string;
+
+  let batch: CourseDetail;
+  try {
+    batch = await api<CourseDetail>(`/courses/${programId}/batches`, {
+      method: 'POST',
+      token,
+      body: {
+        label: formData.get('label') || undefined,
+        instructorId: formData.get('instructorId') || undefined,
+        startDate: startDate ? new Date(startDate).toISOString() : undefined,
+        durationWeeks: durationWeeks ? Number(durationWeeks) : undefined,
+        meetingDays: meetingDays.length ? meetingDays : undefined,
+        meetingTime: formData.get('meetingTime') || undefined,
+        timezone: formData.get('timezone') || undefined,
+      },
+    });
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.message };
+    throw e;
+  }
+  redirect(`/courses/${batch.id}`);
+}
+
+/**
  * Edit an existing program — owning admin or the assigned instructor (the API
  * enforces both). Covers the cohort schedule (days, time, timezone, start,
  * duration) alongside the basics. Meeting days are always sent (even when empty)

@@ -337,6 +337,8 @@ export interface CourseDetail extends CohortFields {
   id: string;
   organizationId: string | null;
   instructorId: string | null;
+  /** Set when this course is a batch: the program it's an instance of. */
+  parentCourseId: string | null;
   title: string;
   description: string | null;
   createdAt: string;
@@ -346,11 +348,24 @@ export interface CourseDetail extends CohortFields {
   _count: { enrollments: number };
 }
 
+/** A batch (scheduled instance) of a program, from GET /courses/:id/batches. */
+export interface CourseBatch extends CohortFields {
+  id: string;
+  title: string;
+  parentCourseId: string | null;
+  instructor: { id: string; name: string } | null;
+  _count: { enrollments: number };
+  liveSessionId: string | null;
+  nextSessionAt: string | null;
+}
+
 /** One row from the company-scoped catalog (GET /courses), with a session summary. */
 export interface CatalogCourse extends CohortFields {
   id: string;
   organizationId: string | null;
   instructorId: string | null;
+  /** Set when this row is a batch of a program (grouped/hidden in the catalog). */
+  parentCourseId: string | null;
   title: string;
   description: string | null;
   createdAt: string;
