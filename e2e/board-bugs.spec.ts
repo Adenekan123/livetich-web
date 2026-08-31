@@ -43,6 +43,31 @@ function trackErrors(page: Page, sink: string[]) {
   page.on('pageerror', (e) => sink.push(`pageerror: ${e.message}`));
 }
 
+// BUG (mobile chat): the live chat used to open over the board on first load;
+// on phones it must start CLOSED, with the user opening it from the bottom bar.
+test('mobile classroom loads with the chat panel closed', async ({ browser }) => {
+  const ctx = await browser.newContext({
+    ...devices['Pixel 7'],
+    storageState: STUDENT_STATE,
+  });
+  const page = await ctx.newPage();
+  await page.goto(`/sessions/${LIVE_SESSION}`);
+  await expect(page.getByRole('button', { name: /^leave$/i })).toBeVisible({
+    timeout: 20_000,
+  });
+
+  // Chat starts closed: its composer isn't rendered (no overlay over the stage).
+  await expect(page.getByPlaceholder(/say something|chat is locked/i)).toHaveCount(0);
+
+  // The user opens it from the bottom bar; now the composer shows.
+  await page.getByRole('button', { name: /toggle chat/i }).click();
+  await expect(page.getByPlaceholder(/say something|chat is locked/i)).toBeVisible({
+    timeout: 10_000,
+  });
+
+  await ctx.close();
+});
+
 // BUG 1 (multi-client): the instructor imports a PDF then deletes it; those
 // asset/shape records sync to a student. If a bad record or ordering corrupts
 // the tldraw store mid-merge, the board freezes and "drawing stops working".

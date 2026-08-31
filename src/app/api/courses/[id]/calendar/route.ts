@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { API_URL } from '@/lib/api';
+import { baseUrl } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 
 /**
@@ -15,7 +15,9 @@ export async function GET(
   const token = await getToken();
   if (!token) return new NextResponse('Unauthorized', { status: 401 });
 
-  const res = await fetch(`${API_URL}/courses/${id}/calendar.ics`, {
+  // Server-side base URL (internal Docker network when set) — the public URL
+  // hairpins from inside the web container and fails.
+  const res = await fetch(`${baseUrl()}/courses/${id}/calendar.ics`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: 'no-store',
   });

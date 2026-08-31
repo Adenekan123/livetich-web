@@ -9,7 +9,7 @@ export const API_URL =
  * hang. Falls back to the public URL (local dev, or when not containerised).
  */
 const INTERNAL_API_URL = process.env.API_INTERNAL_URL;
-function baseUrl(): string {
+export function baseUrl(): string {
   if (typeof window === 'undefined' && INTERNAL_API_URL) return INTERNAL_API_URL;
   return API_URL;
 }

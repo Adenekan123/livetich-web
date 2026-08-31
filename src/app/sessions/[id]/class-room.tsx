@@ -514,6 +514,18 @@ export function ClassRoom({
     panelRef.current = panel;
   }, [panel]);
 
+  // On phones the side panel overlays the board, so start with it CLOSED on
+  // first load — the user opens chat from the bottom bar. Desktop keeps the
+  // chat open by default (it sits beside the stage, not over it). Runs once on
+  // mount so it only sets the initial state, never fighting later toggles.
+  useEffect(() => {
+    if (window.matchMedia('(max-width: 767px)').matches) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time initial-state adjustment for mobile
+      setPanel(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Open the chat tab and clear the unread badge in one go. Used by both the
   // bottom-bar chat toggle and the panel's own Chat tab.
   const openChat = () => {

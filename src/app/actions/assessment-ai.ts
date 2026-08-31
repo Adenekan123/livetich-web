@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { api, API_URL, ApiError } from '@/lib/api';
+import { api, API_URL, ApiError, baseUrl } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import type { CourseDocument, DraftResult } from '@/lib/types';
 
@@ -27,7 +27,9 @@ export async function uploadDocument(
 
   let res: Response;
   try {
-    res = await fetch(`${API_URL}/courses/${courseId}/assessment/documents`, {
+    // Server-side base URL (internal Docker network when set) — the public URL
+    // hairpins from inside the web container and fails.
+    res = await fetch(`${baseUrl()}/courses/${courseId}/assessment/documents`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: fwd,
