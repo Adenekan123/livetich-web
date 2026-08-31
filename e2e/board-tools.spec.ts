@@ -102,7 +102,8 @@ test('instructor imports an image — it uploads to the API (same-origin URL, no
   const assetUrl = new URL(body.url, page.url()).toString();
   const served = await page.request.get(assetUrl);
   expect(served.ok(), `serving ${assetUrl} -> ${served.status()}`).toBeTruthy();
-  expect(served.headers()['content-type'] ?? '').toMatch(/image\//);
+  // Images are compressed to WebP on upload so they stay light and load fast.
+  expect(served.headers()['content-type'] ?? '').toMatch(/image\/webp/);
 
   // The image parsed cleanly — no tldraw DataView RangeError.
   expect(parseErrors, `tldraw image parse errors:\n${parseErrors.join('\n')}`).toEqual([]);

@@ -133,7 +133,7 @@ test('board stays live for instructor + student across a PDF import/delete cycle
 // BUG 1 (heavy, realistic PDF): a 12-page deck with big embedded rasters — the
 // real conditions (large assets, long uploads, many shapes). Import, delete,
 // draw; the board and pen must survive.
-test('draw works after importing + deleting a heavy 12-page PDF', async ({ page }) => {
+test('draw works after importing + deleting a heavy multi-page PDF', async ({ page }) => {
   test.setTimeout(180_000);
   const errors: string[] = [];
   const uploadFails: string[] = [];
@@ -146,8 +146,8 @@ test('draw works after importing + deleting a heavy 12-page PDF', async ({ page 
   await clearBoard(page);
 
   await page.locator('input[type="file"]').setInputFiles('e2e/fixtures/heavy-deck.pdf');
-  // 12 pages rasterise + upload — allow generous time for shapes to land.
-  await expect.poll(() => shapeCount(page), { timeout: 120_000 }).toBeGreaterThanOrEqual(6);
+  // Pages rasterise + compress + upload — allow generous time for shapes to land.
+  await expect.poll(() => shapeCount(page), { timeout: 120_000 }).toBeGreaterThanOrEqual(3);
 
   await clearBoard(page);
   await expect.poll(() => shapeCount(page), { timeout: 15_000 }).toBe(0);

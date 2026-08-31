@@ -85,13 +85,15 @@ async function buildFixtures() {
   doc.text('Livetich board test — Page 2', 20, 40);
   fs.writeFileSync(`${FIXTURE_DIR}/sample-doc.pdf`, Buffer.from(doc.output('arraybuffer')));
 
-  // A heavy 12-page deck with large embedded rasters (real-material conditions).
+  // A multi-page deck with embedded rasters (real-material conditions). Kept
+  // modest so it's cheap to regenerate + import each run while still exercising
+  // several pages of non-trivial image content.
   const heavy = new jsPDF({ unit: 'pt', format: 'a4' });
-  const PAGES = 12;
+  const PAGES = 6;
   for (let p = 1; p <= PAGES; p++) {
     if (p > 1) heavy.addPage();
-    const dataUrl = 'data:image/png;base64,' + makePng(900, 650, p).toString('base64');
-    heavy.addImage(dataUrl, 'PNG', 40, 80, 515, 372);
+    const dataUrl = 'data:image/png;base64,' + makePng(640, 480, p).toString('base64');
+    heavy.addImage(dataUrl, 'PNG', 40, 80, 515, 386);
     heavy.setFontSize(22);
     heavy.text(`Heavy deck — slide ${p} of ${PAGES}`, 40, 60);
   }

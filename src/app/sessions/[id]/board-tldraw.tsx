@@ -154,6 +154,43 @@ async function pdfToImageFiles(file: File): Promise<File[]> {
  * stored in the tldraw record — so the Yjs doc stays small AND every client can
  * load it. `resolve` is left default (returns the stored src URL).
  */
+// Keep board images light so they upload fast and — more importantly — load
+// fast for every viewer. PDF pages rasterise to big lossless PNGs (1–3 MB each)
+// and users drop full-res photos; capping the long edge and re-encoding to WebP
+// shrinks them ~5–10× with no visible loss at board scale.
+const ASSET_MAX_EDGE = 1600; // px on the long edge — legible without being huge
+const ASSET_WEBP_QUALITY = 0.82;
+
+async function compressImageFile(file: File): Promise<File> {
+  // Leave vectors and non-images alone; only raster images benefit.
+  if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const longest = Math.max(bitmap.width, bitmap.height);
+    const scale = Math.min(1, ASSET_MAX_EDGE / longest);
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close?.();
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/webp', ASSET_WEBP_QUALITY),
+    );
+    // Skip if the browser can't make WebP or the result isn't actually smaller
+    // (already-tiny images) — re-encoding those would only lose quality.
+    if (!blob || blob.size >= file.size) return file;
+    const name = file.name.replace(/\.[^.]+$/, '') + '.webp';
+    return new File([blob], name, { type: 'image/webp' });
+  } catch {
+    // Any decode/encode failure → upload the original; never block the import.
+    return file;
+  }
+}
+
 function makeBoardAssetStore(sessionId: string): TLAssetStore {
   const post = async (token: string | null, file: File) => {
     const form = new FormData();
@@ -166,13 +203,16 @@ function makeBoardAssetStore(sessionId: string): TLAssetStore {
   };
   return {
     async upload(_asset, file) {
-      let res = await post(await getRealtimeToken(), file);
+      // Shrink heavy images before they ever hit the wire (PDF pages + dropped
+      // photos both flow through here).
+      const light = await compressImageFile(file);
+      let res = await post(await getRealtimeToken(), light);
       // The realtime token is cached (see getRealtimeToken); if it was rejected
       // (expired/rotated), drop it and retry once with a fresh one so a stale
       // cache can never turn into a silently-failed upload.
       if (res.status === 401) {
         clearRealtimeToken();
-        res = await post(await getRealtimeToken(), file);
+        res = await post(await getRealtimeToken(), light);
       }
       if (!res.ok) {
         throw new Error(`board asset upload failed (${res.status})`);
