@@ -837,7 +837,7 @@ export function ClassRoom({
           {labels && <span>Grading</span>}
         </button>
       )}
-      {(isInstructor || codingTask) && (
+      {codeInstruction && (isInstructor || codingTask) && (
         <button
           onClick={() => setPanel(panel === 'coding' ? null : 'coding')}
           className={ctrl(panel === 'coding' ? 'on' : 'default', labels ? '' : 'px-3')}
@@ -1322,7 +1322,7 @@ export function ClassRoom({
                     )}
                   </button>
                 ))}
-              {(isInstructor || codingTask) && (
+              {codeInstruction && (isInstructor || codingTask) && (
                 <button
                   onClick={() => setPanel('coding')}
                   aria-label="Coding task"
