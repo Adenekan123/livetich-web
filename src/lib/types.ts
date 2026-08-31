@@ -252,6 +252,15 @@ export interface AssessmentSummary {
 }
 
 /** A single question presented to a student (answer key hidden until submitted). */
+/** A materialised class-end quiz still held from students (manager view). */
+export interface HeldAssessment {
+  id: string;
+  createdAt: string;
+  endedAt: string | null;
+  topic: string | null;
+  questionCount: number;
+}
+
 export interface AssessmentTakeQuestion {
   id: string;
   body: string;
@@ -373,6 +382,14 @@ export interface CatalogCourse extends CohortFields {
   _count: { enrollments: number; sections: number };
   liveSessionId: string | null;
   nextSessionAt: string | null;
+}
+
+/** Org-wide class preferences (admin toggles). */
+export interface OrgSettings {
+  evictOnInstructorLeave: boolean;
+  micRequiresRaisedHand: boolean;
+  preClassReminder: boolean;
+  reminderLeadMinutes: number;
 }
 
 export interface Enrollment {

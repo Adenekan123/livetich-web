@@ -9,9 +9,11 @@ import type {
   CourseDetail,
   CourseDocument,
   Enrollment,
+  HeldAssessment,
   RemediationTask,
 } from '@/lib/types';
 import { AuthoringPanel } from './authoring-panel';
+import { ReleaseControls } from './release-controls';
 import { StudentAssessments } from './student-assessments';
 
 export default async function AssessmentPage(props: {
@@ -57,7 +59,7 @@ async function renderAuthoring(
   token: string,
   course: CourseDetail,
 ) {
-  const [questions, tasks, documents] = await Promise.all([
+  const [questions, tasks, documents, settings, held] = await Promise.all([
     api<AssessmentQuestion[]>(`/courses/${courseId}/assessment/questions`, {
       token,
     }),
@@ -65,6 +67,13 @@ async function renderAuthoring(
     api<CourseDocument[]>(`/courses/${courseId}/assessment/documents`, {
       token,
     }),
+    api<{ instantClassAssessment: boolean }>(
+      `/courses/${courseId}/assessment/settings`,
+      { token },
+    ).catch(() => ({ instantClassAssessment: true })),
+    api<HeldAssessment[]>(`/courses/${courseId}/assessment/held`, {
+      token,
+    }).catch(() => [] as HeldAssessment[]),
   ]);
   return (
     <>
@@ -79,6 +88,11 @@ async function renderAuthoring(
           are assigned automatically.
         </p>
       </div>
+      <ReleaseControls
+        courseId={courseId}
+        instant={settings.instantClassAssessment}
+        held={held}
+      />
       <AuthoringPanel
         courseId={courseId}
         sections={course.sections}

@@ -140,6 +140,9 @@ export interface ClientToServerEvents {
 export interface ServerToClientEvents {
   'room:presence': (p: { sessionId: string; users: RoomUser[] }) => void;
 
+  /** The instructor ended class and the org evicts students on end. */
+  'room:closed': (p: { sessionId: string; reason: 'ENDED' }) => void;
+
   'chat:message': (p: ChatMessage) => void;
   /** Recent messages, sent once to the joining client. */
   'chat:history': (p: { sessionId: string; messages: ChatMessage[] }) => void;

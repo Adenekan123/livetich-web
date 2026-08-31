@@ -496,6 +496,13 @@ export function ClassRoom({
       setNotice(e.message);
       setTimeout(() => setNotice(null), 4000);
     });
+    // The instructor ended class and this org removes students on end. The
+    // instructor navigates from their own End action, so only students act here.
+    socket.on('room:closed', () => {
+      if (isInstructor) return;
+      socket.emit('room:leave', { sessionId });
+      router.push(`/courses/${courseId}`);
+    });
 
     return () => {
       socket.disconnect();
