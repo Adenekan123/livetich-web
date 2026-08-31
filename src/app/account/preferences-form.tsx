@@ -1,27 +1,24 @@
 'use client';
 
-import { useActionState, useState } from 'react';
-import { updateOrgSettings, type OrgActionState } from '@/app/actions/org';
-import { SubmitButton } from '@/components/submit-button';
-import { FormError } from '@/components/form-error';
-import { inputClass, labelClass } from '@/lib/ui';
+import { useState, useTransition } from 'react';
+import { updateOrgSettings } from '@/app/actions/org';
+import { btn, inputClass, labelClass } from '@/lib/ui';
 import type { OrgSettings } from '@/lib/types';
 
-const initial: OrgActionState = { error: null };
-
-/** One labelled toggle row (a styled checkbox). */
+/** One labelled toggle row (a styled checkbox), controlled by the parent. */
 function Toggle({
   name,
   title,
   desc,
-  defaultChecked,
+  checked,
+  onChange,
 }: {
   name: string;
   title: string;
   desc: string;
-  defaultChecked: boolean;
+  checked: boolean;
+  onChange: (v: boolean) => void;
 }) {
-  const [on, setOn] = useState(defaultChecked);
   return (
     <label className="flex cursor-pointer items-start justify-between gap-4 py-4">
       <span className="min-w-0">
@@ -32,8 +29,8 @@ function Toggle({
         <input
           type="checkbox"
           name={name}
-          checked={on}
-          onChange={(e) => setOn(e.target.checked)}
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
           className="peer sr-only"
         />
         <span className="block h-6 w-11 rounded-full bg-neutral-300 transition peer-checked:bg-signal-600 peer-focus-visible:ring-2 peer-focus-visible:ring-signal-400 peer-focus-visible:ring-offset-2" />
@@ -43,31 +40,69 @@ function Toggle({
   );
 }
 
-/** Admin form for org-wide class preferences. */
+/**
+ * Admin form for org-wide class preferences. State lives here and is saved via a
+ * transition (not a <form action>, which React auto-resets after submit and
+ * would visually snap the toggles back to their old values).
+ */
 export function PreferencesForm({ settings }: { settings: OrgSettings }) {
-  const [state, action] = useActionState(updateOrgSettings, initial);
+  const [evict, setEvict] = useState(settings.evictOnInstructorLeave);
+  const [mic, setMic] = useState(settings.micRequiresRaisedHand);
+  const [reminder, setReminder] = useState(settings.preClassReminder);
+  const [lead, setLead] = useState(String(settings.reminderLeadMinutes));
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [pending, start] = useTransition();
+
+  function save() {
+    setError(null);
+    setSaved(false);
+    start(async () => {
+      const res = await updateOrgSettings({
+        evictOnInstructorLeave: evict,
+        micRequiresRaisedHand: mic,
+        preClassReminder: reminder,
+        reminderLeadMinutes: Number(lead) || 30,
+      });
+      if (res.error) setError(res.error);
+      else setSaved(true);
+    });
+  }
+
   return (
-    <form action={action} className="space-y-2">
-      <FormError message={state.error} />
+    <div className="space-y-2">
+      {error && <p className="text-sm text-rose-600">{error}</p>}
 
       <div className="divide-y divide-neutral-100">
         <Toggle
           name="evictOnInstructorLeave"
           title="Remove students when class ends"
           desc="When the instructor ends the class, students are returned to the program page instead of staying on the board."
-          defaultChecked={settings.evictOnInstructorLeave}
+          checked={evict}
+          onChange={(v) => {
+            setSaved(false);
+            setEvict(v);
+          }}
         />
         <Toggle
           name="micRequiresRaisedHand"
           title="Mic only with a raised hand"
           desc="A student can be given the mic only while their hand is raised; lowering it mutes them again."
-          defaultChecked={settings.micRequiresRaisedHand}
+          checked={mic}
+          onChange={(v) => {
+            setSaved(false);
+            setMic(v);
+          }}
         />
         <Toggle
           name="preClassReminder"
           title="Email students before class"
           desc="Send enrolled students an email reminder ahead of each class occurrence."
-          defaultChecked={settings.preClassReminder}
+          checked={reminder}
+          onChange={(v) => {
+            setSaved(false);
+            setReminder(v);
+          }}
         />
       </div>
 
@@ -83,7 +118,11 @@ export function PreferencesForm({ settings }: { settings: OrgSettings }) {
             min={5}
             max={1440}
             step={5}
-            defaultValue={settings.reminderLeadMinutes}
+            value={lead}
+            onChange={(e) => {
+              setSaved(false);
+              setLead(e.target.value);
+            }}
             className={`${inputClass} w-24`}
           />
           <span className="text-sm text-neutral-500">minutes before start</span>
@@ -91,11 +130,18 @@ export function PreferencesForm({ settings }: { settings: OrgSettings }) {
       </div>
 
       <div className="flex items-center gap-3 pt-4">
-        <SubmitButton pendingLabel="Saving…">Save preferences</SubmitButton>
-        {state.ok && !state.error && (
+        <button
+          type="button"
+          onClick={save}
+          disabled={pending}
+          className={btn('primary')}
+        >
+          {pending ? 'Saving…' : 'Save preferences'}
+        </button>
+        {saved && (
           <span className="text-sm font-medium text-signal-700">Saved ✓</span>
         )}
       </div>
-    </form>
+    </div>
   );
 }

@@ -134,22 +134,28 @@ export async function updateBrand(
   return { error: null };
 }
 
-/** Save the org's class preferences (admin). Checkboxes absent from the form
- *  body mean "off", so every toggle is sent explicitly. */
+export interface ClassPreferencesInput {
+  evictOnInstructorLeave: boolean;
+  micRequiresRaisedHand: boolean;
+  preClassReminder: boolean;
+  reminderLeadMinutes: number;
+}
+
+/** Save the org's class preferences (admin). Called directly with the current
+ *  toggle values (no <form action>, which would auto-reset the controls). */
 export async function updateOrgSettings(
-  _prev: OrgActionState,
-  formData: FormData,
+  values: ClassPreferencesInput,
 ): Promise<OrgActionState> {
-  const lead = Number(formData.get('reminderLeadMinutes'));
+  const lead = Number(values.reminderLeadMinutes);
   try {
     await withToken((token) =>
       api('/organizations/settings', {
         method: 'PATCH',
         token,
         body: {
-          evictOnInstructorLeave: formData.get('evictOnInstructorLeave') === 'on',
-          micRequiresRaisedHand: formData.get('micRequiresRaisedHand') === 'on',
-          preClassReminder: formData.get('preClassReminder') === 'on',
+          evictOnInstructorLeave: values.evictOnInstructorLeave,
+          micRequiresRaisedHand: values.micRequiresRaisedHand,
+          preClassReminder: values.preClassReminder,
           ...(Number.isFinite(lead) && lead > 0
             ? { reminderLeadMinutes: lead }
             : {}),

@@ -70,6 +70,12 @@ test.describe('class preferences', () => {
     await ap.getByRole('button', { name: /save preferences/i }).click();
     await expect(ap.getByText(/saved/i)).toBeVisible({ timeout: 10_000 });
 
+    // The toggles must NOT snap back after saving (the form-reset bug). Assert
+    // they hold their new values immediately, before any reload.
+    await expect(mic).toBeChecked();
+    await expect(evict).toBeChecked();
+    await expect(lead).toHaveValue('45');
+
     // Reload — the server re-renders from the DB, proving the save stuck.
     await ap.reload();
     await expect(ap.locator('input[name="micRequiresRaisedHand"]')).toBeChecked();
