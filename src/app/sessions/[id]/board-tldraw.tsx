@@ -13,7 +13,7 @@ import {
 import { io, type Socket } from 'socket.io-client';
 import * as Y from 'yjs';
 import { API_URL } from '@/lib/api';
-import { getRealtimeToken } from '@/lib/client-token';
+import { getRealtimeToken, clearRealtimeToken } from '@/lib/client-token';
 import type {
   BoardClientToServerEvents,
   BoardServerToClientEvents,
@@ -155,16 +155,25 @@ async function pdfToImageFiles(file: File): Promise<File[]> {
  * load it. `resolve` is left default (returns the stored src URL).
  */
 function makeBoardAssetStore(sessionId: string): TLAssetStore {
+  const post = async (token: string | null, file: File) => {
+    const form = new FormData();
+    form.append('file', file, file.name || 'asset.png');
+    return fetch(`${API_URL}/sessions/${sessionId}/board-asset`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token ?? ''}` },
+      body: form,
+    });
+  };
   return {
     async upload(_asset, file) {
-      const token = await getRealtimeToken();
-      const form = new FormData();
-      form.append('file', file, file.name || 'asset.png');
-      const res = await fetch(`${API_URL}/sessions/${sessionId}/board-asset`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token ?? ''}` },
-        body: form,
-      });
+      let res = await post(await getRealtimeToken(), file);
+      // The realtime token is cached (see getRealtimeToken); if it was rejected
+      // (expired/rotated), drop it and retry once with a fresh one so a stale
+      // cache can never turn into a silently-failed upload.
+      if (res.status === 401) {
+        clearRealtimeToken();
+        res = await post(await getRealtimeToken(), file);
+      }
       if (!res.ok) {
         throw new Error(`board asset upload failed (${res.status})`);
       }
@@ -172,6 +181,82 @@ function makeBoardAssetStore(sessionId: string): TLAssetStore {
       return { src: url };
     },
   };
+}
+
+/**
+ * Put remote records into the store without ever letting one throw. A single
+ * malformed or out-of-order record (e.g. an image shape that arrives before its
+ * asset while a PDF is imported/deleted on another client) can make a batch
+ * `store.put` throw; that throw escapes the Yjs observer, aborts the merge, and
+ * leaves the board frozen — the "drawing stops working" report. Assets/pages go
+ * in first so shapes/bindings that reference them resolve, and a failed batch
+ * falls back to a per-record pass that simply drops the offender.
+ */
+function putRecordsSafely(editor: Editor, records: TLRecord[]) {
+  if (records.length === 0) return;
+  const rank = (r: TLRecord) =>
+    r.typeName === 'document' || r.typeName === 'page' || r.typeName === 'asset'
+      ? 0
+      : 1;
+  const ordered = [...records].sort((a, b) => rank(a) - rank(b));
+  try {
+    editor.store.put(ordered);
+  } catch {
+    for (const record of ordered) {
+      try {
+        editor.store.put([record]);
+      } catch {
+        // Drop the single offending record rather than freeze the whole board.
+      }
+    }
+  }
+}
+
+/**
+ * Fit a following viewer's screen to the presenter's shared view — but clamped
+ * to where content actually is. Fitting the presenter's raw viewport rectangle
+ * looks fine on a matching screen, yet on a very different aspect ratio (a
+ * portrait phone following a wide desktop) it makes shared content tiny: a
+ * portrait page fills only a slice of the presenter's wide viewport, so a phone
+ * that fits that whole rectangle shows the page at ~⅓ width, marooned in empty
+ * margins. Intersecting the presenter's view with the page's content bounds
+ * drops those empty margins, so the page fills the follower's screen. When the
+ * presenter zooms *into* a detail (their view sits inside the content) the
+ * intersection is just their view, so zoom-in follow still tracks faithfully.
+ * Falls back to the raw presenter bounds when the page is empty or the presenter
+ * is looking away from any content.
+ */
+function fitToPresenterView(
+  editor: Editor,
+  bounds: { x: number; y: number; w: number; h: number },
+) {
+  let target: { x: number; y: number; w: number; h: number } = bounds;
+  const content = editor.getCurrentPageBounds();
+  if (content) {
+    // Drop the presenter's empty margin on whichever axis their viewport spills
+    // past the content — for the common wide-desktop → portrait-phone case that
+    // is the horizontal slack that was stranding a portrait page at ~⅓ width.
+    // Clamp that axis to the content's extent (so the page fills the follower's
+    // screen) while keeping the presenter's framing on the other axis, so their
+    // pan/zoom still tracks. Only clamp an axis where the presenter actually
+    // overhangs the content on BOTH sides — never crop content the presenter has
+    // deliberately zoomed into.
+    const cx0 = content.x;
+    const cx1 = content.x + content.w;
+    const cy0 = content.y;
+    const cy1 = content.y + content.h;
+    let { x, y, w, h } = bounds;
+    if (bounds.x < cx0 && bounds.x + bounds.w > cx1) {
+      x = cx0;
+      w = content.w;
+    }
+    if (bounds.y < cy0 && bounds.y + bounds.h > cy1) {
+      y = cy0;
+      h = content.h;
+    }
+    if (w > 1 && h > 1) target = { x, y, w, h };
+  }
+  editor.zoomToBounds(target, { inset: 24, force: true, immediate: true });
 }
 
 export function BoardTldraw({
@@ -343,11 +428,7 @@ export function BoardTldraw({
       // same content a laptop does, just scaled). Fall back to the raw camera
       // only for an older presenter that doesn't send bounds.
       if (lastBoundsRef.current) {
-        editor.zoomToBounds(lastBoundsRef.current, {
-          inset: 0,
-          force: true,
-          immediate: true,
-        });
+        fitToPresenterView(editor, lastBoundsRef.current);
       } else if (lastCameraRef.current) {
         editor.setCamera(lastCameraRef.current);
       }
@@ -373,14 +454,18 @@ export function BoardTldraw({
         }, LOCAL);
       } else {
         const yIds = new Set(yRecords.map((r) => r.id));
-        editor.store.mergeRemoteChanges(() => {
-          const staleIds = editor.store
-            .allRecords()
-            .filter((r) => isDocumentRecord(r) && !yIds.has(r.id))
-            .map((r) => r.id);
-          if (staleIds.length) editor.store.remove(staleIds);
-          editor.store.put(yRecords);
-        });
+        try {
+          editor.store.mergeRemoteChanges(() => {
+            const staleIds = editor.store
+              .allRecords()
+              .filter((r) => isDocumentRecord(r) && !yIds.has(r.id))
+              .map((r) => r.id);
+            if (staleIds.length) editor.store.remove(staleIds);
+            putRecordsSafely(editor, yRecords);
+          });
+        } catch {
+          // A bad initial snapshot must not leave the board unusable.
+        }
         const page = yRecords.find((r) => r.typeName === 'page');
         if (page) editor.setCurrentPage(page.id as Parameters<typeof editor.setCurrentPage>[0]);
       }
@@ -423,10 +508,16 @@ export function BoardTldraw({
           if (isSharedRecord(record)) toPut.push(record);
         }
       });
-      editor.store.mergeRemoteChanges(() => {
-        if (toRemove.length) editor.store.remove(toRemove);
-        if (toPut.length) editor.store.put(toPut);
-      });
+      // Never let a remote merge throw out of the Yjs observer — that halts all
+      // further sync and freezes the board (drawing then silently stops).
+      try {
+        editor.store.mergeRemoteChanges(() => {
+          if (toRemove.length) editor.store.remove(toRemove);
+          putRecordsSafely(editor, toPut);
+        });
+      } catch {
+        // Swallowed on purpose: a bad merge must not kill the live board.
+      }
       // A viewer that hadn't seen the presenter's page yet (joined before any
       // content existed) lands on it as soon as it arrives here.
       followSharedPage();
@@ -437,21 +528,27 @@ export function BoardTldraw({
     };
     yStore.observe(onYChange);
 
-    // tldraw -> yjs: mirror the user's document changes into the Y.Map.
+    // tldraw -> yjs: mirror the user's document changes into the Y.Map. Guarded
+    // so a mirror failure can't propagate out of tldraw's store listener and
+    // wedge local editing (this listener also fires for the user's own drawing).
     const unlisten = editor.store.listen(
       (entry) => {
         const { added, updated, removed } = entry.changes;
-        doc.transact(() => {
-          for (const record of Object.values(added)) {
-            yStore.set(record.id, record);
-          }
-          for (const [, to] of Object.values(updated)) {
-            yStore.set(to.id, to);
-          }
-          for (const record of Object.values(removed)) {
-            yStore.delete(record.id);
-          }
-        }, LOCAL);
+        try {
+          doc.transact(() => {
+            for (const record of Object.values(added)) {
+              yStore.set(record.id, record);
+            }
+            for (const [, to] of Object.values(updated)) {
+              yStore.set(to.id, to);
+            }
+            for (const record of Object.values(removed)) {
+              yStore.delete(record.id);
+            }
+          }, LOCAL);
+        } catch {
+          // A failed mirror must not break the local board.
+        }
       },
       { source: 'user', scope: 'document' },
     );
@@ -597,45 +694,52 @@ export function BoardTldraw({
             ? [file]
             : [];
         for (const img of images) {
-          const before = new Set(editor.getCurrentPageShapeIds());
-          await editor.putExternalContent({
-            type: 'files',
-            files: [img],
-            point: { x: cx, y: top },
-          });
-          const newIds = [...editor.getCurrentPageShapeIds()].filter(
-            (id) => !before.has(id),
-          );
-          if (newIds.length === 0) continue;
-          // Union bounds of whatever tldraw just created for this page.
-          let minX = Infinity,
-            minY = Infinity,
-            maxX = -Infinity,
-            maxY = -Infinity;
-          for (const id of newIds) {
-            const b = editor.getShapePageBounds(id);
-            if (!b) continue;
-            minX = Math.min(minX, b.minX);
-            minY = Math.min(minY, b.minY);
-            maxX = Math.max(maxX, b.maxX);
-            maxY = Math.max(maxY, b.maxY);
-          }
-          if (!Number.isFinite(minY)) continue;
-          // Re-align: top edge to `top`, centred horizontally on the column.
-          const dx = cx - (minX + maxX) / 2;
-          const dy = top - minY;
-          if (dx !== 0 || dy !== 0) {
-            editor.updateShapes(
-              newIds.map((id) => {
-                const s = editor.getShape(id)!;
-                return { id, type: s.type, x: s.x + dx, y: s.y + dy };
-              }),
+          // Isolate each page: one image tldraw's parser rejects (it can throw a
+          // DataView range error deep inside putExternalContent) must not abort
+          // the rest of the import — nor leave the editor wedged so later drawing
+          // stops working.
+          try {
+            const before = new Set(editor.getCurrentPageShapeIds());
+            await editor.putExternalContent({
+              type: 'files',
+              files: [img],
+              point: { x: cx, y: top },
+            });
+            const newIds = [...editor.getCurrentPageShapeIds()].filter(
+              (id) => !before.has(id),
             );
+            if (newIds.length === 0) continue;
+            // Union bounds of whatever tldraw just created for this page.
+            let minX = Infinity,
+              minY = Infinity,
+              maxX = -Infinity,
+              maxY = -Infinity;
+            for (const id of newIds) {
+              const b = editor.getShapePageBounds(id);
+              if (!b) continue;
+              minX = Math.min(minX, b.minX);
+              minY = Math.min(minY, b.minY);
+              maxX = Math.max(maxX, b.maxX);
+              maxY = Math.max(maxY, b.maxY);
+            }
+            if (!Number.isFinite(minY)) continue;
+            // Re-align: top edge to `top`, centred horizontally on the column.
+            const dx = cx - (minX + maxX) / 2;
+            const dy = top - minY;
+            if (dx !== 0 || dy !== 0) {
+              editor.updateShapes(
+                newIds.map((id) => {
+                  const s = editor.getShape(id)!;
+                  return { id, type: s.type, x: s.x + dx, y: s.y + dy };
+                }),
+              );
+            }
+            const height = maxY - minY;
+            if (!firstCenter) firstCenter = { x: cx, y: top + height / 2 };
+            top += height + GAP;
+          } catch {
+            // Skip this page; keep importing the others.
           }
-          const height = maxY - minY;
-          if (!firstCenter)
-            firstCenter = { x: cx, y: top + height / 2 };
-          top += height + GAP;
         }
       }
       // Bring the first imported page into view for the presenter.
@@ -647,6 +751,13 @@ export function BoardTldraw({
     } finally {
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+      // Leave a usable tool selected even if an import error interrupted an
+      // in-progress editor operation — otherwise the pen can appear "stuck".
+      try {
+        editor.setCurrentTool('select');
+      } catch {
+        // ignore — nothing more we can do to reset the tool
+      }
     }
   };
 
@@ -929,11 +1040,7 @@ export function BoardTldraw({
             if (ed) {
               if (page && ed.getPage(page)) ed.setCurrentPage(page);
               if (lastBoundsRef.current) {
-                ed.zoomToBounds(lastBoundsRef.current, {
-                  inset: 0,
-                  force: true,
-                  immediate: true,
-                });
+                fitToPresenterView(ed, lastBoundsRef.current);
               } else if (lastCameraRef.current) {
                 ed.setCamera(lastCameraRef.current);
               }
