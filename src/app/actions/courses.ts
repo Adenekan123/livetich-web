@@ -63,6 +63,36 @@ export async function createCourse(
     if (e instanceof ApiError) return { error: e.message };
     throw e;
   }
+
+  // Optional batches defined right in the create form. Best-effort: the program
+  // already exists, so a bad batch shouldn't abort the whole create.
+  const batchesRaw = formData.get('batches');
+  if (typeof batchesRaw === 'string' && batchesRaw.trim() && batchesRaw !== '[]') {
+    try {
+      const rows = JSON.parse(batchesRaw) as {
+        label?: string;
+        meetingDays?: number[];
+        meetingTime?: string;
+        timezone?: string;
+      }[];
+      for (const b of rows) {
+        if (!b.label?.trim()) continue;
+        await api(`/courses/${course.id}/batches`, {
+          method: 'POST',
+          token,
+          body: {
+            label: b.label,
+            meetingDays: b.meetingDays?.length ? b.meetingDays : undefined,
+            meetingTime: b.meetingTime || undefined,
+            timezone: b.timezone || undefined,
+          },
+        }).catch(() => {});
+      }
+    } catch {
+      // Malformed batch payload — skip; the program is still created.
+    }
+  }
+
   redirect(`/courses/${course.id}`);
 }
 
@@ -105,6 +135,23 @@ export async function createBatch(
     throw e;
   }
   redirect(`/courses/${batch.id}`);
+}
+
+/** Permanently delete a program (or batch) and everything under it (admin). On
+ *  success the caller is sent back to the catalog. */
+export async function deleteCourse(
+  courseId: string,
+): Promise<{ error: string } | void> {
+  const token = await getToken();
+  if (!token) redirect('/login');
+  try {
+    await api(`/courses/${courseId}`, { method: 'DELETE', token });
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.message };
+    throw e;
+  }
+  revalidatePath('/courses');
+  redirect('/courses');
 }
 
 /**

@@ -44,6 +44,7 @@ import { JoinLiveCard } from './join-live-card';
 import { ShadowJoinCard } from './shadow-join-card';
 import { EditProgramButton } from './edit-program-modal';
 import { BatchesSection } from './batches-section';
+import { DangerZone } from './danger-zone';
 import { AssessmentGate } from './assessment-gate';
 import { Leaderboard } from '@/components/leaderboard';
 
@@ -266,6 +267,11 @@ export default async function CoursePage(props: {
       )
     : [];
   const hasBatches = batches.length > 0;
+  // A student opening a program that runs in batches sees a stripped view —
+  // just the batches to choose from and the curriculum — until they pick a
+  // batch, whose own page then shows the full room/tools/details.
+  const studentBatchGate =
+    user?.role === 'STUDENT' && isProgram && hasBatches;
   // If this course is itself a batch, load its program for a breadcrumb.
   const parentProgram = course.parentCourseId
     ? await api<CourseDetail>(`/courses/${course.parentCourseId}`, {
@@ -438,7 +444,7 @@ export default async function CoursePage(props: {
             />
           )}
 
-          {teachTools.length > 0 && (
+          {!studentBatchGate && teachTools.length > 0 && (
             <section>
               <SectionLabel>Teach</SectionLabel>
               <div className="grid gap-3 xl:grid-cols-2">
@@ -480,23 +486,25 @@ export default async function CoursePage(props: {
           </section>
 
           {/* Records — demoted to light links */}
-          <section>
-            <SectionLabel>Records</SectionLabel>
-            <div className="flex flex-wrap gap-3">
-              <RecordLink
-                href={`/courses/${id}/sessions`}
-                icon={PiClockCounterClockwise}
-                label="Session history"
-              />
-              {isAdmin && (
+          {!studentBatchGate && (
+            <section>
+              <SectionLabel>Records</SectionLabel>
+              <div className="flex flex-wrap gap-3">
                 <RecordLink
-                  href={`/courses/${id}/roster`}
-                  icon={PiUsers}
-                  label="Roster & certificates"
+                  href={`/courses/${id}/sessions`}
+                  icon={PiClockCounterClockwise}
+                  label="Session history"
                 />
-              )}
-            </div>
-          </section>
+                {isAdmin && (
+                  <RecordLink
+                    href={`/courses/${id}/roster`}
+                    icon={PiUsers}
+                    label="Roster & certificates"
+                  />
+                )}
+              </div>
+            </section>
+          )}
 
           {/* Admin: invite-first management — a shareable link per role that
               lands people straight in this program. */}
@@ -511,9 +519,20 @@ export default async function CoursePage(props: {
           )}
 
           {isOwner && <InstructorPanel course={course} />}
+
+          {/* Danger zone — admin can permanently delete the program/batch. */}
+          {isAdmin && (
+            <DangerZone
+              courseId={id}
+              title={course.title}
+              isBatch={!isProgram}
+            />
+          )}
         </div>
 
-        {/* RAIL — the "program cockpit" */}
+        {/* RAIL — the "program cockpit". Hidden for a student choosing a batch;
+            their batch's own page carries the full cockpit. */}
+        {!studentBatchGate && (
         <aside className="order-1 space-y-4 lg:sticky lg:top-6 lg:order-2">
           {/* Primary action / status */}
           {isOwner || isEnrolled ? (
@@ -636,6 +655,7 @@ export default async function CoursePage(props: {
             </div>
           )}
         </aside>
+        )}
       </div>
     </main>
   );
