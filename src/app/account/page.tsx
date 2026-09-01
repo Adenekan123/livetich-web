@@ -7,6 +7,7 @@ import {
   PiKeyBold,
   PiPaletteBold,
   PiPuzzlePieceBold,
+  PiSlidersHorizontalBold,
   PiStudentBold,
   PiUserBold,
 } from 'react-icons/pi';
@@ -96,6 +97,14 @@ export default async function AccountPage() {
               icon={PiPuzzlePieceBold}
               title="Add-ons"
               subtitle="Enable niche tool packs for your instructors"
+            />
+          )}
+          {isAdmin && (
+            <SettingsRow
+              href="/account/preferences"
+              icon={PiSlidersHorizontalBold}
+              title="Class preferences"
+              subtitle="Room, mic, and reminder rules for every class"
             />
           )}
         </div>

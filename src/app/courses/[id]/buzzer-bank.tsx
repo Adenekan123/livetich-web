@@ -31,18 +31,26 @@ export function BuzzerBank({
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const questions = quizzes.flatMap((q) => q.questions);
 
   async function remove(questionId: string) {
     setDeleting(questionId);
+    setError(null);
     try {
       const token = await getRealtimeToken();
-      await fetch(`${API_URL}/quizzes/questions/${questionId}`, {
+      const res = await fetch(`${API_URL}/quizzes/questions/${questionId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token ?? ''}` },
       });
+      if (!res.ok) {
+        setError(`Couldn't delete the question (${res.status}). Please retry.`);
+        return;
+      }
       router.refresh();
+    } catch {
+      setError('Network error deleting the question. Please retry.');
     } finally {
       setDeleting(null);
     }
@@ -53,6 +61,12 @@ export function BuzzerBank({
       <button onClick={() => setAdding(true)} className={btn('primary', 'sm')}>
         + Add question
       </button>
+
+      {error && (
+        <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {error}
+        </p>
+      )}
 
       {questions.length === 0 ? (
         <p className="mt-4 rounded-xl border border-dashed border-neutral-300 bg-neutral-50/50 px-5 py-8 text-center text-sm text-neutral-500">

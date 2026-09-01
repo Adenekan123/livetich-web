@@ -8,6 +8,8 @@ import type { OrgInvite, UserStatus } from '@/lib/types';
 
 export interface OrgActionState {
   error: string | null;
+  /** Bumped on each successful save so client forms can flash a confirmation. */
+  ok?: number;
 }
 
 async function withToken<T>(fn: (token: string) => Promise<T>): Promise<T> {
@@ -130,4 +132,40 @@ export async function updateBrand(
   revalidatePath('/dashboard');
   revalidatePath('/', 'layout');
   return { error: null };
+}
+
+export interface ClassPreferencesInput {
+  evictOnInstructorLeave: boolean;
+  micRequiresRaisedHand: boolean;
+  preClassReminder: boolean;
+  reminderLeadMinutes: number;
+}
+
+/** Save the org's class preferences (admin). Called directly with the current
+ *  toggle values (no <form action>, which would auto-reset the controls). */
+export async function updateOrgSettings(
+  values: ClassPreferencesInput,
+): Promise<OrgActionState> {
+  const lead = Number(values.reminderLeadMinutes);
+  try {
+    await withToken((token) =>
+      api('/organizations/settings', {
+        method: 'PATCH',
+        token,
+        body: {
+          evictOnInstructorLeave: values.evictOnInstructorLeave,
+          micRequiresRaisedHand: values.micRequiresRaisedHand,
+          preClassReminder: values.preClassReminder,
+          ...(Number.isFinite(lead) && lead > 0
+            ? { reminderLeadMinutes: lead }
+            : {}),
+        },
+      }),
+    );
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.message };
+    throw e;
+  }
+  revalidatePath('/account/preferences');
+  return { error: null, ok: Date.now() };
 }

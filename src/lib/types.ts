@@ -11,6 +11,8 @@ export interface SessionUser {
   email: string;
   organizationId: string | null;
   emailVerified: boolean;
+  isSuperAdmin: boolean; // platform operator — unlocks /admin
+  impersonatedBy?: string; // present only while an operator is impersonating
 }
 
 export interface AuthResult {
@@ -250,6 +252,15 @@ export interface AssessmentSummary {
 }
 
 /** A single question presented to a student (answer key hidden until submitted). */
+/** A materialised class-end quiz still held from students (manager view). */
+export interface HeldAssessment {
+  id: string;
+  createdAt: string;
+  endedAt: string | null;
+  topic: string | null;
+  questionCount: number;
+}
+
 export interface AssessmentTakeQuestion {
   id: string;
   body: string;
@@ -335,6 +346,8 @@ export interface CourseDetail extends CohortFields {
   id: string;
   organizationId: string | null;
   instructorId: string | null;
+  /** Set when this course is a batch: the program it's an instance of. */
+  parentCourseId: string | null;
   title: string;
   description: string | null;
   createdAt: string;
@@ -344,11 +357,24 @@ export interface CourseDetail extends CohortFields {
   _count: { enrollments: number };
 }
 
+/** A batch (scheduled instance) of a program, from GET /courses/:id/batches. */
+export interface CourseBatch extends CohortFields {
+  id: string;
+  title: string;
+  parentCourseId: string | null;
+  instructor: { id: string; name: string } | null;
+  _count: { enrollments: number };
+  liveSessionId: string | null;
+  nextSessionAt: string | null;
+}
+
 /** One row from the company-scoped catalog (GET /courses), with a session summary. */
 export interface CatalogCourse extends CohortFields {
   id: string;
   organizationId: string | null;
   instructorId: string | null;
+  /** Set when this row is a batch of a program (grouped/hidden in the catalog). */
+  parentCourseId: string | null;
   title: string;
   description: string | null;
   createdAt: string;
@@ -356,6 +382,14 @@ export interface CatalogCourse extends CohortFields {
   _count: { enrollments: number; sections: number };
   liveSessionId: string | null;
   nextSessionAt: string | null;
+}
+
+/** Org-wide class preferences (admin toggles). */
+export interface OrgSettings {
+  evictOnInstructorLeave: boolean;
+  micRequiresRaisedHand: boolean;
+  preClassReminder: boolean;
+  reminderLeadMinutes: number;
 }
 
 export interface Enrollment {
@@ -601,4 +635,96 @@ export interface AlocDraftResult {
   questions: ExamQuestionInput[];
   creditsRemaining: number | null;
   fromCache: boolean;
+}
+
+// ---- Platform admin console (GET /admin/*) ----
+
+export interface AdminOverview {
+  orgs: number;
+  users: {
+    total: number;
+    active: number;
+    disabled: number;
+    instructors: number;
+    students: number;
+    admins: number;
+  };
+  courses: number;
+  liveSessions: number;
+  submissions30d: number;
+  ai: {
+    today: { calls: number; costUsd: number; tokens: number };
+    last30d: { calls: number; costUsd: number; tokens: number };
+  };
+}
+
+export interface AdminUserRow {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  status: UserStatus;
+  isSuperAdmin: boolean;
+  emailVerified: boolean;
+  createdAt: string;
+  organization: { id: string; name: string } | null;
+}
+
+export interface AdminUsersResult {
+  total: number;
+  page: number;
+  pageSize: number;
+  rows: AdminUserRow[];
+}
+
+export interface AdminOrg {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: string;
+  users: number;
+  courses: number;
+}
+
+export interface AuditLogRow {
+  id: string;
+  at: string;
+  actorId: string | null;
+  actorEmail: string | null;
+  actorRole: string | null;
+  orgId: string | null;
+  action: string;
+  targetType: string | null;
+  targetId: string | null;
+  metadata: Record<string, unknown> | null;
+  ip: string | null;
+  userAgent: string | null;
+}
+
+export interface AuditResult {
+  total: number;
+  page: number;
+  pageSize: number;
+  rows: AuditLogRow[];
+}
+
+export interface AiUsageResult {
+  range: { from: string; to: string };
+  totals: {
+    calls: number;
+    costUsd: number;
+    totalTokens: number;
+    promptTokens: number;
+    outputTokens: number;
+  };
+  byModel: { model: string; calls: number; costUsd: number; tokens: number }[];
+  byFeature: { feature: string; calls: number; costUsd: number; tokens: number }[];
+  byOrg: {
+    orgId: string | null;
+    orgName: string;
+    calls: number;
+    costUsd: number;
+    tokens: number;
+  }[];
+  daily: { day: string; costUsd: number; tokens: number; calls: number }[];
 }

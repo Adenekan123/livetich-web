@@ -21,6 +21,7 @@ import { btn, cardClass, cn } from '@/lib/ui';
 import type {
   AssessmentQuestion,
   Certificate,
+  CourseBatch,
   CourseDetail,
   Enrollment,
   MyAssignment,
@@ -42,6 +43,8 @@ import { ClassReminderCard } from './class-reminder-card';
 import { JoinLiveCard } from './join-live-card';
 import { ShadowJoinCard } from './shadow-join-card';
 import { EditProgramButton } from './edit-program-modal';
+import { BatchesSection } from './batches-section';
+import { DangerZone } from './danger-zone';
 import { AssessmentGate } from './assessment-gate';
 import { Leaderboard } from '@/components/leaderboard';
 
@@ -245,12 +248,36 @@ export default async function CoursePage(props: {
     : false;
   let isEnrolled = false;
   let myReminderAddedAt: string | null = null;
+  // Batch ids the student is enrolled in — lets the batch list label "Open".
+  const enrolledIds = new Set<string>();
   if (user?.role === 'STUDENT' && token) {
     const enrollments = await api<Enrollment[]>('/courses/enrolled', { token });
+    for (const e of enrollments) enrolledIds.add(e.courseId);
     const mine = enrollments.find((e) => e.courseId === id);
     isEnrolled = Boolean(mine);
     myReminderAddedAt = mine?.reminderAddedAt ?? null;
   }
+
+  // Batches: a program (no parent) may run in several scheduled batches. Load
+  // them so managers can add/manage and students can pick one to enrol in.
+  const isProgram = !course.parentCourseId;
+  const batches = isProgram
+    ? await api<CourseBatch[]>(`/courses/${id}/batches`, { token }).catch(
+        () => [] as CourseBatch[],
+      )
+    : [];
+  const hasBatches = batches.length > 0;
+  // A student opening a program that runs in batches sees a stripped view —
+  // just the batches to choose from and the curriculum — until they pick a
+  // batch, whose own page then shows the full room/tools/details.
+  const studentBatchGate =
+    user?.role === 'STUDENT' && isProgram && hasBatches;
+  // If this course is itself a batch, load its program for a breadcrumb.
+  const parentProgram = course.parentCourseId
+    ? await api<CourseDetail>(`/courses/${course.parentCourseId}`, {
+        token,
+      }).catch(() => null)
+    : null;
 
   let myCertificate: Certificate | undefined;
   if (isEnrolled && token) {
@@ -373,7 +400,16 @@ export default async function CoursePage(props: {
             Programs
           </Link>
           <span className="text-neutral-300">/</span>
-          <span className="text-neutral-400">{course.category ?? 'Program'}</span>
+          {course.parentCourseId ? (
+            <Link
+              href={`/courses/${course.parentCourseId}`}
+              className="hover:text-neutral-700"
+            >
+              {parentProgram?.title ?? 'Program'}
+            </Link>
+          ) : (
+            <span className="text-neutral-400">{course.category ?? 'Program'}</span>
+          )}
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="font-display text-3xl font-extrabold tracking-tight text-neutral-950">
@@ -397,7 +433,18 @@ export default async function CoursePage(props: {
       <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         {/* MAIN */}
         <div className="order-2 min-w-0 space-y-10 lg:order-1">
-          {teachTools.length > 0 && (
+          {isProgram && (canManage || hasBatches) && (
+            <BatchesSection
+              programId={id}
+              batches={batches}
+              canManage={canManage}
+              defaultWeeks={course.durationWeeks}
+              defaultTimezone={course.timezone}
+              enrolledCourseIds={enrolledIds}
+            />
+          )}
+
+          {!studentBatchGate && teachTools.length > 0 && (
             <section>
               <SectionLabel>Teach</SectionLabel>
               <div className="grid gap-3 xl:grid-cols-2">
@@ -439,23 +486,25 @@ export default async function CoursePage(props: {
           </section>
 
           {/* Records — demoted to light links */}
-          <section>
-            <SectionLabel>Records</SectionLabel>
-            <div className="flex flex-wrap gap-3">
-              <RecordLink
-                href={`/courses/${id}/sessions`}
-                icon={PiClockCounterClockwise}
-                label="Session history"
-              />
-              {isAdmin && (
+          {!studentBatchGate && (
+            <section>
+              <SectionLabel>Records</SectionLabel>
+              <div className="flex flex-wrap gap-3">
                 <RecordLink
-                  href={`/courses/${id}/roster`}
-                  icon={PiUsers}
-                  label="Roster & certificates"
+                  href={`/courses/${id}/sessions`}
+                  icon={PiClockCounterClockwise}
+                  label="Session history"
                 />
-              )}
-            </div>
-          </section>
+                {isAdmin && (
+                  <RecordLink
+                    href={`/courses/${id}/roster`}
+                    icon={PiUsers}
+                    label="Roster & certificates"
+                  />
+                )}
+              </div>
+            </section>
+          )}
 
           {/* Admin: invite-first management — a shareable link per role that
               lands people straight in this program. */}
@@ -470,9 +519,20 @@ export default async function CoursePage(props: {
           )}
 
           {isOwner && <InstructorPanel course={course} />}
+
+          {/* Danger zone — admin can permanently delete the program/batch. */}
+          {isAdmin && (
+            <DangerZone
+              courseId={id}
+              title={course.title}
+              isBatch={!isProgram}
+            />
+          )}
         </div>
 
-        {/* RAIL — the "program cockpit" */}
+        {/* RAIL — the "program cockpit". Hidden for a student choosing a batch;
+            their batch's own page carries the full cockpit. */}
+        {!studentBatchGate && (
         <aside className="order-1 space-y-4 lg:sticky lg:top-6 lg:order-2">
           {/* Primary action / status */}
           {isOwner || isEnrolled ? (
@@ -486,6 +546,23 @@ export default async function CoursePage(props: {
               timezone={course.timezone}
               hasAssessment={hasAssessment}
             />
+          ) : user?.role === 'STUDENT' && isProgram && hasBatches ? (
+            <div className={cn(cardClass, 'p-4')}>
+              <p className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">
+                Choose your batch
+              </p>
+              <p className="mt-1.5 text-sm text-neutral-500">
+                This program runs in {batches.length}{' '}
+                {batches.length === 1 ? 'batch' : 'batches'}. Pick the one whose
+                time and timezone suit you to enrol.
+              </p>
+              <a
+                href="#batches"
+                className={cn(btn('primary', 'md', 'w-full'), 'mt-3')}
+              >
+                See batches
+              </a>
+            </div>
           ) : user?.role === 'STUDENT' ? (
             <div className={cn(cardClass, 'p-4')}>
               <p className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">
@@ -578,6 +655,7 @@ export default async function CoursePage(props: {
             </div>
           )}
         </aside>
+        )}
       </div>
     </main>
   );

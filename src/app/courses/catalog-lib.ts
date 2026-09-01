@@ -28,6 +28,8 @@ export interface ClassItem {
   level: string | null;
   enrollments: number;
   enrolled: boolean; // the viewing student is enrolled in this cohort
+  parentCourseId: string | null; // set on batches (excluded from the catalog grid)
+  batchCount: number; // programs: how many batches run under them
 
   isLive: boolean;
   liveSessionId: string | null;
@@ -221,6 +223,13 @@ export function coursesToClasses(
   enrolledCourseIds?: Iterable<string>,
 ): ClassItem[] {
   const enrolledSet = new Set(enrolledCourseIds ?? []);
+  // How many batches run under each program (a program = a course with no parent).
+  const batchCounts = new Map<string, number>();
+  for (const c of courses) {
+    if (c.parentCourseId) {
+      batchCounts.set(c.parentCourseId, (batchCounts.get(c.parentCourseId) ?? 0) + 1);
+    }
+  }
   const out = courses.map((c) => {
     const isLive = Boolean(c.liveSessionId);
     const cohort = deriveCohort(c.startDate, c.durationWeeks, isLive);
@@ -234,6 +243,8 @@ export function coursesToClasses(
       level: c.level ?? null,
       enrollments: c._count.enrollments,
       enrolled: enrolledSet.has(c.id),
+      parentCourseId: c.parentCourseId ?? null,
+      batchCount: batchCounts.get(c.id) ?? 0,
 
       isLive,
       liveSessionId: c.liveSessionId,
@@ -254,7 +265,9 @@ export function coursesToClasses(
       sessionCount: (c.liveSessionId ? 1 : 0) + (c.nextSessionAt ? 1 : 0),
     } satisfies ClassItem;
   });
-  return sortClasses(out);
+  // Batches don't get their own catalog card — students reach them from the
+  // program's page ("choose a batch"). The catalog stays one card per program.
+  return sortClasses(out.filter((c) => !c.parentCourseId));
 }
 
 /** Live first, then in-progress, starting-soon, enrolling, open, completed. */
@@ -309,6 +322,8 @@ export function toClasses(sessions: BrowseSession[]): ClassItem[] {
       level: c.level ?? null,
       enrollments: c._count.enrollments,
       enrolled: false,
+      parentCourseId: null,
+      batchCount: 0,
 
       isLive,
       liveSessionId: liveS?.id ?? null,

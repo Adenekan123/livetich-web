@@ -63,7 +63,95 @@ export async function createCourse(
     if (e instanceof ApiError) return { error: e.message };
     throw e;
   }
+
+  // Optional batches defined right in the create form. Best-effort: the program
+  // already exists, so a bad batch shouldn't abort the whole create.
+  const batchesRaw = formData.get('batches');
+  if (typeof batchesRaw === 'string' && batchesRaw.trim() && batchesRaw !== '[]') {
+    try {
+      const rows = JSON.parse(batchesRaw) as {
+        label?: string;
+        meetingDays?: number[];
+        meetingTime?: string;
+        timezone?: string;
+      }[];
+      for (const b of rows) {
+        if (!b.label?.trim()) continue;
+        await api(`/courses/${course.id}/batches`, {
+          method: 'POST',
+          token,
+          body: {
+            label: b.label,
+            meetingDays: b.meetingDays?.length ? b.meetingDays : undefined,
+            meetingTime: b.meetingTime || undefined,
+            timezone: b.timezone || undefined,
+          },
+        }).catch(() => {});
+      }
+    } catch {
+      // Malformed batch payload — skip; the program is still created.
+    }
+  }
+
   redirect(`/courses/${course.id}`);
+}
+
+/**
+ * Create a batch (a scheduled instance) of an existing program. The batch
+ * inherits the program's identity + content; here we send only its label and
+ * schedule. On success we jump to the new batch's page.
+ */
+export async function createBatch(
+  programId: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const token = await getToken();
+  if (!token) redirect('/login');
+  const meetingDays = formData
+    .getAll('meetingDays')
+    .map((d) => Number(d))
+    .filter((d) => !Number.isNaN(d));
+  const durationWeeks = formData.get('durationWeeks');
+  const startDate = formData.get('startDate') as string;
+
+  let batch: CourseDetail;
+  try {
+    batch = await api<CourseDetail>(`/courses/${programId}/batches`, {
+      method: 'POST',
+      token,
+      body: {
+        label: formData.get('label') || undefined,
+        instructorId: formData.get('instructorId') || undefined,
+        startDate: startDate ? new Date(startDate).toISOString() : undefined,
+        durationWeeks: durationWeeks ? Number(durationWeeks) : undefined,
+        meetingDays: meetingDays.length ? meetingDays : undefined,
+        meetingTime: formData.get('meetingTime') || undefined,
+        timezone: formData.get('timezone') || undefined,
+      },
+    });
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.message };
+    throw e;
+  }
+  redirect(`/courses/${batch.id}`);
+}
+
+/** Permanently delete a program (or batch) and everything under it (admin). On
+ *  success the caller is sent back to the catalog. */
+export async function deleteCourse(
+  courseId: string,
+): Promise<{ error: string } | void> {
+  const token = await getToken();
+  if (!token) redirect('/login');
+  try {
+    await api(`/courses/${courseId}`, { method: 'DELETE', token });
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.message };
+    throw e;
+  }
+  revalidatePath('/courses');
+  redirect('/courses');
 }
 
 /**

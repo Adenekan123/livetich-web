@@ -67,6 +67,16 @@ export interface LeaderboardEntry {
   rank: number;
 }
 
+/** One student's standing on a live coding task. `score` is the instructor's
+ *  final score if decided, else the AI provisional; null while still coding. */
+export interface CodingPointEntry {
+  studentId: string;
+  name: string;
+  /** CodingSubmissionStatus, or 'CODING' when the student hasn't submitted. */
+  status: string;
+  score: number | null;
+}
+
 export interface QuizQuestionPublic {
   questionId: string;
   body: string;
@@ -130,6 +140,9 @@ export interface ClientToServerEvents {
 export interface ServerToClientEvents {
   'room:presence': (p: { sessionId: string; users: RoomUser[] }) => void;
 
+  /** The instructor ended class and the org evicts students on end. */
+  'room:closed': (p: { sessionId: string; reason: 'ENDED' }) => void;
+
   'chat:message': (p: ChatMessage) => void;
   /** Recent messages, sent once to the joining client. */
   'chat:history': (p: { sessionId: string; messages: ChatMessage[] }) => void;
@@ -165,6 +178,38 @@ export interface ServerToClientEvents {
     studentName: string;
     language: string | null;
     submittedAt: string;
+  }) => void;
+
+  /** A coding task went (or is) live in this session — students get a prompt to
+   *  open it in their editor; everyone sees the points board start tracking. */
+  'coding:task': (p: {
+    sessionId: string;
+    assignmentId: string;
+    title: string;
+    language: string | null;
+    requirementCount: number;
+  }) => void;
+
+  /** Live per-student standings for a session's coding task (scores only). */
+  'coding:points': (p: {
+    sessionId: string;
+    assignmentId: string;
+    entries: CodingPointEntry[];
+  }) => void;
+
+  /** A coding submission changed — staff-only, so the instructor's in-session
+   *  review card updates without leaking code to peer students. */
+  'coding:submission': (p: {
+    sessionId: string;
+    submissionId: string;
+    assignmentId: string;
+    studentId: string;
+    studentName: string;
+    attemptNumber: number;
+    status: string;
+    provisionalScore: number | null;
+    finalScore: number | null;
+    aiConfidence: string | null;
   }) => void;
 
   'quiz:opened': (p: { sessionId: string; question: QuizQuestionPublic }) => void;
@@ -203,6 +248,12 @@ export interface BoardPresenter {
   cursor: { x: number; y: number } | null;
   /** The presenter's current page id, so followers flip pages together. */
   page?: string;
+  /** The presenter's visible page rectangle (page coords). Followers fit *this*
+   *  to their own viewport, so the same region fills a phone and a laptop alike
+   *  regardless of screen size/aspect — instead of copying the raw camera, which
+   *  left shared PDFs tiny/off-screen on small devices. Optional for back-compat
+   *  with older presenters (followers fall back to `camera`). */
+  bounds?: { x: number; y: number; w: number; h: number };
 }
 
 export interface BoardClientToServerEvents {

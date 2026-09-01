@@ -32,6 +32,36 @@ async function run(
   return { error: null, ok: true };
 }
 
+// ---- Release control (manager) ----
+
+/** Toggle whether class-end quizzes release instantly or are held for review. */
+export async function setInstantAssessment(
+  courseId: string,
+  instant: boolean,
+): Promise<AssessmentActionState> {
+  return run(
+    (token) =>
+      api(`/courses/${courseId}/assessment/settings`, {
+        method: 'PATCH',
+        token,
+        body: { instantClassAssessment: instant },
+      }),
+    `/courses/${courseId}/assessment`,
+  );
+}
+
+/** Release a held class-end quiz to students. */
+export async function releaseAssessment(
+  courseId: string,
+  assessmentId: string,
+): Promise<AssessmentActionState> {
+  return run(
+    (token) =>
+      api(`/assessments/${assessmentId}/release`, { method: 'POST', token }),
+    `/courses/${courseId}/assessment`,
+  );
+}
+
 // ---- Authoring: questions ----
 
 export async function createQuestion(

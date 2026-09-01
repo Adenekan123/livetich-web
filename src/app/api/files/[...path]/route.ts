@@ -1,4 +1,4 @@
-import { API_URL } from '@/lib/api';
+import { baseUrl } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 
 /**
@@ -16,7 +16,10 @@ export async function GET(
   const token = await getToken();
   if (!token) return new Response('Unauthorized', { status: 401 });
 
-  const upstream = await fetch(`${API_URL}/files/${path.join('/')}`, {
+  // Use the server-side base URL (internal Docker network when set) — reaching
+  // the public API URL from inside the web container hairpins out and back
+  // through the proxy and fails, so shared images/PDFs render broken.
+  const upstream = await fetch(`${baseUrl()}/files/${path.join('/')}`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: 'no-store',
   });

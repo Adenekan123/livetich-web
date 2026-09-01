@@ -112,6 +112,10 @@ function buildColumns(
       id: 'actions',
       name: '',
       right: true,
+      // Two buttons ("Manage programs" + Disable/Enable) need room; without a
+      // floor the column collapses to RDT's default width and the labels wrap.
+      grow: 0,
+      minWidth: '280px',
       cell: (s) => <>{rowActions[s.id]}</>,
     });
   }
