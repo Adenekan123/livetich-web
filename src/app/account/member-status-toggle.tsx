@@ -38,7 +38,7 @@ export function MemberStatusToggle({
         onClick={toggle}
         disabled={pending}
         className={cn(
-          'rounded-full px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50',
+          'whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50',
           disabled
             ? 'bg-signal-700 text-white hover:bg-signal-800'
             : 'border border-neutral-300 text-rose-600 hover:border-rose-300 hover:bg-rose-50',

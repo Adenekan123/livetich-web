@@ -72,7 +72,7 @@ export default async function ManageStudentsPage(props: {
           rowActions={Object.fromEntries(
             students.map((s) => [
               s.id,
-              <div key={s.id} className="flex items-center justify-end gap-2">
+              <div key={s.id} className="flex shrink-0 items-center justify-end gap-2">
                 <ManageStudentProgramsButton
                   student={{ id: s.id, name: s.name }}
                   programs={programs}
