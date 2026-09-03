@@ -8,6 +8,7 @@ import {
   renameGroup,
   setGroupMembers,
 } from '@/app/actions/groups';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { btn, cardClass, cn, inputClass } from '@/lib/ui';
 import type { StudentGroup } from '@/lib/types';
 
@@ -133,6 +134,7 @@ function GroupCard({
 }) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(group.name);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const preview = group.members
     .slice(0, 3)
@@ -196,14 +198,7 @@ function GroupCard({
               <PiPencilSimple className="h-4 w-4" />
             </button>
             <button
-              onClick={() => {
-                if (
-                  confirm(
-                    `Delete “${group.name}”? Assignments targeting it revert to the whole class.`,
-                  )
-                )
-                  onDelete();
-              }}
+              onClick={() => setConfirmOpen(true)}
               aria-label="Delete group"
               disabled={pending}
               className="grid h-8 w-8 place-items-center rounded-full text-neutral-400 transition hover:bg-red-50 hover:text-red-600"
@@ -226,6 +221,20 @@ function GroupCard({
       >
         <PiUsersThree className="h-4 w-4" /> Manage members
       </button>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={() => {
+          setConfirmOpen(false);
+          onDelete();
+        }}
+        pending={pending}
+        title="Delete group?"
+        message={`Delete “${group.name}”? Assignments targeting it revert to the whole class.`}
+        confirmLabel="Delete group"
+        variant="danger"
+      />
     </div>
   );
 }

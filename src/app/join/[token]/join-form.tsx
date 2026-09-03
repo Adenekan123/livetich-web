@@ -4,6 +4,7 @@ import { useActionState } from 'react';
 import { register, type AuthFormState } from '@/app/actions/auth';
 import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
+import { PasswordInput } from '@/components/password-input';
 import { inputClass, labelClass } from '@/lib/ui';
 
 const initial: AuthFormState = { error: null };
@@ -46,15 +47,14 @@ export function JoinForm({ inviteToken }: { inviteToken: string }) {
         <label htmlFor="password" className={labelClass}>
           Password
         </label>
-        <input
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
           required
           minLength={8}
+          showRequirement
           autoComplete="new-password"
           placeholder="At least 8 characters"
-          className={inputClass}
         />
       </div>
 

@@ -9,10 +9,10 @@ import { FormError } from '@/components/form-error';
 import { btn, inputClass, labelClass } from '@/lib/ui';
 import type { CourseDetail } from '@/lib/types';
 import { DurationField } from '../duration-field';
+import { MeetingSchedule } from '../meeting-schedule';
 
 const initial: ActionState = { error: null };
 
-const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']; // index = 0..6 (Sun..Sat)
 const TIMEZONES = [
   'Africa/Lagos',
   'Africa/Nairobi',
@@ -189,59 +189,34 @@ export function EditProgramButton({
                   />
                 </div>
 
-                <div className="mt-3 space-y-1.5">
-                  <span className={labelClass}>Meeting days</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {DAYS.map((d, i) => (
-                      <label key={i} className="cursor-pointer">
-                        <input
-                          type="checkbox"
-                          name="meetingDays"
-                          value={i}
-                          defaultChecked={days.includes(i)}
-                          className="peer sr-only"
-                        />
-                        <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-neutral-300 text-xs font-medium text-neutral-600 transition hover:border-neutral-500 peer-checked:border-signal-700 peer-checked:bg-signal-700 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-signal-400 peer-focus-visible:ring-offset-1">
-                          {d}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
+                <div className="mt-3">
+                  <MeetingSchedule
+                    idPrefix="edit-"
+                    defaultDays={days}
+                    defaultTime={course.meetingTime ?? '18:00'}
+                    defaultPerDay={course.meetingTimesByDay ?? {}}
+                  />
                 </div>
 
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <label htmlFor="edit-meetingTime" className={labelClass}>
-                      Start time
-                    </label>
-                    <input
-                      id="edit-meetingTime"
-                      name="meetingTime"
-                      type="time"
-                      defaultValue={course.meetingTime ?? '18:00'}
-                      className={inputClass}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label htmlFor="edit-timezone" className={labelClass}>
-                      Timezone
-                    </label>
-                    <select
-                      id="edit-timezone"
-                      name="timezone"
-                      defaultValue={course.timezone ?? 'Africa/Lagos'}
-                      className={inputClass}
-                    >
-                      {!tzInList && course.timezone && (
-                        <option value={course.timezone}>{course.timezone}</option>
-                      )}
-                      {TIMEZONES.map((tz) => (
-                        <option key={tz} value={tz}>
-                          {tz.split('/').pop()?.replace(/_/g, ' ')}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                <div className="mt-3 space-y-1.5">
+                  <label htmlFor="edit-timezone" className={labelClass}>
+                    Timezone
+                  </label>
+                  <select
+                    id="edit-timezone"
+                    name="timezone"
+                    defaultValue={course.timezone ?? 'Africa/Lagos'}
+                    className={inputClass}
+                  >
+                    {!tzInList && course.timezone && (
+                      <option value={course.timezone}>{course.timezone}</option>
+                    )}
+                    {TIMEZONES.map((tz) => (
+                      <option key={tz} value={tz}>
+                        {tz.split('/').pop()?.replace(/_/g, ' ')}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <p className="mt-2 text-xs text-neutral-400">
                   Changing the days or time reschedules upcoming sessions and

@@ -328,7 +328,10 @@ export interface CohortFields {
   startDate: string | null; // ISO — cohort's first day
   durationWeeks: number | null;
   meetingDays: number[] | null; // 0=Sun … 6=Sat
-  meetingTime: string | null; // local 24h "HH:mm"
+  meetingTime: string | null; // general/default local 24h "HH:mm"
+  /** Per-day time overrides: map of day index ("0".."6") → "HH:mm". Null/absent
+   *  = every meeting day uses meetingTime. */
+  meetingTimesByDay?: Record<string, string> | null;
   timezone: string | null; // IANA zone or short label
 }
 
@@ -390,6 +393,8 @@ export interface OrgSettings {
   micRequiresRaisedHand: boolean;
   preClassReminder: boolean;
   reminderLeadMinutes: number;
+  /** Default lifetime for new invite links, in days. Null = never expire. */
+  inviteLinkExpiryDays: number | null;
 }
 
 export interface Enrollment {

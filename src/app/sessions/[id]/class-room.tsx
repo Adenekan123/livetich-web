@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { io, type Socket } from 'socket.io-client';
 import { endSession } from '@/app/actions/courses';
 import { API_URL } from '@/lib/api';
-import { getRealtimeToken } from '@/lib/client-token';
+import { clearRealtimeToken, getRealtimeToken } from '@/lib/client-token';
 import { avatarColor, btn, cn, initials } from '@/lib/ui';
 import type {
   BuzzerState,
@@ -29,6 +29,7 @@ import {
   PiHandPalm,
   PiHandWaving,
   PiLightning,
+  PiListChecks,
   PiLockSimple,
   PiLockSimpleOpen,
   PiMicrophone,
@@ -56,6 +57,7 @@ import {
   type HifzDraft,
 } from './live-hifz-panel';
 import { LiveGradingPanel } from './live-grading-panel';
+import { LiveCurriculumPanel } from './live-curriculum-panel';
 import {
   LiveCodingPanel,
   type LiveCodingReview,
@@ -299,7 +301,7 @@ export function ClassRoom({
   const [buzzerForm, setBuzzerForm] = useState(false);
   const [startBuzzerOnCreate, setStartBuzzerOnCreate] = useState(false);
   const [panel, setPanel] = useState<
-    'chat' | 'people' | 'points' | 'hifz' | 'work' | 'coding' | null
+    'chat' | 'people' | 'points' | 'hifz' | 'work' | 'coding' | 'curriculum' | null
   >('chat');
   // Live mirror of `panel` for the socket handler (registered once, so it can't
   // close over a stale value) — used to decide whether an incoming chat message
@@ -371,6 +373,13 @@ export function ClassRoom({
       transports: ['websocket'],
     });
     socketRef.current = socket;
+    // A stale realtime token makes the gateway reject auth and disconnect us.
+    // Socket.IO does NOT auto-reconnect after a server-initiated disconnect, so
+    // we re-open the socket ourselves after dropping the bad token — capped, so
+    // a genuinely bad session (e.g. logged out) surfaces the error instead of
+    // looping. Reset once a connect succeeds.
+    let authRetries = 0;
+    const MAX_AUTH_RETRIES = 2;
 
     const pushWave = (name: string) => {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -379,6 +388,7 @@ export function ClassRoom({
     };
 
     socket.on('connect', () => {
+      authRetries = 0;
       setConnected(true);
       socket.emit('room:join', {
         sessionId,
@@ -493,6 +503,18 @@ export function ClassRoom({
       setTimeout(() => setPicked(null), 6000);
     });
     socket.on('error', (e) => {
+      // An auth rejection ("Invalid token") means the cached realtime token is
+      // stale. Drop it and re-open the socket (which re-fetches a fresh token in
+      // the auth callback) rather than leaving the user stuck — the gateway has
+      // already disconnected us, and Socket.IO won't retry that on its own.
+      if (e.code === 'UNAUTHORIZED' && authRetries < MAX_AUTH_RETRIES) {
+        authRetries += 1;
+        clearRealtimeToken();
+        setTimeout(() => {
+          if (socketRef.current === socket) socket.connect();
+        }, 600);
+        return; // stay quiet while we self-heal
+      }
       setNotice(e.message);
       setTimeout(() => setNotice(null), 4000);
     });
@@ -822,6 +844,17 @@ export function ClassRoom({
         <PiUsers className="h-5 w-5" />
         {labels && <span>People</span>}
       </button>
+      {isInstructor && (
+        <button
+          onClick={() => setPanel(panel === 'curriculum' ? null : 'curriculum')}
+          className={ctrl(panel === 'curriculum' ? 'on' : 'default', labels ? '' : 'px-3')}
+          aria-label="Toggle curriculum"
+          title="Curriculum"
+        >
+          <PiListChecks className="h-5 w-5" />
+          {labels && <span>Curriculum</span>}
+        </button>
+      )}
       {isInstructor && islamicEducation && (
         <button
           onClick={() => setPanel(panel === 'hifz' ? null : 'hifz')}
@@ -878,6 +911,7 @@ export function ClassRoom({
   // hides is selected/on — so a folded-away open panel or toggle stays visible.
   const moreActive =
     panel === 'people' ||
+    panel === 'curriculum' ||
     panel === 'hifz' ||
     panel === 'work' ||
     panel === 'coding' ||
@@ -1306,6 +1340,21 @@ export function ClassRoom({
                   )}
                 </button>
               ))}
+              {isInstructor && (
+                <button
+                  onClick={() => setPanel('curriculum')}
+                  aria-label="Curriculum"
+                  title="Curriculum"
+                  className={cn(
+                    'grid h-8 w-9 shrink-0 place-items-center rounded-lg transition',
+                    panel === 'curriculum'
+                      ? 'bg-white/10 text-white'
+                      : 'text-neutral-400 hover:text-white',
+                  )}
+                >
+                  <PiListChecks className="h-4 w-4" />
+                </button>
+              )}
               {isInstructor &&
                 (['hifz', 'work'] as const)
                   .filter((t) => t !== 'hifz' || islamicEducation)
@@ -1626,6 +1675,8 @@ export function ClassRoom({
                   </div>
                 )}
               </div>
+            ) : panel === 'curriculum' ? (
+              <LiveCurriculumPanel courseId={courseId} />
             ) : panel === 'hifz' ? (
               <LiveHifzPanel
                 courseId={courseId}

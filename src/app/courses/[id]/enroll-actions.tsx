@@ -1,14 +1,19 @@
 'use client';
 
+import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { enroll, unenroll } from '@/app/actions/courses';
 import { SubmitButton } from '@/components/submit-button';
+import { ConfirmDialog } from '@/components/confirm-dialog';
+import { btn } from '@/lib/ui';
 
 /**
  * Student enrolment control. Enrolling is a single primary action. Once
  * enrolled, the state reads as a non-destructive status chip — leaving is a
- * separate, quieter button behind a confirm, so a returning student can't drop
- * the cohort by clicking what looks like a status badge. Confirm matches the
- * app's existing destructive-action pattern (e.g. group delete).
+ * separate, quieter button behind a confirm modal, so a returning student can't
+ * drop the cohort by clicking what looks like a status badge. The confirm uses
+ * the app's shared ConfirmDialog (matching logout / delete) instead of a native
+ * browser popup.
  */
 export function EnrollActions({
   courseId,
@@ -17,6 +22,10 @@ export function EnrollActions({
   courseId: string;
   isEnrolled: boolean;
 }) {
+  const router = useRouter();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [leaving, startLeave] = useTransition();
+
   if (!isEnrolled) {
     return (
       <form action={enroll.bind(null, courseId)}>
@@ -41,22 +50,32 @@ export function EnrollActions({
         </svg>
         You&apos;re enrolled
       </span>
-      <form
-        action={unenroll.bind(null, courseId)}
-        onSubmit={(e) => {
-          if (
-            !window.confirm(
-              'Leave this cohort? You’ll lose your place and any class reminders. You can re-enrol while enrolment is still open.',
-            )
-          ) {
-            e.preventDefault();
-          }
-        }}
+      <button
+        type="button"
+        onClick={() => setConfirmOpen(true)}
+        disabled={leaving}
+        className={btn('ghost', 'sm')}
       >
-        <SubmitButton variant="ghost" size="sm" pendingLabel="Leaving…">
-          Leave cohort
-        </SubmitButton>
-      </form>
+        {leaving ? 'Leaving…' : 'Leave cohort'}
+      </button>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={() => {
+          setConfirmOpen(false);
+          startLeave(async () => {
+            await unenroll(courseId);
+            router.refresh();
+          });
+        }}
+        pending={leaving}
+        title="Leave this cohort?"
+        message="You’ll lose your place and any class reminders. You can re-enrol while enrolment is still open."
+        confirmLabel="Leave cohort"
+        cancelLabel="Stay enrolled"
+        variant="danger"
+      />
     </div>
   );
 }

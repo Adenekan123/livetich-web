@@ -18,10 +18,10 @@ import {
   PiStudentBold,
   PiXBold,
 } from 'react-icons/pi';
-import { logout } from '@/app/actions/auth';
 import { avatarColor, cn, initials } from '@/lib/ui';
 import { BrandLogo } from './brand-logo';
 import { IdleLogout } from './idle-logout';
+import { LogoutButton } from './logout-button';
 
 /*
  * Direction B app shell — a persistent dark sidebar for the dashboard + account
@@ -193,16 +193,13 @@ export function ShellChrome({
             <p className="truncate text-[16.5px] font-bold leading-tight text-white">{user.name}</p>
             <p className="text-[12.5px] text-white/45">{ROLE_LABEL[user.role] ?? user.role}</p>
           </div>
-          <form action={logout}>
-            <button
-              type="submit"
-              aria-label="Log out"
-              title="Log out"
-              className="grid h-8 w-8 place-items-center rounded-lg text-white/60 transition hover:bg-white/10 hover:text-white"
-            >
-              <PiSignOutBold className="h-4 w-4" />
-            </button>
-          </form>
+          <LogoutButton
+            ariaLabel="Log out"
+            title="Log out"
+            className="grid h-8 w-8 place-items-center rounded-lg text-white/60 transition hover:bg-white/10 hover:text-white"
+          >
+            <PiSignOutBold className="h-4 w-4" />
+          </LogoutButton>
         </div>
       </div>
     </div>

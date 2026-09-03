@@ -13,6 +13,7 @@ const FALLBACK: OrgSettings = {
   micRequiresRaisedHand: false,
   preClassReminder: false,
   reminderLeadMinutes: 30,
+  inviteLinkExpiryDays: null,
 };
 
 export default async function PreferencesPage() {

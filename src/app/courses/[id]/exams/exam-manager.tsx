@@ -11,6 +11,7 @@ import {
   importAlocQuestions,
   updateExam,
 } from '@/app/actions/exams';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { btn, cardClass, cn, inputClass } from '@/lib/ui';
 import type {
   ExamDetail,
@@ -204,6 +205,7 @@ function ExamRow({
   const [loadingEdit, startEdit] = useTransition();
   const [deleting, startDelete] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   function toggle() {
     if (open) return setOpen(false);
@@ -225,13 +227,8 @@ function ExamRow({
     });
   }
 
-  function del() {
-    if (
-      !window.confirm(
-        `Delete "${exam.title}"? Student scores are kept, but it's removed from the list.`,
-      )
-    )
-      return;
+  function doDelete() {
+    setConfirmOpen(false);
     setError(null);
     startDelete(async () => {
       const res = await deleteExam(courseId, exam.id);
@@ -269,7 +266,11 @@ function ExamRow({
             <button onClick={edit} disabled={loadingEdit} className={btn('ghost', 'sm')}>
               {loadingEdit ? '…' : 'Edit'}
             </button>
-            <button onClick={del} disabled={deleting} className={btn('ghost', 'sm')}>
+            <button
+              onClick={() => setConfirmOpen(true)}
+              disabled={deleting}
+              className={btn('ghost', 'sm')}
+            >
               {deleting ? '…' : 'Delete'}
             </button>
             <button onClick={toggle} aria-expanded={open} className={btn('secondary', 'sm')}>
@@ -277,6 +278,16 @@ function ExamRow({
               <PiCaretDown className={cn('h-3.5 w-3.5 transition', open && 'rotate-180')} />
             </button>
           </div>
+          <ConfirmDialog
+            open={confirmOpen}
+            onCancel={() => setConfirmOpen(false)}
+            onConfirm={doDelete}
+            pending={deleting}
+            title="Delete exam?"
+            message={`Delete “${exam.title}”? Student scores are kept, but it's removed from the list.`}
+            confirmLabel="Delete exam"
+            variant="danger"
+          />
         </td>
       </tr>
 

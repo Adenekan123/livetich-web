@@ -10,10 +10,18 @@ import {
   setUserStatus,
   verifyUserEmail,
 } from '@/app/actions/admin';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { cn } from '@/lib/ui';
 import type { AdminUserRow, Role } from '@/lib/types';
 
 const ROLES: Role[] = ['STUDENT', 'INSTRUCTOR', 'ORG_ADMIN'];
+
+type ConfirmSpec = {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  danger?: boolean;
+};
 
 /** Per-row action menu for the admin Users table. */
 export function UserActions({
@@ -27,10 +35,12 @@ export function UserActions({
   const [open, setOpen] = useState(false);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [confirmSpec, setConfirmSpec] = useState<
+    (ConfirmSpec & { fn: () => Promise<{ error: string | null } | void> }) | null
+  >(null);
   const disabled = user.status === 'DISABLED';
 
-  function run(fn: () => Promise<{ error: string | null } | void>, confirmMsg?: string) {
-    if (confirmMsg && !window.confirm(confirmMsg)) return;
+  function exec(fn: () => Promise<{ error: string | null } | void>) {
     setError(null);
     setOpen(false);
     start(async () => {
@@ -38,6 +48,20 @@ export function UserActions({
       if (res && res.error) setError(res.error);
       else router.refresh();
     });
+  }
+
+  // With a confirm spec, stage a modal instead of acting immediately; otherwise
+  // run straight away. Replaces the old native window.confirm() popups.
+  function run(
+    fn: () => Promise<{ error: string | null } | void>,
+    confirm?: ConfirmSpec,
+  ) {
+    if (confirm) {
+      setOpen(false);
+      setConfirmSpec({ ...confirm, fn });
+      return;
+    }
+    exec(fn);
   }
 
   return (
@@ -71,7 +95,12 @@ export function UserActions({
                   () => setUserStatus(user.id, disabled ? 'ACTIVE' : 'DISABLED'),
                   disabled
                     ? undefined
-                    : `Disable ${user.name}? They will be signed out and blocked from logging in.`,
+                    : {
+                        title: 'Disable account',
+                        message: `Disable ${user.name}? They will be signed out and blocked from logging in.`,
+                        confirmLabel: 'Disable account',
+                        danger: true,
+                      },
                 )
               }
               disabled={isSelf}
@@ -92,10 +121,11 @@ export function UserActions({
 
             <MenuItem
               onClick={() =>
-                run(
-                  () => impersonate(user.id),
-                  `Log in as ${user.name}? You'll browse the app as them for 30 minutes. Use "Stop impersonating" to return.`,
-                )
+                run(() => impersonate(user.id), {
+                  title: 'Impersonate user',
+                  message: `Log in as ${user.name}? You'll browse the app as them for 30 minutes. Use "Stop impersonating" to return.`,
+                  confirmLabel: 'Impersonate',
+                })
               }
               disabled={isSelf}
             >
@@ -110,10 +140,11 @@ export function UserActions({
               <MenuItem
                 key={r}
                 onClick={() =>
-                  run(
-                    () => setUserRole(user.id, r),
-                    `Change ${user.name}'s role to ${r}?`,
-                  )
+                  run(() => setUserRole(user.id, r), {
+                    title: 'Change role',
+                    message: `Change ${user.name}'s role to ${label(r)}?`,
+                    confirmLabel: 'Change role',
+                  })
                 }
                 disabled={user.role === r}
                 muted={user.role === r}
@@ -128,8 +159,18 @@ export function UserActions({
                 run(
                   () => setSuperAdmin(user.id, !user.isSuperAdmin),
                   user.isSuperAdmin
-                    ? `Revoke platform-admin from ${user.name}?`
-                    : `Grant platform-admin to ${user.name}? They will get full operator access.`,
+                    ? {
+                        title: 'Revoke platform admin',
+                        message: `Revoke platform-admin from ${user.name}?`,
+                        confirmLabel: 'Revoke',
+                        danger: true,
+                      }
+                    : {
+                        title: 'Grant platform admin',
+                        message: `Grant platform-admin to ${user.name}? They will get full operator access.`,
+                        confirmLabel: 'Grant admin',
+                        danger: true,
+                      },
                 )
               }
               disabled={isSelf && user.isSuperAdmin}
@@ -140,6 +181,20 @@ export function UserActions({
           </div>
         </>
       )}
+
+      <ConfirmDialog
+        open={confirmSpec !== null}
+        onCancel={() => setConfirmSpec(null)}
+        onConfirm={() => {
+          if (confirmSpec) exec(confirmSpec.fn);
+          setConfirmSpec(null);
+        }}
+        pending={pending}
+        title={confirmSpec?.title ?? ''}
+        message={confirmSpec?.message}
+        confirmLabel={confirmSpec?.confirmLabel}
+        variant={confirmSpec?.danger ? 'danger' : 'default'}
+      />
     </div>
   );
 }

@@ -514,12 +514,34 @@ export function BoardTldraw({
     socketRef.current = socket;
     // Re-emitted on reconnect too (socket.io fires 'connect' again), so a
     // dropped student re-syncs board state via the board:state that follows.
-    socket.on('connect', () =>
+    // A rejected board-socket auth (stale realtime token) makes the gateway
+    // disconnect us, and Socket.IO does NOT auto-reconnect a server-initiated
+    // disconnect — which would strand a joiner on a permanently blank board
+    // (no board:state ever arrives). So we self-heal: drop the token and re-open,
+    // capped, resetting on a good connect. Mirrors the room socket (see #5).
+    let authRetries = 0;
+    const MAX_AUTH_RETRIES = 2;
+    socket.on('connect', () => {
+      // Re-emitted on reconnect too, so a dropped/rejoined student re-syncs via
+      // the board:state that follows.
+      authRetries = 0;
       socket.emit('board:join', {
         sessionId,
         ...(teaching ? { as: 'teach' as const } : {}),
-      }),
-    );
+      });
+    });
+    // The gateway emits a custom 'error' (e.g. UNAUTHORIZED) before disconnecting.
+    (socket as unknown as {
+      on: (ev: string, cb: (e: { code?: string }) => void) => void;
+    }).on('error', (e) => {
+      if (e?.code === 'UNAUTHORIZED' && authRetries < MAX_AUTH_RETRIES) {
+        authRetries += 1;
+        clearRealtimeToken();
+        setTimeout(() => {
+          if (socketRef.current === socket) socket.connect();
+        }, 600);
+      }
+    });
     socket.on('board:writable', (p) => setBoardOpen(p.open));
     socket.on('board:state', (p) => {
       applyRemote(p.update);
@@ -559,12 +581,18 @@ export function BoardTldraw({
         // Swallowed on purpose: a bad merge must not kill the live board.
       }
       // A viewer that hadn't seen the presenter's page yet (joined before any
-      // content existed) lands on it as soon as it arrives here.
-      followSharedPage();
-      // And a following viewer flips to a just-created page / re-scrolls to a
-      // just-imported PDF the instant those records land — closing the race
-      // where the presenter announced the change before the records synced.
-      applyPresenterView();
+      // content existed) lands on it as soon as it arrives here; and a following
+      // viewer flips to a just-created page / re-scrolls to a just-imported PDF
+      // the instant those records land. These MUST be guarded: a throw here
+      // (e.g. setCurrentPage/zoomToBounds racing a page that's mid-sync when a
+      // third client joins and streams records) would escape the Yjs observer
+      // and halt ALL further sync — freezing the board for everyone.
+      try {
+        followSharedPage();
+        applyPresenterView();
+      } catch {
+        // Never let a follow hiccup wedge the live doc.
+      }
     };
     yStore.observe(onYChange);
 
@@ -664,8 +692,13 @@ export function BoardTldraw({
         // Track the presenter's page even if this student has stopped following
         // (page must always mirror), then match the camera only while following.
         // If the page/records haven't synced yet, onYChange retries both.
-        followSharedPage();
-        applyPresenterView();
+        // Guarded so a follow hiccup can't throw out of the socket handler.
+        try {
+          followSharedPage();
+          applyPresenterView();
+        } catch {
+          /* keep following best-effort */
+        }
         if (p.cursor) {
           const s = editor.pageToScreen(p.cursor);
           setLaser({ x: s.x, y: s.y });
