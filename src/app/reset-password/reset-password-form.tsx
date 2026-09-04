@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { resetPassword, type ResetPasswordState } from '@/app/actions/auth';
 import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
-import { inputClassLg, labelClassLg } from '@/lib/ui';
+import { PasswordInput } from '@/components/password-input';
+import { labelClassLg } from '@/lib/ui';
 
 const initial: ResetPasswordState = { error: null };
 
@@ -36,30 +37,29 @@ export function ResetPasswordForm({ token }: { token: string }) {
         <label htmlFor="newPassword" className={labelClassLg}>
           New password
         </label>
-        <input
+        <PasswordInput
           id="newPassword"
           name="newPassword"
-          type="password"
           required
           minLength={8}
+          showRequirement
           autoComplete="new-password"
           placeholder="••••••••"
-          className={inputClassLg}
+          size="lg"
         />
       </div>
       <div className="space-y-2">
         <label htmlFor="confirm" className={labelClassLg}>
           Confirm new password
         </label>
-        <input
+        <PasswordInput
           id="confirm"
           name="confirm"
-          type="password"
           required
           minLength={8}
           autoComplete="new-password"
           placeholder="••••••••"
-          className={inputClassLg}
+          size="lg"
         />
       </div>
       <SubmitButton size="xl" className="w-full" pendingLabel="Updating…">

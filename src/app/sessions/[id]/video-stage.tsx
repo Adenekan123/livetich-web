@@ -16,7 +16,7 @@ import {
   PiVideoCameraSlash,
 } from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
-import { getRealtimeToken } from '@/lib/client-token';
+import { clearRealtimeToken, getRealtimeToken } from '@/lib/client-token';
 import { avatarColor, cn, initials } from '@/lib/ui';
 
 /** Media controls lifted up to the classroom's bottom bar. */
@@ -290,13 +290,30 @@ export function VideoStage({
             headers: { Authorization: `Bearer ${authToken ?? ''}` },
           },
         );
-        if (!res.ok) throw new Error(`token request failed (${res.status})`);
+        if (!res.ok) {
+          // A 401 means the cached realtime bearer is stale — drop it so the
+          // next attempt fetches a fresh one.
+          if (res.status === 401) clearRealtimeToken();
+          throw new Error(`token request failed (${res.status})`);
+        }
         ({ token, url } = await res.json());
       } catch (e) {
-        if (!cancelled) {
-          setStatus('error');
-          setError(e instanceof Error ? e.message : 'Could not get a token');
+        if (cancelled) return;
+        // A stale token or a blip getting one shouldn't dump the user straight
+        // to "Video unavailable" — self-heal a few times (the cache was just
+        // cleared on a 401) before surfacing the error, mirroring the reconnect
+        // path. Status stays "connecting" so the stage shows a spinner, not an
+        // error, while we retry.
+        if (autoRetryRef.current < 3) {
+          autoRetryRef.current += 1;
+          setReconnecting(true);
+          setTimeout(() => {
+            if (!cancelled) setRetryKey((k) => k + 1);
+          }, 800);
+          return;
         }
+        setStatus('error');
+        setError(e instanceof Error ? e.message : 'Could not get a token');
         return;
       }
 

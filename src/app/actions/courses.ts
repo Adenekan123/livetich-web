@@ -29,6 +29,21 @@ async function run(
   return { error: null, ok: Date.now() };
 }
 
+/** Parse the MeetingSchedule component's hidden `meetingTimesByDay` field (a
+ *  JSON map of day→"HH:mm"). Returns undefined when absent/blank. */
+function parseMeetingTimesByDay(
+  formData: FormData,
+): Record<string, string> | undefined {
+  const raw = formData.get('meetingTimesByDay');
+  if (typeof raw !== 'string' || !raw.trim()) return undefined;
+  try {
+    const obj = JSON.parse(raw) as Record<string, string>;
+    return obj && typeof obj === 'object' ? obj : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function createCourse(
   _prev: ActionState,
   formData: FormData,
@@ -39,6 +54,7 @@ export async function createCourse(
     .getAll('meetingDays')
     .map((d) => Number(d))
     .filter((d) => !Number.isNaN(d));
+  const meetingTimesByDay = parseMeetingTimesByDay(formData);
   const durationWeeks = formData.get('durationWeeks');
   const startDate = formData.get('startDate') as string;
 
@@ -56,6 +72,11 @@ export async function createCourse(
         durationWeeks: durationWeeks ? Number(durationWeeks) : undefined,
         meetingDays: meetingDays.length ? meetingDays : undefined,
         meetingTime: formData.get('meetingTime') || undefined,
+        // Send only when the admin actually set per-day overrides.
+        meetingTimesByDay:
+          meetingTimesByDay && Object.keys(meetingTimesByDay).length
+            ? meetingTimesByDay
+            : undefined,
         timezone: formData.get('timezone') || undefined,
       },
     });
@@ -186,6 +207,8 @@ export async function updateCourse(
           durationWeeks: durationWeeks ? Number(durationWeeks) : undefined,
           meetingDays,
           meetingTime: (formData.get('meetingTime') as string) || undefined,
+          // Always sent (default {}) so clearing per-day overrides sticks.
+          meetingTimesByDay: parseMeetingTimesByDay(formData) ?? {},
           timezone: (formData.get('timezone') as string) || undefined,
         },
       }),

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { API_URL } from '@/lib/api';
 import { getRealtimeToken } from '@/lib/client-token';
 import { btn, cardClass, cn } from '@/lib/ui';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { BuzzerQuestionModal } from '@/app/sessions/[id]/buzzer-question-modal';
 
 export interface BuzzerQuiz {
@@ -31,6 +32,7 @@ export function BuzzerBank({
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const questions = quizzes.flatMap((q) => q.questions);
@@ -48,6 +50,7 @@ export function BuzzerBank({
         setError(`Couldn't delete the question (${res.status}). Please retry.`);
         return;
       }
+      setConfirmId(null);
       router.refresh();
     } catch {
       setError('Network error deleting the question. Please retry.');
@@ -101,7 +104,7 @@ export function BuzzerBank({
                   </p>
                 </div>
                 <button
-                  onClick={() => remove(q.id)}
+                  onClick={() => setConfirmId(q.id)}
                   disabled={deleting === q.id}
                   className={cn(
                     btn('ghost', 'sm'),
@@ -126,6 +129,17 @@ export function BuzzerBank({
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={confirmId !== null}
+        onCancel={() => setConfirmId(null)}
+        onConfirm={() => confirmId && remove(confirmId)}
+        pending={deleting !== null}
+        variant="danger"
+        title="Delete this buzzer question?"
+        message="It'll be removed from the bank for good, along with any past answers to it. This can't be undone."
+        confirmLabel="Delete question"
+      />
     </div>
   );
 }

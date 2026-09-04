@@ -6,6 +6,7 @@ import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
 import { inputClass, labelClass } from '@/lib/ui';
 import { DurationField } from './duration-field';
+import { MeetingSchedule } from './meeting-schedule';
 
 interface BatchRow {
   label: string;
@@ -143,9 +144,21 @@ const TIMEZONES = [
   'Asia/Singapore',
 ];
 
+/** Local YYYY-MM-DD for a <input type="date"> default. */
+function todayLocal(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 /** Create-program form (used inside the New program modal on /courses). */
 export function NewProgramForm() {
   const [state, action] = useActionState(createCourse, initial);
+  // Default the start date to today so a program created to run now actually has
+  // an occurrence today — without a start date the schedule yields zero sessions
+  // and "Join"/"Go live" stays disabled from the first render. The admin can
+  // still push it to a future start.
+  const today = todayLocal();
   return (
     <form action={action} className="space-y-4">
       <FormError message={state.error} />
@@ -216,53 +229,29 @@ export function NewProgramForm() {
         </p>
 
         <div className="mt-3">
-          <DurationField defaultWeeks={8} />
+          <DurationField defaultWeeks={8} defaultStartDate={today} />
+        </div>
+
+        <div className="mt-3">
+          <MeetingSchedule />
         </div>
 
         <div className="mt-3 space-y-1.5">
-          <span className={labelClass}>Meeting days</span>
-          <div className="flex flex-wrap gap-1.5">
-            {DAYS.map((d, i) => (
-              <label key={i} className="cursor-pointer">
-                <input type="checkbox" name="meetingDays" value={i} className="peer sr-only" />
-                <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-neutral-300 text-xs font-medium text-neutral-600 transition hover:border-neutral-500 peer-checked:border-signal-700 peer-checked:bg-signal-700 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-signal-400 peer-focus-visible:ring-offset-1">
-                  {d}
-                </span>
-              </label>
+          <label htmlFor="timezone" className={labelClass}>
+            Timezone
+          </label>
+          <select
+            id="timezone"
+            name="timezone"
+            defaultValue="Africa/Lagos"
+            className={inputClass}
+          >
+            {TIMEZONES.map((tz) => (
+              <option key={tz} value={tz}>
+                {tz.split('/').pop()?.replace(/_/g, ' ')}
+              </option>
             ))}
-          </div>
-        </div>
-
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <label htmlFor="meetingTime" className={labelClass}>
-              Start time
-            </label>
-            <input
-              id="meetingTime"
-              name="meetingTime"
-              type="time"
-              defaultValue="18:00"
-              className={inputClass}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label htmlFor="timezone" className={labelClass}>
-              Timezone
-            </label>
-            <select
-              id="timezone"
-              name="timezone"
-              defaultValue="Africa/Lagos"
-              className={inputClass}
-            >
-              {TIMEZONES.map((tz) => (
-                <option key={tz} value={tz}>
-                  {tz.split('/').pop()?.replace(/_/g, ' ')}
-                </option>
-              ))}
-            </select>
-          </div>
+          </select>
         </div>
       </div>
 

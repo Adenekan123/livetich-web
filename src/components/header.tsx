@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import { logout } from '@/app/actions/auth';
 import { api } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
 import { avatarColor, btn, initials } from '@/lib/ui';
@@ -7,6 +6,7 @@ import type { Organization } from '@/lib/types';
 import { IdleLogout } from './idle-logout';
 import { BrandLogo } from './brand-logo';
 import { NavLinks } from './nav-links';
+import { LogoutButton } from './logout-button';
 
 const ROLE_LABEL: Record<string, string> = {
   ORG_ADMIN: 'admin',
@@ -84,9 +84,7 @@ export async function Header() {
                 </span>
               </span>
             </div>
-            <form action={logout}>
-              <button className={btn('secondary', 'sm')}>Log out</button>
-            </form>
+            <LogoutButton className={btn('secondary', 'sm')}>Log out</LogoutButton>
           </div>
         ) : (
           <div className="flex items-center gap-2">

@@ -195,6 +195,18 @@ h4 {
     sans-serif;
 }
 
+/*
+ * App-wide readable body-text floor. The default small text (14px) reads too
+ * small on modern displays, so raise the derived --text-xs/--text-sm scale
+ * everywhere (desktop + mobile) — this is the app's main body/label copy.
+ * text-base and headings keep their sizes; literal `text-[Npx]` sizes are set
+ * per-surface; and the landing page (.lp-root) keeps its own larger scale.
+ */
+:root {
+  --text-xs: 0.8125rem; /* 13px (from 12px) */
+  --text-sm: 1rem; /* 16px (from 14px) */
+}
+
 /* Pulsing "live" indicator dot. */
 @keyframes lt-pulse {
   0%,
@@ -457,3 +469,4 @@ h4 {
   --color-signal-800: #9f1239;
   --color-signal-900: #881337;
 }
+

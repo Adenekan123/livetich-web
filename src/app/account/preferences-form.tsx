@@ -50,6 +50,7 @@ export function PreferencesForm({ settings }: { settings: OrgSettings }) {
   const [mic, setMic] = useState(settings.micRequiresRaisedHand);
   const [reminder, setReminder] = useState(settings.preClassReminder);
   const [lead, setLead] = useState(String(settings.reminderLeadMinutes));
+  const [expiry, setExpiry] = useState(String(settings.inviteLinkExpiryDays ?? 0));
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [pending, start] = useTransition();
@@ -63,6 +64,7 @@ export function PreferencesForm({ settings }: { settings: OrgSettings }) {
         micRequiresRaisedHand: mic,
         preClassReminder: reminder,
         reminderLeadMinutes: Number(lead) || 30,
+        inviteLinkExpiryDays: Number(expiry) || 0,
       });
       if (res.error) setError(res.error);
       else setSaved(true);
@@ -127,6 +129,32 @@ export function PreferencesForm({ settings }: { settings: OrgSettings }) {
           />
           <span className="text-sm text-neutral-500">minutes before start</span>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 border-t border-neutral-100 pt-4">
+        <label htmlFor="inviteLinkExpiryDays" className={labelClass}>
+          Invite link expiry
+        </label>
+        <select
+          id="inviteLinkExpiryDays"
+          name="inviteLinkExpiryDays"
+          value={expiry}
+          onChange={(e) => {
+            setSaved(false);
+            setExpiry(e.target.value);
+          }}
+          className={`${inputClass} w-auto`}
+        >
+          <option value="0">Never expire</option>
+          <option value="1">1 day</option>
+          <option value="7">7 days</option>
+          <option value="14">14 days</option>
+          <option value="30">30 days</option>
+          <option value="90">90 days</option>
+        </select>
+        <span className="text-sm text-neutral-500">
+          Applies to new invite links you generate.
+        </span>
       </div>
 
       <div className="flex items-center gap-3 pt-4">

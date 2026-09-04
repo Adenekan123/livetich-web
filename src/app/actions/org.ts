@@ -139,6 +139,8 @@ export interface ClassPreferencesInput {
   micRequiresRaisedHand: boolean;
   preClassReminder: boolean;
   reminderLeadMinutes: number;
+  /** Default invite-link lifetime in days; 0 = never expire. */
+  inviteLinkExpiryDays: number;
 }
 
 /** Save the org's class preferences (admin). Called directly with the current
@@ -156,6 +158,10 @@ export async function updateOrgSettings(
           evictOnInstructorLeave: values.evictOnInstructorLeave,
           micRequiresRaisedHand: values.micRequiresRaisedHand,
           preClassReminder: values.preClassReminder,
+          inviteLinkExpiryDays: Math.max(
+            0,
+            Number(values.inviteLinkExpiryDays) || 0,
+          ),
           ...(Number.isFinite(lead) && lead > 0
             ? { reminderLeadMinutes: lead }
             : {}),

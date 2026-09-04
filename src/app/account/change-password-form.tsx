@@ -4,7 +4,8 @@ import { useActionState } from 'react';
 import { changePassword, type PasswordFormState } from '@/app/actions/auth';
 import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
-import { inputClass, labelClass } from '@/lib/ui';
+import { PasswordInput } from '@/components/password-input';
+import { labelClass } from '@/lib/ui';
 
 const initial: PasswordFormState = { error: null };
 
@@ -23,42 +24,37 @@ export function ChangePasswordForm() {
         <label htmlFor="currentPassword" className={labelClass}>
           Current password
         </label>
-        <input
+        <PasswordInput
           id="currentPassword"
           name="currentPassword"
-          type="password"
           required
           autoComplete="current-password"
-          className={inputClass}
         />
       </div>
       <div className="space-y-1.5">
         <label htmlFor="newPassword" className={labelClass}>
           New password
         </label>
-        <input
+        <PasswordInput
           id="newPassword"
           name="newPassword"
-          type="password"
           required
           minLength={8}
+          showRequirement
           autoComplete="new-password"
           placeholder="At least 8 characters"
-          className={inputClass}
         />
       </div>
       <div className="space-y-1.5">
         <label htmlFor="confirm" className={labelClass}>
           Confirm new password
         </label>
-        <input
+        <PasswordInput
           id="confirm"
           name="confirm"
-          type="password"
           required
           minLength={8}
           autoComplete="new-password"
-          className={inputClass}
         />
       </div>
 
