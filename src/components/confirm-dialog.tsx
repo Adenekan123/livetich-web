@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useId } from 'react';
+import { createPortal } from 'react-dom';
 import { btn, cn } from '@/lib/ui';
 
 /**
@@ -52,7 +53,11 @@ export function ConfirmDialog({
 
   if (!open) return null;
 
-  return (
+  // Portal to <body> so the fixed backdrop always covers the whole viewport —
+  // otherwise a stacking/containing context on an ancestor (the sidebar, the
+  // backdrop-blur header, the mobile drawer) traps it and it fails to cover the
+  // page (e.g. the sidebar showed through the logout confirm).
+  return createPortal(
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-neutral-950/60 p-4 backdrop-blur-sm"
       onClick={(e) => {
@@ -96,6 +101,7 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
