@@ -239,11 +239,11 @@ export function ShellChrome({
             <PiListBold className="h-5 w-5" />
           </button>
           <Link href="/" className="flex items-center gap-2">
-            <BrandLogo />
+            <BrandLogo className="h-11" />
           </Link>
           <span
             className={cn(
-              'ml-auto grid h-8 w-8 place-items-center rounded-full text-xs font-semibold text-white',
+              'ml-auto grid h-9 w-9 place-items-center rounded-full text-sm font-semibold text-white',
               avatarColor(user.sub),
             )}
             aria-hidden

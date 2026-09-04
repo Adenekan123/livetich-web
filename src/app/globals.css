@@ -195,6 +195,20 @@ h4 {
     sans-serif;
 }
 
+/*
+ * Small-screen readability floor. On phones, nudge the app's small-text scale
+ * up so body copy stays legible for students reading on a small screen (some
+ * with glasses / low vision). Only the derived --text-xs/--text-sm scale;
+ * text-base and up already read well, and literal sizes (text-[11px] etc.) are
+ * untouched by design. The landing page (.lp-root) keeps its own larger scale.
+ */
+@media (max-width: 640px) {
+  :root {
+    --text-xs: 0.8rem; /* ~12.8px (from 12px) */
+    --text-sm: 0.95rem; /* ~15.2px (from 14px) */
+  }
+}
+
 /* Pulsing "live" indicator dot. */
 @keyframes lt-pulse {
   0%,

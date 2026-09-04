@@ -115,7 +115,7 @@ function MetaRow({ icon, children }: { icon: React.ReactNode; children: React.Re
   return (
     <div className="flex items-center gap-2 text-neutral-600">
       <span className="text-neutral-400">{icon}</span>
-      <span className="truncate">{children}</span>
+      <span className="min-w-0 truncate">{children}</span>
     </div>
   );
 }
@@ -376,7 +376,7 @@ function FilterTabs<T extends string>({
 
 function CardGrid({ items }: { items: ClassItem[] }) {
   return (
-    <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {items.map((c) => (
         <CohortCard key={c.courseId} c={c} />
       ))}
