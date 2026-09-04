@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { logout } from '@/app/actions/auth';
 import { btn } from '@/lib/ui';
 
@@ -68,7 +69,9 @@ export function IdleLogout() {
 
   if (remaining == null) return null;
 
-  return (
+  // Portal to <body> — rendered inside the backdrop-blur header (a containing
+  // block for fixed), so without this the overlay wouldn't cover the page.
+  return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-2xl">
         <h2 className="text-lg font-bold text-neutral-950">Still there?</h2>
@@ -87,6 +90,7 @@ export function IdleLogout() {
           Stay signed in
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
