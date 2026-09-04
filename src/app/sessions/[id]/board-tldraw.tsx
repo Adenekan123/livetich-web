@@ -357,6 +357,19 @@ export function BoardTldraw({
     setBoardMsg(m);
     window.setTimeout(() => setBoardMsg(null), 2600);
   };
+
+  // Full-screen board mode (all users). A CSS overlay rather than the native
+  // Fullscreen API, so tldraw's menus and the classroom controls keep working;
+  // Escape exits.
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
   // Opt-in on-screen diagnostics for a student (add ?boarddebug to the URL) —
   // lets us read the live follow/page/shape state on a phone where there's no
   // dev console. `shapes:0` ⇒ nothing synced; `page ≠ pres` ⇒ page-follow issue;
@@ -834,24 +847,36 @@ export function BoardTldraw({
     }
   };
 
-  // Export the current board — as a PNG image, or wrapped into a one-page PDF
-  // sized to the board. Empty boards say so rather than silently doing nothing.
-  const exportBoard = async (format: 'png' | 'pdf') => {
+  // Export the board. PDF wraps each page into a real A4 sheet (orientation to
+  // fit the content) with a margin, so it reads like a document instead of a
+  // tight screenshot with text against the edges. `scope: 'all'` walks every
+  // board page — read directly via getPageShapeIds so the live page never
+  // switches (which would flip every student's view). PNG stays single-page.
+  const exportBoard = async (
+    format: 'png' | 'pdf',
+    scope: 'current' | 'all' = 'current',
+  ) => {
     const editor = editorRef.current;
     setExportOpen(false);
+    setToolsOpen(false);
     if (!editor) return;
-    const ids = editor.getCurrentPageShapeIds();
-    if (ids.size === 0) {
+
+    const pages = scope === 'all' ? editor.getPages() : [editor.getCurrentPage()];
+    const targets = pages
+      .map((p) => [...editor.getPageShapeIds(p.id)])
+      .filter((ids) => ids.length > 0);
+    if (targets.length === 0) {
       flash('Nothing on the board to export yet.');
       return;
     }
     setExporting(true);
     try {
-      const { blob, width, height } = await editor.toImage([...ids], {
-        format: 'png',
-        background: true,
-      });
       if (format === 'png') {
+        const { blob } = await editor.toImage(targets[0], {
+          format: 'png',
+          background: true,
+          padding: 24,
+        });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -860,20 +885,38 @@ export function BoardTldraw({
         URL.revokeObjectURL(url);
       } else {
         const { jsPDF } = await import('jspdf');
-        const dataUrl = await new Promise<string>((res, rej) => {
-          const r = new FileReader();
-          r.onload = () => res(r.result as string);
-          r.onerror = () => rej(r.error);
-          r.readAsDataURL(blob);
-        });
-        const doc = new jsPDF({
-          orientation: width >= height ? 'landscape' : 'portrait',
-          unit: 'px',
-          format: [width, height],
-          hotfixes: ['px_scaling'],
-        });
-        doc.addImage(dataUrl, 'PNG', 0, 0, width, height);
-        doc.save(`board-${sessionId}.pdf`);
+        // A4 in points; margin keeps content off the edges. Each page picks the
+        // orientation that best fits its content and centres the image.
+        const A4_LONG = 841.89;
+        const A4_SHORT = 595.28;
+        const MARGIN = 36; // ~0.5in
+        let doc: import('jspdf').jsPDF | null = null;
+        for (const ids of targets) {
+          const { blob, width, height } = await editor.toImage(ids, {
+            format: 'png',
+            background: true,
+            padding: 24,
+          });
+          const dataUrl = await new Promise<string>((res, rej) => {
+            const r = new FileReader();
+            r.onload = () => res(r.result as string);
+            r.onerror = () => rej(r.error);
+            r.readAsDataURL(blob);
+          });
+          const landscape = width >= height;
+          const pw = landscape ? A4_LONG : A4_SHORT;
+          const ph = landscape ? A4_SHORT : A4_LONG;
+          const scale = Math.min((pw - MARGIN * 2) / width, (ph - MARGIN * 2) / height);
+          const w = width * scale;
+          const h = height * scale;
+          const x = (pw - w) / 2;
+          const y = (ph - h) / 2;
+          const orient = landscape ? 'landscape' : 'portrait';
+          if (!doc) doc = new jsPDF({ orientation: orient, unit: 'pt', format: 'a4' });
+          else doc.addPage('a4', orient);
+          doc.addImage(dataUrl, 'PNG', x, y, w, h);
+        }
+        doc?.save(`board-${sessionId}.pdf`);
       }
     } catch {
       flash('Export failed — please try again.');
@@ -892,9 +935,45 @@ export function BoardTldraw({
     // chat panel — that stack above the board.
     <div
       ref={wrapperRef}
-      className="relative isolate h-full min-h-[320px] overflow-hidden rounded-xl border border-neutral-300 bg-white"
+      className={
+        fullscreen
+          ? 'fixed inset-0 z-[500] isolate overflow-hidden bg-white'
+          : 'relative isolate h-full min-h-[320px] overflow-hidden rounded-xl border border-neutral-300 bg-white'
+      }
     >
       <Tldraw store={store} onMount={handleMount} licenseKey={licenseKey} />
+
+      {/* Full-screen toggle — everyone (a student can enlarge the board to read
+          it). Bottom-right corner to stay clear of tldraw's top menus + style
+          panel and the board's top-centre controls. */}
+      <button
+        onClick={() => setFullscreen((f) => !f)}
+        aria-label={fullscreen ? 'Exit full screen' : 'Full screen'}
+        title={fullscreen ? 'Exit full screen (Esc)' : 'Full screen'}
+        className="pointer-events-auto absolute bottom-3 right-3 z-[402] grid h-9 w-9 place-items-center rounded-lg bg-white/90 text-neutral-700 shadow ring-1 ring-neutral-200 backdrop-blur transition hover:bg-white hover:text-neutral-900"
+      >
+        {fullscreen ? (
+          <svg viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" aria-hidden>
+            <path
+              d="M9 4v5H4m11-5v5h5M9 20v-5H4m11 5v-5h5"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" aria-hidden>
+            <path
+              d="M4 9V4h5M20 9V4h-5M4 15v5h5m11-5v5h-5"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        )}
+      </button>
 
       {/* Instructor board controls. Desktop lays them out inline (top-centre);
           phones collapse them into a single "Tools" menu so they don't crowd
@@ -948,21 +1027,29 @@ export function BoardTldraw({
                   />
                   <div
                     role="menu"
-                    className="absolute right-0 top-full z-[401] mt-1.5 w-44 overflow-hidden rounded-xl bg-white py-1 shadow-lg ring-1 ring-neutral-200"
+                    className="absolute right-0 top-full z-[401] mt-1.5 w-52 overflow-hidden rounded-xl bg-white py-1 shadow-lg ring-1 ring-neutral-200"
                   >
                     <button
                       role="menuitem"
-                      onClick={() => void exportBoard('pdf')}
+                      onClick={() => void exportBoard('pdf', 'current')}
                       className="block w-full px-3.5 py-2 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-50"
                     >
-                      PDF document
+                      PDF — this page
                     </button>
+                    <button
+                      role="menuitem"
+                      onClick={() => void exportBoard('pdf', 'all')}
+                      className="block w-full px-3.5 py-2 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-50"
+                    >
+                      PDF — all pages
+                    </button>
+                    <div className="my-1 border-t border-neutral-100" />
                     <button
                       role="menuitem"
                       onClick={() => void exportBoard('png')}
                       className="block w-full px-3.5 py-2 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-50"
                     >
-                      PNG image
+                      PNG image (this page)
                     </button>
                   </div>
                 </>
@@ -1034,24 +1121,26 @@ export function BoardTldraw({
                   <button
                     role="menuitem"
                     disabled={exporting}
-                    onClick={() => {
-                      void exportBoard('pdf');
-                      setToolsOpen(false);
-                    }}
+                    onClick={() => void exportBoard('pdf', 'current')}
                     className="block w-full px-3.5 py-2 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-50 disabled:opacity-50"
                   >
-                    Export as PDF
+                    Export PDF — this page
                   </button>
                   <button
                     role="menuitem"
                     disabled={exporting}
-                    onClick={() => {
-                      void exportBoard('png');
-                      setToolsOpen(false);
-                    }}
+                    onClick={() => void exportBoard('pdf', 'all')}
                     className="block w-full px-3.5 py-2 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-50 disabled:opacity-50"
                   >
-                    Export as PNG
+                    Export PDF — all pages
+                  </button>
+                  <button
+                    role="menuitem"
+                    disabled={exporting}
+                    onClick={() => void exportBoard('png')}
+                    className="block w-full px-3.5 py-2 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-50 disabled:opacity-50"
+                  >
+                    Export PNG (this page)
                   </button>
                 </div>
               </>

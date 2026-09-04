@@ -51,6 +51,7 @@ import {
   BuzzerQuestionModal,
   type NewBuzzerQuestion,
 } from './buzzer-question-modal';
+import { BuzzerPickerModal } from './buzzer-picker-modal';
 import {
   LiveHifzPanel,
   submitHifzDraft,
@@ -300,6 +301,9 @@ export function ClassRoom({
   // round as soon as the new question saves (the empty-state flow).
   const [buzzerForm, setBuzzerForm] = useState(false);
   const [startBuzzerOnCreate, setStartBuzzerOnCreate] = useState(false);
+  // Picker modal: on "Start buzzer" the instructor chooses which authored
+  // question to broadcast (rather than it always firing the first one).
+  const [buzzerPicker, setBuzzerPicker] = useState(false);
   const [panel, setPanel] = useState<
     'chat' | 'people' | 'points' | 'hifz' | 'work' | 'coding' | 'curriculum' | null
   >('chat');
@@ -752,8 +756,15 @@ export function ClassRoom({
       setBuzzerForm(true);
       return;
     }
-    const questionId = selectedQuestion || questions[0].id;
+    // Let the instructor choose which question to broadcast.
+    setBuzzerPicker(true);
+  };
+
+  // Broadcast a specific buzzer question (from the picker or the side panel).
+  const broadcastBuzzer = (questionId: string) => {
     socketRef.current?.emit('buzzer:start', { sessionId, questionId });
+    setSelectedQuestion(questionId);
+    setBuzzerPicker(false);
     setPanel('points');
   };
 
@@ -1906,6 +1917,21 @@ export function ClassRoom({
           </div>
         )}
       </footer>
+
+      {/* Buzzer round launcher — pick which authored question to broadcast. */}
+      {isInstructor && buzzerPicker && (
+        <BuzzerPickerModal
+          questions={questions}
+          disabled={buzzer?.phase === 'QUESTION_OPEN'}
+          onPick={broadcastBuzzer}
+          onClose={() => setBuzzerPicker(false)}
+          onCreateNew={() => {
+            setBuzzerPicker(false);
+            setStartBuzzerOnCreate(false);
+            setBuzzerForm(true);
+          }}
+        />
+      )}
 
       {/* Create-a-buzzer-question modal (instructor) */}
       {isInstructor && buzzerForm && (
