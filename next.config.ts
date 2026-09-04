@@ -9,12 +9,11 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: 'images.unsplash.com' },
     ],
   },
-  // Type-check + lint run locally (and should in CI) before every deploy, so
-  // repeating them inside `next build` only adds the slowest, most memory-hungry
-  // phase to the Docker build on the small staging/prod box. Skip them here.
-  // NOTE: this means a type/lint error won't FAIL the server build — the local
-  // `tsc --noEmit` + ESLint gate before pushing is what keeps that honest.
-  eslint: { ignoreDuringBuilds: true },
+  // Type-check runs locally (and should in CI) before every deploy, so repeating
+  // it inside `next build` only adds the slowest, most memory-hungry phase to the
+  // Docker build on the small staging/prod box. Skip it here.
+  // NOTE: a type error won't FAIL the server build — the local `tsc --noEmit`
+  // gate before pushing is what keeps that honest.
   typescript: { ignoreBuildErrors: true },
 };
 
