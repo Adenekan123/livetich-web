@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useActionState } from 'react';
 import { register, type AuthFormState } from '@/app/actions/auth';
 import { SubmitButton } from '@/components/submit-button';
@@ -61,6 +62,16 @@ export function JoinForm({ inviteToken }: { inviteToken: string }) {
       <SubmitButton size="lg" className="w-full" pendingLabel="Creating account…">
         Create account
       </SubmitButton>
+
+      <p className="text-center text-sm text-neutral-500">
+        Already have an account?{' '}
+        <Link
+          href={`/login?next=${encodeURIComponent(`/join/${inviteToken}`)}`}
+          className="font-semibold text-signal-700 hover:text-signal-600"
+        >
+          Log in to join
+        </Link>
+      </p>
     </form>
   );
 }

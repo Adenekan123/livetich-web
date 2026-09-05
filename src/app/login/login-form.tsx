@@ -10,11 +10,12 @@ import { inputClassLg, labelClassLg } from '@/lib/ui';
 
 const initial: AuthFormState = { error: null };
 
-export function LoginForm() {
+export function LoginForm({ next }: { next?: string }) {
   const [state, action] = useActionState(login, initial);
   return (
     <form action={action} className="mt-8 space-y-6">
       <FormError message={state.error} />
+      {next && <input type="hidden" name="next" value={next} />}
       <div className="space-y-2">
         <label htmlFor="email" className={labelClassLg}>
           Email

@@ -42,7 +42,11 @@ export async function login(
     throw e;
   }
   await setToken(result.accessToken);
-  redirect(result.user.emailVerified ? '/dashboard' : '/verify-email');
+  // Honour a safe internal `next` (e.g. returning to a /join/<token> invite the
+  // user opened while logged out), else land on the dashboard.
+  const next = String(formData.get('next') ?? '');
+  const dest = next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard';
+  redirect(result.user.emailVerified ? dest : '/verify-email');
 }
 
 /** Student/instructor signup via an org invite link (token from the join page). */

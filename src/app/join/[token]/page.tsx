@@ -90,8 +90,11 @@ export default async function JoinPage(props: {
       footer={
         <p className="mt-6 text-sm text-neutral-500">
           Already have an account?{' '}
-          <Link href="/login" className="font-semibold text-signal-700 hover:text-signal-600">
-            Log in
+          <Link
+            href={`/login?next=${encodeURIComponent(`/join/${token}`)}`}
+            className="font-semibold text-signal-700 hover:text-signal-600"
+          >
+            Log in to join
           </Link>
         </p>
       }
