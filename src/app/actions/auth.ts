@@ -95,6 +95,67 @@ export async function registerOrganization(
   redirect(result.user.emailVerified ? '/dashboard' : '/verify-email');
 }
 
+/** Switch the active workspace, swap in the fresh (org-scoped) token, reload. */
+export async function switchWorkspace(organizationId: string): Promise<void> {
+  const token = (await cookies()).get(TOKEN_COOKIE)?.value;
+  if (!token) redirect('/login');
+  const res = await api<AuthResult>('/auth/switch-workspace', {
+    method: 'POST',
+    token,
+    body: { organizationId },
+  });
+  await setToken(res.accessToken);
+  redirect('/dashboard');
+}
+
+export interface WorkspaceActionState {
+  error: string | null;
+}
+
+/** Join another workspace via an invite, on the CURRENT account (no new
+ *  account). Redirects into the joined workspace on success. */
+export async function joinWorkspace(
+  inviteToken: string,
+): Promise<WorkspaceActionState> {
+  const token = (await cookies()).get(TOKEN_COOKIE)?.value;
+  if (!token) redirect('/login');
+  let res: AuthResult;
+  try {
+    res = await api<AuthResult>('/auth/join-workspace', {
+      method: 'POST',
+      token,
+      body: { inviteToken },
+    });
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.message };
+    throw e;
+  }
+  await setToken(res.accessToken);
+  redirect('/dashboard');
+}
+
+/** Create a new teaching space on the CURRENT account (become its admin). */
+export async function createWorkspace(
+  _prev: WorkspaceActionState,
+  formData: FormData,
+): Promise<WorkspaceActionState> {
+  const token = (await cookies()).get(TOKEN_COOKIE)?.value;
+  if (!token) redirect('/login');
+  let res: AuthResult;
+  try {
+    res = await api<AuthResult>('/auth/create-workspace', {
+      method: 'POST',
+      token,
+      body: { organizationName: formData.get('organizationName') },
+    });
+  } catch (e) {
+    if (e instanceof ApiError) return { error: e.message };
+    throw e;
+  }
+  await setToken(res.accessToken);
+  redirect('/dashboard');
+}
+
 export interface PasswordFormState {
   error: string | null;
   ok?: boolean;

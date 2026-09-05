@@ -1,10 +1,10 @@
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 import { AuthShell } from '@/components/auth-shell';
 import { api } from '@/lib/api';
 import { getCurrentUser } from '@/lib/auth';
 import type { InviteResolution } from '@/lib/types';
 import { JoinForm } from './join-form';
+import { JoinWorkspaceButton } from './join-workspace-button';
 
 export const metadata = { title: 'Join — livetich' };
 
@@ -12,8 +12,9 @@ export default async function JoinPage(props: {
   params: Promise<{ token: string }>;
 }) {
   const { token } = await props.params;
-  if (await getCurrentUser().catch(() => null)) redirect('/dashboard');
-
+  // Resolve the invite first — it's shown to both signed-in and signed-out
+  // visitors (a signed-in user joins on their existing account rather than
+  // being bounced to their dashboard, which is the multi-workspace fix).
   let res: InviteResolution;
   try {
     res = await api<InviteResolution>(`/invites/${token}`);
@@ -48,6 +49,38 @@ export default async function JoinPage(props: {
   }
 
   const roleLabel = res.role === 'INSTRUCTOR' ? 'instructor' : 'student';
+  const user = await getCurrentUser().catch(() => null);
+
+  // Signed in already: join this workspace on the existing account — no second
+  // signup. (Previously a signed-in visitor was bounced to their dashboard and
+  // could never accept the invite.)
+  if (user) {
+    return (
+      <AuthShell
+        title={`Join ${res.organization.name}`}
+        subtitle={`Add this ${roleLabel} workspace to your account — no new signup needed.`}
+        footer={
+          <p className="mt-6 text-sm text-neutral-500">
+            Signed in as{' '}
+            <span className="font-medium text-neutral-700">{user.email}</span>.{' '}
+            <Link
+              href="/login"
+              className="font-semibold text-signal-700 hover:text-signal-600"
+            >
+              Use a different account
+            </Link>
+          </p>
+        }
+      >
+        <JoinWorkspaceButton
+          inviteToken={token}
+          orgName={res.organization.name}
+          roleLabel={roleLabel}
+        />
+      </AuthShell>
+    );
+  }
+
   return (
     <AuthShell
       title={`Join ${res.organization.name}`}
