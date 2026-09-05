@@ -150,7 +150,7 @@ function JoinLiveButton({ sessionId }: { sessionId: string }) {
   );
 }
 
-function CohortCard({ c }: { c: ClassItem }) {
+function CohortCard({ c, isAdmin = false }: { c: ClassItem; isAdmin?: boolean }) {
   const dim = c.status === 'COMPLETED';
   return (
     <div
@@ -239,7 +239,16 @@ function CohortCard({ c }: { c: ClassItem }) {
           {c.enrollments} {c.enrollments === 1 ? 'student' : 'students'}
         </span>
         {c.isLive && c.liveSessionId ? (
-          <JoinLiveButton sessionId={c.liveSessionId} />
+          isAdmin ? (
+            // Admins pick Shadow vs Join-as-instructor on the program page — a
+            // bare "Join live" that drops them straight into the room is
+            // confusing (and can put them in as the presenter unintentionally).
+            <Link href={`/courses/${c.courseId}`} className={btn('primary', 'sm')}>
+              Join live →
+            </Link>
+          ) : (
+            <JoinLiveButton sessionId={c.liveSessionId} />
+          )
         ) : (
           <Link href={`/courses/${c.courseId}`} className={btn('secondary', 'sm')}>
             {c.status === 'COMPLETED' ? 'View' : 'View program'}
@@ -374,11 +383,11 @@ function FilterTabs<T extends string>({
   );
 }
 
-function CardGrid({ items }: { items: ClassItem[] }) {
+function CardGrid({ items, isAdmin = false }: { items: ClassItem[]; isAdmin?: boolean }) {
   return (
     <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
       {items.map((c) => (
-        <CohortCard key={c.courseId} c={c} />
+        <CohortCard key={c.courseId} c={c} isAdmin={isAdmin} />
       ))}
     </div>
   );
@@ -495,7 +504,7 @@ function AdminBrowser({ classes, canCreate }: { classes: ClassItem[]; canCreate:
       </p>
 
       {filtered.length > 0 ? (
-        <CardGrid items={filtered} />
+        <CardGrid items={filtered} isAdmin />
       ) : classes.length === 0 ? (
         <EmptyCatalog canCreate={canCreate} />
       ) : (

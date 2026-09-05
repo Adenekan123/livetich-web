@@ -51,3 +51,6 @@ public/livetich lgog.png
 /playwright-report/
 /e2e/.auth/
 /e2e/fixtures/
+
+# Explainer-video draft recordings (large binaries)
+recordings/

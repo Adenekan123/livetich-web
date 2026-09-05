@@ -53,16 +53,31 @@ export function JoinLiveCard({
     join();
   }
 
-  const when = nextAt
-    ? new Date(nextAt).toLocaleString(undefined, {
-        weekday: 'long',
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
+  // Guarded: an invalid/unsupported timezone (e.g. a stray "GMT+1") makes
+  // toLocaleString throw, which would crash this card on render/hydration and
+  // leave the Join button un-clickable. Fall back to the viewer's local zone.
+  const when = ((): string | null => {
+    if (!nextAt) return null;
+    const opts: Intl.DateTimeFormatOptions = {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    };
+    try {
+      return new Date(nextAt).toLocaleString(undefined, {
+        ...opts,
         timeZone: timezone ?? undefined,
-      })
-    : null;
+      });
+    } catch {
+      try {
+        return new Date(nextAt).toLocaleString(undefined, opts);
+      } catch {
+        return null;
+      }
+    }
+  })();
 
   return (
     <div className="mt-3 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6">

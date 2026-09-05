@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useMemo, useState } from 'react';
 import { createCourse, type ActionState } from '@/app/actions/courses';
 import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
@@ -151,6 +151,31 @@ function todayLocal(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+/** The browser's IANA timezone (e.g. "Africa/Lagos"), or Lagos as a fallback. */
+function detectTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Lagos';
+  } catch {
+    return 'Africa/Lagos';
+  }
+}
+
+/** "Lagos (GMT+1)" — city + current offset, so a wrong zone is obvious. */
+function tzLabel(tz: string): string {
+  const city = tz.split('/').pop()?.replace(/_/g, ' ') ?? tz;
+  try {
+    const offset = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      timeZoneName: 'shortOffset',
+    })
+      .formatToParts(new Date())
+      .find((p) => p.type === 'timeZoneName')?.value;
+    return offset ? `${city} (${offset})` : city;
+  } catch {
+    return city;
+  }
+}
+
 /** Create-program form (used inside the New program modal on /courses). */
 export function NewProgramForm() {
   const [state, action] = useActionState(createCourse, initial);
@@ -159,6 +184,17 @@ export function NewProgramForm() {
   // and "Join"/"Go live" stays disabled from the first render. The admin can
   // still push it to a future start.
   const today = todayLocal();
+  // Default the timezone to the creator's own zone so meeting times line up with
+  // their clock. The reported bug: a time picked in local wall-clock while the
+  // program sat on a different GMT offset slid the join window hours away, so
+  // "Join" looked broken. SSR-safe default (Lagos), swapped to the detected zone
+  // on mount; the offset is shown in the label so a wrong zone is obvious.
+  const [timezone, setTimezone] = useState('Africa/Lagos');
+  useEffect(() => setTimezone(detectTimezone()), []);
+  const tzOptions = useMemo(
+    () => (TIMEZONES.includes(timezone) ? TIMEZONES : [timezone, ...TIMEZONES]),
+    [timezone],
+  );
   return (
     <form action={action} className="space-y-4">
       <FormError message={state.error} />
@@ -243,15 +279,20 @@ export function NewProgramForm() {
           <select
             id="timezone"
             name="timezone"
-            defaultValue="Africa/Lagos"
+            value={timezone}
+            onChange={(e) => setTimezone(e.target.value)}
             className={inputClass}
           >
-            {TIMEZONES.map((tz) => (
+            {tzOptions.map((tz) => (
               <option key={tz} value={tz}>
-                {tz.split('/').pop()?.replace(/_/g, ' ')}
+                {tzLabel(tz)}
               </option>
             ))}
           </select>
+          <p className="text-xs text-neutral-400">
+            Class times are in this timezone — defaulted to yours. Change it only
+            if your students meet in a different zone.
+          </p>
         </div>
       </div>
 
