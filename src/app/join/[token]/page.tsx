@@ -99,7 +99,7 @@ export default async function JoinPage(props: {
         </p>
       }
     >
-      <JoinForm inviteToken={token} />
+      <JoinForm inviteToken={token} orgName={res.organization.name} />
     </AuthShell>
   );
 }

@@ -10,11 +10,29 @@ import { inputClass, labelClass } from '@/lib/ui';
 
 const initial: AuthFormState = { error: null };
 
-export function JoinForm({ inviteToken }: { inviteToken: string }) {
+export function JoinForm({
+  inviteToken,
+  orgName,
+}: {
+  inviteToken: string;
+  orgName: string;
+}) {
   const [state, action] = useActionState(register, initial);
+  const loginHref = `/login?next=${encodeURIComponent(`/join/${inviteToken}`)}`;
   return (
     <form action={action} className="mt-8 space-y-5">
-      <FormError message={state.error} />
+      {state.emailTaken ? (
+        // The email already has an account — turn the dead-end error into a
+        // one-click path to sign in and join this workspace.
+        <div className="rounded-xl border border-signal-200 bg-signal-50 px-4 py-3 text-sm text-signal-800">
+          That email is already registered.{' '}
+          <Link href={loginHref} className="font-semibold underline hover:text-signal-600">
+            Log in to join {orgName} →
+          </Link>
+        </div>
+      ) : (
+        <FormError message={state.error} />
+      )}
       <input type="hidden" name="inviteToken" value={inviteToken} />
 
       <div className="space-y-1.5">
@@ -62,16 +80,6 @@ export function JoinForm({ inviteToken }: { inviteToken: string }) {
       <SubmitButton size="lg" className="w-full" pendingLabel="Creating account…">
         Create account
       </SubmitButton>
-
-      <p className="text-center text-sm text-neutral-500">
-        Already have an account?{' '}
-        <Link
-          href={`/login?next=${encodeURIComponent(`/join/${inviteToken}`)}`}
-          className="font-semibold text-signal-700 hover:text-signal-600"
-        >
-          Log in to join
-        </Link>
-      </p>
     </form>
   );
 }

@@ -8,6 +8,10 @@ import type { AuthResult } from '@/lib/types';
 
 export interface AuthFormState {
   error: string | null;
+  // Set when signup failed because the email is already registered (409). The
+  // join form uses this to offer a "log in to join" recovery instead of a dead
+  // end — the visitor already has an account, they just need to sign in.
+  emailTaken?: boolean;
 }
 
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 7; // matches the API's 7d JWT expiry
@@ -66,7 +70,9 @@ export async function register(
       },
     });
   } catch (e) {
-    if (e instanceof ApiError) return { error: e.message };
+    if (e instanceof ApiError) {
+      return { error: e.message, emailTaken: e.status === 409 };
+    }
     throw e;
   }
   await setToken(result.accessToken);
