@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { joinLiveSession } from '@/app/actions/courses';
+import { RefreshButton } from '@/components/refresh-button';
 import { btn, cn } from '@/lib/ui';
 
 /**
@@ -114,6 +115,15 @@ export function JoinLiveCard({
                 ? `Next session: ${when}`
                 : 'No upcoming sessions scheduled.'}
           </p>
+          {/* Waiting for class to start? Re-check live status in place instead
+              of reloading the whole page. */}
+          {!joinableNow && (
+            <RefreshButton
+              label="Check again"
+              title="Check if the class has started"
+              className="mt-3"
+            />
+          )}
         </div>
 
         {canJoin && (

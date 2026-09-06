@@ -23,6 +23,7 @@ import {
   relLabel,
   type CohortStatus,
 } from '../courses/catalog-lib';
+import { RefreshButton } from '@/components/refresh-button';
 import { CertificateDownload } from './certificate-download';
 
 export const metadata = { title: 'Dashboard - livetich' };
@@ -372,9 +373,12 @@ function DashHead({ title, subtitle }: { title: string; subtitle: string }) {
         <h1 className="text-[30px] font-extrabold tracking-tight text-neutral-950">{title}</h1>
         <p className="mt-1 text-[20px] text-neutral-500">{subtitle}</p>
       </div>
-      <span className="rounded-full border border-neutral-200 bg-white px-3 py-1.5 font-mono text-[18px] font-bold text-neutral-500">
-        {todayPill()}
-      </span>
+      <div className="flex items-center gap-2">
+        <span className="rounded-full border border-neutral-200 bg-white px-3 py-1.5 font-mono text-[18px] font-bold text-neutral-500">
+          {todayPill()}
+        </span>
+        <RefreshButton title="Refresh dashboard" />
+      </div>
     </div>
   );
 }

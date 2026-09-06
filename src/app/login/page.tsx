@@ -6,8 +6,13 @@ import { LoginForm } from './login-form';
 
 export const metadata = { title: 'Log in - livetich' };
 
-export default async function LoginPage() {
-  if (await getCurrentUser().catch(() => null)) redirect('/dashboard');
+export default async function LoginPage(props: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  const { next } = await props.searchParams;
+  const safeNext =
+    next && next.startsWith('/') && !next.startsWith('//') ? next : undefined;
+  if (await getCurrentUser().catch(() => null)) redirect(safeNext ?? '/dashboard');
   return (
     <AuthShell
       title="Welcome back"
@@ -30,7 +35,7 @@ export default async function LoginPage() {
         </div>
       }
     >
-      <LoginForm />
+      <LoginForm next={safeNext} />
     </AuthShell>
   );
 }

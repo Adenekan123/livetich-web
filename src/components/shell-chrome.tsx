@@ -22,6 +22,7 @@ import { avatarColor, cn, initials } from '@/lib/ui';
 import { BrandLogo } from './brand-logo';
 import { IdleLogout } from './idle-logout';
 import { LogoutButton } from './logout-button';
+import { WorkspaceSwitcher, type Workspace } from './workspace-switcher';
 
 /*
  * Direction B app shell — a persistent dark sidebar for the dashboard + account
@@ -76,10 +77,14 @@ export interface ShellOrg {
 export function ShellChrome({
   user,
   org,
+  workspaces = [],
+  activeOrgId = null,
   children,
 }: {
   user: ShellUser;
   org: ShellOrg | null;
+  workspaces?: Workspace[];
+  activeOrgId?: string | null;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -127,25 +132,36 @@ export function ShellChrome({
         )}
       </div>
 
-      {org && (
-        <div className="mb-3 flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.06] px-2.5 py-2">
-          {org.logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={org.logoUrl} alt="" className="h-7 w-7 shrink-0 rounded-md object-cover" />
-          ) : (
-            <span
-              className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-[14px] font-extrabold text-white"
-              style={{ backgroundColor: org.primaryColor ?? '#0d9488' }}
-              aria-hidden
-            >
-              {initials(org.name)}
-            </span>
-          )}
-          <div className="min-w-0">
-            <p className="truncate text-[16.5px] font-bold text-white">{org.name}</p>
-            <p className="text-[12.5px] font-medium text-white/45">Workspace</p>
+      {workspaces.length > 0 ? (
+        <WorkspaceSwitcher
+          workspaces={workspaces}
+          activeOrgId={activeOrgId}
+          activeName={org?.name ?? 'Workspace'}
+          logoUrl={org?.logoUrl ?? null}
+          primaryColor={org?.primaryColor ?? null}
+          onNavigate={onNavigate}
+        />
+      ) : (
+        org && (
+          <div className="mb-3 flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.06] px-2.5 py-2">
+            {org.logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={org.logoUrl} alt="" className="h-7 w-7 shrink-0 rounded-md object-cover" />
+            ) : (
+              <span
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-[14px] font-extrabold text-white"
+                style={{ backgroundColor: org.primaryColor ?? '#0d9488' }}
+                aria-hidden
+              >
+                {initials(org.name)}
+              </span>
+            )}
+            <div className="min-w-0">
+              <p className="truncate text-[16.5px] font-bold text-white">{org.name}</p>
+              <p className="text-[12.5px] font-medium text-white/45">Workspace</p>
+            </div>
           </div>
-        </div>
+        )
       )}
 
       <nav className="flex flex-col gap-0.5">

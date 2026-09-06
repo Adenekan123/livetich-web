@@ -2,6 +2,7 @@ import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import type { Organization, SessionUser } from '@/lib/types';
 import { ShellChrome } from './shell-chrome';
+import type { Workspace } from './workspace-switcher';
 
 /**
  * Server wrapper for the Direction B dashboard shell: resolves the org brand
@@ -16,11 +17,13 @@ export async function DashboardShell({
   children: React.ReactNode;
 }) {
   let org: Organization | null = null;
+  let workspaces: Workspace[] = [];
   if (user.organizationId) {
     const token = await getToken();
-    org = await api<Organization | null>('/organizations/me', { token }).catch(
-      () => null,
-    );
+    [org, workspaces] = await Promise.all([
+      api<Organization | null>('/organizations/me', { token }).catch(() => null),
+      api<Workspace[]>('/auth/workspaces', { token }).catch(() => []),
+    ]);
   }
 
   return (
@@ -36,6 +39,8 @@ export async function DashboardShell({
           ? { name: org.name, logoUrl: org.logoUrl, primaryColor: org.primaryColor }
           : null
       }
+      workspaces={workspaces}
+      activeOrgId={user.organizationId ?? null}
     >
       {children}
     </ShellChrome>
