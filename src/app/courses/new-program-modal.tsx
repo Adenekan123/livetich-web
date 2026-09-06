@@ -36,7 +36,7 @@ export function NewProgramButton() {
             role="dialog"
             aria-modal="true"
             aria-label="New program"
-            className="my-4 w-full max-w-lg rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl sm:my-8"
+            className="my-4 w-full max-w-lg rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl sm:my-8 lg:max-w-3xl lg:p-8"
           >
             <div className="flex items-center justify-between">
               <h2 className="font-display text-xl font-extrabold tracking-tight text-neutral-950">

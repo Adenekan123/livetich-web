@@ -7,6 +7,7 @@ import { FormError } from '@/components/form-error';
 import { inputClass, labelClass } from '@/lib/ui';
 import { DurationField } from './duration-field';
 import { MeetingSchedule } from './meeting-schedule';
+import { COURSE_CATEGORIES } from './catalog-lib';
 
 interface BatchRow {
   label: string;
@@ -238,11 +239,9 @@ export function NewProgramForm() {
             className={inputClass}
           />
           <datalist id="course-categories">
-            <option value="Software Engineering" />
-            <option value="Design" />
-            <option value="Business" />
-            <option value="Data" />
-            <option value="Languages" />
+            {COURSE_CATEGORIES.map((c) => (
+              <option key={c} value={c} />
+            ))}
           </datalist>
         </div>
         <div className="space-y-1.5">
