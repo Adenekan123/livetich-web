@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link, { useLinkStatus } from 'next/link';
 import { btn, cn } from '@/lib/ui';
+import { RefreshButton } from '@/components/refresh-button';
 import type { ClassItem, CohortStatus } from './catalog-lib';
 import { NewProgramButton } from './new-program-modal';
 
@@ -280,7 +281,10 @@ function PageHeader({
         <h1 className="font-display text-3xl font-extrabold tracking-tight text-neutral-950 sm:text-4xl">
           Programs
         </h1>
-        {canCreate && <NewProgramButton />}
+        <div className="flex shrink-0 items-center gap-2">
+          <RefreshButton title="Refresh programs" />
+          {canCreate && <NewProgramButton />}
+        </div>
       </div>
       <p className="mt-2 max-w-2xl text-sm leading-relaxed text-neutral-500">{subtitle}</p>
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
