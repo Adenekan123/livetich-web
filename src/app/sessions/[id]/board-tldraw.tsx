@@ -545,8 +545,17 @@ export function BoardTldraw({
       }
     };
 
-    const applyPresenterView = () => {
+    const applyPresenterView = (attempt = 0) => {
       if (canDraw || !followingRef.current) return;
+      // Same viewport-timing guard as fitContent: fitting before the editor has
+      // measured its container clamps the zoom to the minimum. This matters most
+      // for a presenter view *replayed on join* (the server now sends the last
+      // view immediately), which can arrive before the board is measured/visible.
+      const vsb = editor.getViewportScreenBounds();
+      if ((!vsb || vsb.w < 10 || vsb.h < 10) && attempt < 30) {
+        requestAnimationFrame(() => applyPresenterView(attempt + 1));
+        return;
+      }
       const page = presenterPageRef.current as
         | Parameters<typeof editor.getPage>[0]
         | null;
