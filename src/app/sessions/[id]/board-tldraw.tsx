@@ -1122,7 +1122,12 @@ export function BoardTldraw({
         .tlui-main-toolbar--horizontal .tlui-main-toolbar__inner {
           flex-direction: column;
         }
-        .tlui-main-toolbar .tlui-toolbar { flex-direction: column; }
+        /* Stack the tool buttons vertically (overflow into the "more" popup
+           still works — it stays width-based, so only a few show + the chevron). */
+        .tlui-main-toolbar__tools,
+        .tlui-main-toolbar__tools .tlui-row {
+          flex-direction: column;
+        }
         .tlui-layout__bottom { align-items: flex-start; }
       `}</style>
       <Tldraw store={store} onMount={handleMount} licenseKey={licenseKey} />
