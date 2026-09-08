@@ -690,14 +690,43 @@ export function BoardTldraw({
     // capped, resetting on a good connect. Mirrors the room socket (see #5).
     let authRetries = 0;
     const MAX_AUTH_RETRIES = 2;
-    socket.on('connect', () => {
-      // Re-emitted on reconnect too, so a dropped/rejoined student re-syncs via
-      // the board:state that follows.
-      authRetries = 0;
+    let boardJoined = false;
+    let joinTimer: ReturnType<typeof setTimeout> | undefined;
+    const clearJoinRetry = () => {
+      if (joinTimer) {
+        clearTimeout(joinTimer);
+        joinTimer = undefined;
+      }
+    };
+    // Canvas mount is independent from the socket's board-state handshake. On
+    // a page reload, drawing can begin while the viewer is reconnecting; retry
+    // the idempotent join until the server confirms state so that viewer cannot
+    // remain silently out of sync.
+    const joinBoard = () => {
+      if (!socket.connected) return;
       socket.emit('board:join', {
         sessionId,
         ...(teaching ? { as: 'teach' as const } : {}),
       });
+      clearJoinRetry();
+      joinTimer = setTimeout(() => {
+        if (!boardJoined) joinBoard();
+      }, 2_000);
+    };
+    const markBoardJoined = () => {
+      boardJoined = true;
+      clearJoinRetry();
+    };
+    socket.on('connect', () => {
+      // Re-emitted on reconnect too, so a dropped/rejoined student re-syncs via
+      // the board:state that follows.
+      authRetries = 0;
+      boardJoined = false;
+      joinBoard();
+    });
+    socket.on('disconnect', () => {
+      boardJoined = false;
+      clearJoinRetry();
     });
     // The gateway emits a custom 'error' (e.g. UNAUTHORIZED) before disconnecting.
     (socket as unknown as {
@@ -711,8 +740,12 @@ export function BoardTldraw({
         }, 600);
       }
     });
-    socket.on('board:writable', (p) => setBoardOpen(p.open));
+    socket.on('board:writable', (p) => {
+      markBoardJoined();
+      setBoardOpen(p.open);
+    });
     socket.on('board:state', (p) => {
+      markBoardJoined();
       applyRemote(p.update);
       reconcile();
     });
@@ -884,6 +917,7 @@ export function BoardTldraw({
 
     return () => {
       clearTimeout(initTimer);
+      clearJoinRetry();
       if (presenterTimer) clearInterval(presenterTimer);
       el?.removeEventListener('pointerenter', onEnter);
       el?.removeEventListener('pointerleave', onLeave);
@@ -1111,24 +1145,36 @@ export function BoardTldraw({
       {/* Move tldraw's main toolbar off the bottom-centre (where it covered the
           lower part of the drawing) to a compact cluster on the left edge. */}
       <style>{`
-        .tlui-main-toolbar {
-          position: absolute;
-          left: 6px;
-          top: 50%;
-          bottom: auto;
-          transform: translateY(-50%);
-          width: auto;
+        /* Desktop/tablet only — on phones (narrow viewport) tldraw's own bottom
+           toolbar is the right layout, and forcing it left/vertical there turned
+           it into a tall column overlapping the board. */
+        @media (min-width: 768px) {
+          .tlui-main-toolbar {
+            position: absolute;
+            left: 6px;
+            top: 50%;
+            bottom: auto;
+            transform: translateY(-50%);
+            /*
+             * OverflowingToolbar calculates how many controls to expose from
+             * this element's width. Once its contents are stacked, auto width
+             * shrinks to one button and hides nearly every tool. Reserve the
+             * native maximum so the full palette remains available.
+             */
+            width: 470px;
+            justify-content: flex-start;
+          }
+          .tlui-main-toolbar--horizontal .tlui-main-toolbar__inner {
+            flex-direction: column;
+          }
+          /* Stack the tool buttons vertically (overflow into the "more" popup
+             still works — it stays width-based, only a few show + the chevron). */
+          .tlui-main-toolbar__tools,
+          .tlui-main-toolbar__tools .tlui-row {
+            flex-direction: column;
+          }
+          .tlui-layout__bottom { align-items: flex-start; }
         }
-        .tlui-main-toolbar--horizontal .tlui-main-toolbar__inner {
-          flex-direction: column;
-        }
-        /* Stack the tool buttons vertically (overflow into the "more" popup
-           still works — it stays width-based, so only a few show + the chevron). */
-        .tlui-main-toolbar__tools,
-        .tlui-main-toolbar__tools .tlui-row {
-          flex-direction: column;
-        }
-        .tlui-layout__bottom { align-items: flex-start; }
       `}</style>
       <Tldraw store={store} onMount={handleMount} licenseKey={licenseKey} />
 
