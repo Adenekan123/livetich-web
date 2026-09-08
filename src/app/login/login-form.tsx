@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState } from 'react';
+import { useActionState, useEffect } from 'react';
 import { login, type AuthFormState } from '@/app/actions/auth';
+import { clearRealtimeToken } from '@/lib/client-token';
 import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
 import { PasswordInput } from '@/components/password-input';
@@ -12,6 +13,14 @@ const initial: AuthFormState = { error: null };
 
 export function LoginForm({ next }: { next?: string }) {
   const [state, action] = useActionState(login, initial);
+  // Drop any realtime token cached in this tab from a previous session. logout
+  // deletes the cookie and client-navigates here WITHOUT a full reload, so the
+  // in-memory cache would otherwise survive — and the next user's sockets would
+  // authenticate as the previous user (the "instructor will join you soon" even
+  // though they're present, until the 12-min TTL lapsed / logins were retried).
+  useEffect(() => {
+    clearRealtimeToken();
+  }, []);
   return (
     <form action={action} className="mt-8 space-y-6">
       <FormError message={state.error} />
