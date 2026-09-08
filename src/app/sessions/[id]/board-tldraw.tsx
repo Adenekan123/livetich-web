@@ -1118,7 +1118,7 @@ export function BoardTldraw({
         disabled={resyncing}
         aria-label="Resync board"
         title="Board stuck or blank? Tap to resync"
-        className="pointer-events-auto absolute bottom-3 right-14 z-[402] grid h-9 w-9 place-items-center rounded-lg bg-white/90 text-neutral-700 shadow ring-1 ring-neutral-200 backdrop-blur transition hover:bg-white hover:text-neutral-900 disabled:opacity-60"
+        className="pointer-events-auto absolute bottom-16 right-14 z-[402] grid h-9 w-9 place-items-center rounded-lg bg-white/90 text-neutral-700 shadow ring-1 ring-neutral-200 backdrop-blur transition hover:bg-white hover:text-neutral-900 disabled:opacity-60"
       >
         <PiArrowsClockwiseBold
           className={`h-[18px] w-[18px] ${resyncing ? 'animate-spin' : ''}`}
@@ -1133,7 +1133,7 @@ export function BoardTldraw({
         onClick={() => setFullscreen((f) => !f)}
         aria-label={fullscreen ? 'Exit full screen' : 'Full screen'}
         title={fullscreen ? 'Exit full screen (Esc)' : 'Full screen'}
-        className="pointer-events-auto absolute bottom-3 right-3 z-[402] grid h-9 w-9 place-items-center rounded-lg bg-white/90 text-neutral-700 shadow ring-1 ring-neutral-200 backdrop-blur transition hover:bg-white hover:text-neutral-900"
+        className="pointer-events-auto absolute bottom-16 right-3 z-[402] grid h-9 w-9 place-items-center rounded-lg bg-white/90 text-neutral-700 shadow ring-1 ring-neutral-200 backdrop-blur transition hover:bg-white hover:text-neutral-900"
       >
         {fullscreen ? (
           <svg viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" aria-hidden>
