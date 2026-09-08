@@ -1108,6 +1108,23 @@ export function BoardTldraw({
           : 'relative isolate h-full min-h-[320px] overflow-hidden rounded-xl border border-neutral-300 bg-white'
       }
     >
+      {/* Move tldraw's main toolbar off the bottom-centre (where it covered the
+          lower part of the drawing) to a compact cluster on the left edge. */}
+      <style>{`
+        .tlui-main-toolbar {
+          position: absolute;
+          left: 6px;
+          top: 50%;
+          bottom: auto;
+          transform: translateY(-50%);
+          width: auto;
+        }
+        .tlui-main-toolbar--horizontal .tlui-main-toolbar__inner {
+          flex-direction: column;
+        }
+        .tlui-main-toolbar .tlui-toolbar { flex-direction: column; }
+        .tlui-layout__bottom { align-items: flex-start; }
+      `}</style>
       <Tldraw store={store} onMount={handleMount} licenseKey={licenseKey} />
 
       {/* Resync — everyone. If the board ever looks stuck or blank, this rebuilds
