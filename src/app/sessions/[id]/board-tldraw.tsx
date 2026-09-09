@@ -128,6 +128,9 @@ function loadPdfjs() {
 // synced PNG asset) or freeze a low-end device mid-class.
 const PDF_MAX_PAGES = 30;
 const PDF_TARGET_WIDTH = 1600; // px on the long edge — legible without being huge
+// Freehand drawing changes a tldraw shape many times per second. Coalescing
+// those mutations keeps the shared-board transport responsive on modest devices.
+const BOARD_SYNC_INTERVAL_MS = 50;
 
 /**
  * Rasterise a PDF into one PNG File per page, so document/slide imports land on
@@ -846,27 +849,53 @@ export function BoardTldraw({
     };
     yStore.observe(onYChange);
 
-    // tldraw -> yjs: mirror the user's document changes into the Y.Map. Guarded
-    // so a mirror failure can't propagate out of tldraw's store listener and
-    // wedge local editing (this listener also fires for the user's own drawing).
+    // tldraw -> yjs: mirror the user's document changes into the Y.Map. A
+    // freehand stroke mutates its shape many times per second; synchronizing
+    // each point independently overwhelmed slower student devices with a large
+    // queue of redundant record revisions. Keep only the latest mutation for
+    // each record, then send it at a responsive 20 fps cadence.
+    const pendingUpserts = new Map<TLRecord['id'], TLRecord>();
+    const pendingDeletes = new Set<TLRecord['id']>();
+    let localSyncTimer: ReturnType<typeof setTimeout> | undefined;
+    const flushLocalChanges = () => {
+      if (localSyncTimer) {
+        clearTimeout(localSyncTimer);
+        localSyncTimer = undefined;
+      }
+      if (pendingUpserts.size === 0 && pendingDeletes.size === 0) return;
+      const upserts = [...pendingUpserts.values()];
+      const deletes = [...pendingDeletes];
+      pendingUpserts.clear();
+      pendingDeletes.clear();
+      try {
+        doc.transact(() => {
+          for (const id of deletes) yStore.delete(id);
+          for (const record of upserts) yStore.set(record.id, record);
+        }, LOCAL);
+      } catch {
+        // A failed mirror must not break the local board.
+      }
+    };
+    const scheduleLocalSync = () => {
+      if (localSyncTimer) return;
+      localSyncTimer = setTimeout(flushLocalChanges, BOARD_SYNC_INTERVAL_MS);
+    };
     const unlisten = editor.store.listen(
       (entry) => {
         const { added, updated, removed } = entry.changes;
-        try {
-          doc.transact(() => {
-            for (const record of Object.values(added)) {
-              yStore.set(record.id, record);
-            }
-            for (const [, to] of Object.values(updated)) {
-              yStore.set(to.id, to);
-            }
-            for (const record of Object.values(removed)) {
-              yStore.delete(record.id);
-            }
-          }, LOCAL);
-        } catch {
-          // A failed mirror must not break the local board.
+        for (const record of Object.values(added)) {
+          pendingDeletes.delete(record.id);
+          pendingUpserts.set(record.id, record);
         }
+        for (const [, to] of Object.values(updated)) {
+          pendingDeletes.delete(to.id);
+          pendingUpserts.set(to.id, to);
+        }
+        for (const record of Object.values(removed)) {
+          pendingUpserts.delete(record.id);
+          pendingDeletes.add(record.id);
+        }
+        scheduleLocalSync();
       },
       { source: 'user', scope: 'document' },
     );
@@ -974,6 +1003,9 @@ export function BoardTldraw({
       el?.removeEventListener('pointermove', onDragMove);
       el?.removeEventListener('pointerup', onDragEnd);
       el?.removeEventListener('pointercancel', onDragEnd);
+      // Do not lose the tail of an in-progress stroke when the user switches
+      // surfaces or the room unmounts.
+      flushLocalChanges();
       unlisten();
       yStore.unobserve(onYChange);
       doc.off('update', onDocUpdate);
