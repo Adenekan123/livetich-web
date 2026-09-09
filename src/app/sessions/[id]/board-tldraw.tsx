@@ -25,6 +25,29 @@ type BoardSocket = Socket<BoardServerToClientEvents, BoardClientToServerEvents>;
 // Yjs transaction origin for edits made on this client (vs. remote/server).
 const LOCAL = 'local';
 
+/**
+ * Socket.IO normally reconstructs binary packets as ArrayBuffers in browsers,
+ * but relayed packets can arrive as typed views, byte arrays, or Node's
+ * JSON-shaped Buffer form. Normalize every supported transport shape before
+ * handing it to Yjs so a valid remote update is never silently treated as empty.
+ */
+function boardBytes(data: unknown): Uint8Array | null {
+  if (data instanceof Uint8Array) return data;
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (ArrayBuffer.isView(data)) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  }
+  if (Array.isArray(data)) return Uint8Array.from(data as number[]);
+  if (
+    data &&
+    typeof data === 'object' &&
+    Array.isArray((data as { data?: unknown }).data)
+  ) {
+    return Uint8Array.from((data as { data: number[] }).data);
+  }
+  return null;
+}
+
 /** A thin grey bar used to draw guide lines (stable geo-rectangle shape). */
 const bar = (x: number, y: number, w: number, h: number): TLShapePartial =>
   ({
@@ -466,13 +489,14 @@ export function BoardTldraw({
         void getRealtimeToken().then((token) => cb({ token: token ?? '' })),
       transports: ['websocket'],
     });
-    const applyRemote = (u: ArrayBuffer | Uint8Array): boolean => {
+    const applyRemote = (u: unknown): boolean => {
       try {
-        Y.applyUpdate(
-          doc,
-          u instanceof Uint8Array ? u : new Uint8Array(u),
-          'remote',
-        );
+        const update = boardBytes(u);
+        if (!update) {
+          console.error('[board] received an unrecognized remote update');
+          return false;
+        }
+        Y.applyUpdate(doc, update, 'remote');
         return true;
       } catch (e) {
         // A garbled/truncated binary frame must NEVER wedge the board. Before
@@ -746,8 +770,19 @@ export function BoardTldraw({
     });
     socket.on('board:state', (p) => {
       markBoardJoined();
-      applyRemote(p.update);
+      const applied = applyRemote(p.update);
       reconcile();
+      // A presenter may start drawing before the board socket has completed its
+      // first join. Those local Yjs updates had no connected socket to forward
+      // them through, so publish the complete merged document after the server
+      // confirms state. This makes the handshake authoritative instead of
+      // losing the instructor's first strokes to a connection-timing race.
+      if (canDraw && applied && socket.connected) {
+        socket.emit('board:update', {
+          sessionId,
+          update: Y.encodeStateAsUpdate(doc),
+        });
+      }
     });
     socket.on('board:update', (p) => applyRemote(p.update));
     // Brand-new rooms still need to seed even if state arrives empty/slow.
