@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { joinLiveSession } from '@/app/actions/courses';
+import { RefreshButton } from '@/components/refresh-button';
 import { btn, cardClass, cn } from '@/lib/ui';
 
 /**
@@ -67,6 +68,15 @@ export function ShadowJoinCard({
           Shadow join →
         </button>
       </div>
+      {/* Waiting for class to start? Re-check live status in place — the join
+          buttons above are disabled until the room opens. */}
+      {!joinableNow && (
+        <RefreshButton
+          label="Check again"
+          title="Check if the class has started"
+          className="mt-3"
+        />
+      )}
       {error && <p className="mt-2 text-sm text-rose-600">{error}</p>}
     </div>
   );

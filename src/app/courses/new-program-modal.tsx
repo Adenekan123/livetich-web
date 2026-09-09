@@ -1,61 +1,77 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import { PiPlusBold, PiXBold } from 'react-icons/pi';
 import { btn } from '@/lib/ui';
 import { NewProgramForm } from './new-program-form';
 
-/** Admin-only "New program" button that opens a modal with the create form. */
-export function NewProgramButton() {
-  const [open, setOpen] = useState(false);
+/** Admin-only trigger for the shared creation workspace. */
+export function NewProgramButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className={btn('primary', 'sm')}>
+      <PiPlusBold className="h-4 w-4" aria-hidden />
+      New program
+    </button>
+  );
+}
 
+/** Full-screen creation workspace shared by every program-create trigger. */
+export function NewProgramModal({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    document.addEventListener('keydown', onKey);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
     document.body.style.overflow = 'hidden';
     return () => {
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKeyDown);
       document.body.style.overflow = '';
     };
-  }, [open]);
+  }, [onClose, open]);
+
+  if (!open) return null;
 
   return (
-    <>
-      <button onClick={() => setOpen(true)} className={btn('primary', 'sm')}>
-        + New program
-      </button>
-
-      {open && (
         <div
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-neutral-950/40 p-4 backdrop-blur-sm sm:p-8"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setOpen(false);
-          }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="new-program-title"
+          className="fixed inset-0 z-50 overflow-y-auto bg-[#f4f6f3]"
         >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="New program"
-            className="my-4 w-full max-w-lg rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl sm:my-8"
-          >
-            <div className="flex items-center justify-between">
-              <h2 className="font-display text-xl font-extrabold tracking-tight text-neutral-950">
-                New program
-              </h2>
+          <div className="animate-fade-up mx-auto min-h-full w-full max-w-4xl px-4 py-5 sm:px-6 sm:py-8">
+            <header className="flex items-start justify-between gap-4 border-b border-neutral-200 pb-5">
+              <div>
+                <p className="font-mono text-xs font-bold uppercase tracking-[0.12em] text-signal-700">
+                  Program setup
+                </p>
+                <h2 id="new-program-title" className="mt-2 text-2xl font-extrabold tracking-tight text-neutral-950 sm:text-3xl">
+                  Create a program
+                </h2>
+                <p className="mt-1 text-sm text-neutral-600">
+                  Add the essentials now. You can complete the rest after creation.
+                </p>
+              </div>
               <button
-                onClick={() => setOpen(false)}
-                aria-label="Close"
-                className="grid h-8 w-8 place-items-center rounded-full text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-900"
+                type="button"
+                onClick={onClose}
+                aria-label="Close program setup"
+                title="Close program setup"
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-neutral-300 bg-white text-neutral-800 shadow-sm transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-600"
               >
-                ✕
+                <PiXBold className="h-5 w-5 stroke-[2.5]" aria-hidden />
               </button>
-            </div>
-            <div className="mt-4">
+            </header>
+            <div className="mx-auto max-w-3xl py-7">
               <NewProgramForm />
             </div>
           </div>
         </div>
-      )}
-    </>
   );
 }

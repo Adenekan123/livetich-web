@@ -20,24 +20,36 @@
  */
 const TOKEN_TTL_MS = 12 * 60 * 1000; // safe margin under the API's 15m token TTL
 let cached: { token: string; expiresAt: number } | null = null;
+// One shared fetch for concurrent callers. On join, the room + board + video
+// sockets all call getRealtimeToken() at once; without this each fired its own
+// /api/realtime-token request (5+ per join) — a real per-request round-trip on
+// production that slowed the join. Now they await the same promise.
+let inflight: Promise<string | null> | null = null;
 
 export async function getRealtimeToken(): Promise<string | null> {
   if (cached && cached.expiresAt > Date.now()) return cached.token;
-  try {
-    const res = await fetch('/api/realtime-token', { cache: 'no-store' });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { token: string | null };
-    if (data.token) {
-      cached = { token: data.token, expiresAt: Date.now() + TOKEN_TTL_MS };
+  if (inflight) return inflight;
+  inflight = (async () => {
+    try {
+      const res = await fetch('/api/realtime-token', { cache: 'no-store' });
+      if (!res.ok) return null;
+      const data = (await res.json()) as { token: string | null };
+      if (data.token) {
+        cached = { token: data.token, expiresAt: Date.now() + TOKEN_TTL_MS };
+      }
+      return data.token;
+    } catch {
+      return null;
+    } finally {
+      inflight = null;
     }
-    return data.token;
-  } catch {
-    return null;
-  }
+  })();
+  return inflight;
 }
 
 /** Drop the cached realtime token (e.g. after an auth failure) so the next
  *  caller re-fetches a fresh one. */
 export function clearRealtimeToken() {
   cached = null;
+  inflight = null;
 }

@@ -1,12 +1,14 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useMemo, useState } from 'react';
+import { PiPlusBold } from 'react-icons/pi';
 import { createCourse, type ActionState } from '@/app/actions/courses';
 import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
 import { inputClass, labelClass } from '@/lib/ui';
 import { DurationField } from './duration-field';
 import { MeetingSchedule } from './meeting-schedule';
+import { COURSE_CATEGORIES } from './catalog-lib';
 
 interface BatchRow {
   label: string;
@@ -42,12 +44,10 @@ function BatchRows({ timezones }: { timezones: string[] }) {
   );
 
   return (
-    <div className="border-t border-neutral-200 pt-4">
+    <div className="space-y-3">
       <input type="hidden" name="batches" value={serialized} />
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
-          Batches (optional)
-        </p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-neutral-950">Scheduled batches</p>
         <button
           type="button"
           onClick={() =>
@@ -56,12 +56,13 @@ function BatchRows({ timezones }: { timezones: string[] }) {
               { label: '', days: [], time: '09:00', tz: 'Africa/Lagos' },
             ])
           }
-          className="text-xs font-semibold text-signal-700 hover:text-signal-600"
+          className="inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold text-signal-700 hover:text-signal-800"
         >
-          + Add batch
+          <PiPlusBold className="h-3.5 w-3.5" aria-hidden />
+          Add batch
         </button>
       </div>
-      <p className="mt-1 text-xs text-neutral-400">
+      <p className="text-sm text-neutral-600">
         Run this program at more than one time (e.g. Batch A morning, Batch B
         afternoon). You can also add batches later.
       </p>
@@ -151,6 +152,31 @@ function todayLocal(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+/** The browser's IANA timezone (e.g. "Africa/Lagos"), or Lagos as a fallback. */
+function detectTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Africa/Lagos';
+  } catch {
+    return 'Africa/Lagos';
+  }
+}
+
+/** "Lagos (GMT+1)" — city + current offset, so a wrong zone is obvious. */
+function tzLabel(tz: string): string {
+  const city = tz.split('/').pop()?.replace(/_/g, ' ') ?? tz;
+  try {
+    const offset = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      timeZoneName: 'shortOffset',
+    })
+      .formatToParts(new Date())
+      .find((p) => p.type === 'timeZoneName')?.value;
+    return offset ? `${city} (${offset})` : city;
+  } catch {
+    return city;
+  }
+}
+
 /** Create-program form (used inside the New program modal on /courses). */
 export function NewProgramForm() {
   const [state, action] = useActionState(createCourse, initial);
@@ -159,111 +185,148 @@ export function NewProgramForm() {
   // and "Join"/"Go live" stays disabled from the first render. The admin can
   // still push it to a future start.
   const today = todayLocal();
+  // Default the timezone to the creator's own zone so meeting times line up with
+  // their clock. The reported bug: a time picked in local wall-clock while the
+  // program sat on a different GMT offset slid the join window hours away, so
+  // "Join" looked broken. SSR-safe default (Lagos), swapped to the detected zone
+  // on mount; the offset is shown in the label so a wrong zone is obvious.
+  const [timezone, setTimezone] = useState('Africa/Lagos');
+  useEffect(() => {
+    const updateTimezone = setTimeout(() => setTimezone(detectTimezone()), 0);
+    return () => clearTimeout(updateTimezone);
+  }, []);
+  const tzOptions = useMemo(
+    () => (TIMEZONES.includes(timezone) ? TIMEZONES : [timezone, ...TIMEZONES]),
+    [timezone],
+  );
   return (
-    <form action={action} className="space-y-4">
+    <form action={action} className="space-y-8">
       <FormError message={state.error} />
 
-      <div className="space-y-1.5">
-        <label htmlFor="title" className={labelClass}>
-          Program title
-        </label>
-        <input
-          id="title"
-          name="title"
-          required
-          placeholder="e.g. Full-Stack Foundations"
-          className={inputClass}
-        />
-      </div>
-
-      <div className="space-y-1.5">
-        <label htmlFor="description" className={labelClass}>
-          Description
-        </label>
-        <textarea
-          id="description"
-          name="description"
-          rows={3}
-          placeholder="What will students learn, and who is it for?"
-          className={`${inputClass} resize-none`}
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <label htmlFor="category" className={labelClass}>
-            Category
-          </label>
-          <input
-            id="category"
-            name="category"
-            list="course-categories"
-            placeholder="Software Engineering"
-            className={inputClass}
-          />
-          <datalist id="course-categories">
-            <option value="Software Engineering" />
-            <option value="Design" />
-            <option value="Business" />
-            <option value="Data" />
-            <option value="Languages" />
-          </datalist>
+      <section>
+        <div className="mb-5">
+          <h3 className="text-lg font-bold tracking-tight text-neutral-950">Program details</h3>
+          <p className="mt-1 text-sm text-neutral-600">Give learners enough context to decide whether this program is right for them.</p>
         </div>
-        <div className="space-y-1.5">
-          <label htmlFor="level" className={labelClass}>
-            Level
-          </label>
-          <select id="level" name="level" defaultValue="" className={inputClass}>
-            <option value="">—</option>
-            <option value="Beginner">Beginner</option>
-            <option value="Intermediate">Intermediate</option>
-            <option value="Advanced">Advanced</option>
-          </select>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <label htmlFor="title" className={labelClass}>
+              Program title
+            </label>
+            <input
+              id="title"
+              name="title"
+              required
+              placeholder="e.g. Full-Stack Foundations"
+              className={inputClass}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label htmlFor="description" className={labelClass}>
+              Description
+            </label>
+            <textarea
+              id="description"
+              name="description"
+              rows={4}
+              placeholder="What will students learn, and who is it for?"
+              className={`${inputClass} resize-none`}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label htmlFor="category" className={labelClass}>
+                Category
+              </label>
+              <input
+                id="category"
+                name="category"
+                list="course-categories"
+                placeholder="Software Engineering"
+                className={inputClass}
+              />
+              <datalist id="course-categories">
+                {COURSE_CATEGORIES.map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="level" className={labelClass}>
+                Level
+              </label>
+              <select id="level" name="level" defaultValue="" className={inputClass}>
+                <option value="">Choose a level</option>
+                <option value="Beginner">Beginner</option>
+                <option value="Intermediate">Intermediate</option>
+                <option value="Advanced">Advanced</option>
+              </select>
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* Schedule */}
-      <div className="border-t border-neutral-200 pt-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
-          Cohort schedule
-        </p>
+      <section className="border-t border-neutral-200 pt-7">
+        <div className="mb-5">
+          <h3 className="text-lg font-bold tracking-tight text-neutral-950">Cohort schedule</h3>
+          <p className="mt-1 text-sm text-neutral-600">Choose when this cohort starts and when the class meets each week.</p>
+        </div>
 
-        <div className="mt-3">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-5">
           <DurationField defaultWeeks={8} defaultStartDate={today} />
-        </div>
 
-        <div className="mt-3">
-          <MeetingSchedule />
-        </div>
+          <div className="mt-6 border-t border-neutral-200 pt-5">
+            <MeetingSchedule />
+          </div>
 
-        <div className="mt-3 space-y-1.5">
-          <label htmlFor="timezone" className={labelClass}>
-            Timezone
-          </label>
-          <select
-            id="timezone"
-            name="timezone"
-            defaultValue="Africa/Lagos"
-            className={inputClass}
-          >
-            {TIMEZONES.map((tz) => (
-              <option key={tz} value={tz}>
-                {tz.split('/').pop()?.replace(/_/g, ' ')}
-              </option>
-            ))}
-          </select>
+          <div className="mt-6 border-t border-neutral-200 pt-5">
+            <label htmlFor="timezone" className={labelClass}>
+              Timezone
+            </label>
+            <select
+              id="timezone"
+              name="timezone"
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              className={`${inputClass} mt-1.5`}
+            >
+              {tzOptions.map((tz) => (
+                <option key={tz} value={tz}>
+                  {tzLabel(tz)}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-xs text-neutral-600">
+              Class times use this timezone. It defaults to your current location.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-t border-neutral-200 pt-7">
+        <div className="mb-5">
+          <h3 className="text-lg font-bold tracking-tight text-neutral-950">Batches (Optional)</h3>
+          <p className="mt-1 text-sm text-neutral-600">
+            Offer the same program at more than one weekly schedule when your learners need options.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-5">
+          <BatchRows timezones={TIMEZONES} />
+        </div>
+      </section>
+
+      <div className="sticky bottom-0 -mx-4 border-t border-neutral-200 bg-[#f4f6f3]/95 px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6">
+        <div className="mx-auto max-w-3xl">
+          <SubmitButton className="w-full sm:w-auto" pendingLabel="Creating…">
+            Create program
+          </SubmitButton>
+          <p className="mt-2 text-xs text-neutral-600">
+            You can assign an instructor, schedule live sessions, and add curriculum after creation.
+          </p>
         </div>
       </div>
-
-      <BatchRows timezones={TIMEZONES} />
-
-      <SubmitButton className="w-full" pendingLabel="Creating…">
-        Create program
-      </SubmitButton>
-      <p className="text-xs text-neutral-400">
-        You can assign an instructor, schedule live sessions, and add curriculum
-        after the program is created.
-      </p>
     </form>
   );
 }

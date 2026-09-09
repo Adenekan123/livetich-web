@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { cn, inputClass, labelClass } from '@/lib/ui';
+import { DatePicker } from './date-picker';
 
 const DURATIONS = [
   { w: 4, label: '4 weeks (1 month)' },
@@ -45,63 +46,66 @@ export function DurationField({
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <label htmlFor={`${idPrefix}startDate`} className={labelClass}>
-            Start date
-          </label>
-          <input
-            id={`${idPrefix}startDate`}
-            name="startDate"
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className={inputClass}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <span className={labelClass}>Duration</span>
-          <div className="flex rounded-lg border border-neutral-200 p-0.5 text-[11px] font-semibold">
-            {(['length', 'date'] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMode(m)}
-                className={cn(
-                  'flex-1 rounded-md px-2 py-1 transition',
-                  mode === m
-                    ? 'bg-signal-700 text-white'
-                    : 'text-neutral-500 hover:text-neutral-800',
-                )}
-              >
-                {m === 'length' ? 'By length' : 'End date'}
-              </button>
-            ))}
-          </div>
-          {mode === 'length' ? (
-            <select
-              name="durationWeeks"
-              value={weeks}
-              onChange={(e) => setWeeks(e.target.value)}
-              className={inputClass}
-            >
-              {!durationInList && (
-                <option value={defaultWeeks}>{defaultWeeks} weeks</option>
+      <fieldset>
+        <legend className={labelClass}>Schedule length</legend>
+        <div className="mt-1.5 inline-flex rounded-lg border border-neutral-200 bg-white p-0.5 text-xs font-semibold">
+          {(['length', 'date'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMode(m)}
+              aria-pressed={mode === m}
+              className={cn(
+                'rounded-md px-3 py-1.5 transition',
+                mode === m
+                  ? 'bg-signal-700 text-white'
+                  : 'text-neutral-600 hover:bg-signal-50 hover:text-signal-800',
               )}
-              {DURATIONS.map((d) => (
-                <option key={d.w} value={d.w}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
+            >
+              {m === 'length' ? 'Set duration' : 'Set end date'}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <DatePicker
+          id={`${idPrefix}startDate`}
+          name="startDate"
+          label="Start date"
+          value={startDate}
+          onChange={setStartDate}
+        />
+        <div className="space-y-1.5">
+          {mode === 'length' ? (
+            <>
+              <label htmlFor={`${idPrefix}durationWeeks`} className={labelClass}>
+                Program length
+              </label>
+              <select
+                id={`${idPrefix}durationWeeks`}
+                name="durationWeeks"
+                value={weeks}
+                onChange={(e) => setWeeks(e.target.value)}
+                className={inputClass}
+              >
+                {!durationInList && (
+                  <option value={defaultWeeks}>{defaultWeeks} weeks</option>
+                )}
+                {DURATIONS.map((d) => (
+                  <option key={d.w} value={d.w}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            </>
           ) : (
-            <input
-              aria-label="End date"
-              type="date"
+            <DatePicker
+              id={`${idPrefix}endDate`}
+              label="End date"
               value={endDate}
               min={startDate || undefined}
-              onChange={(e) => setEndDate(e.target.value)}
-              className={inputClass}
+              onChange={setEndDate}
             />
           )}
         </div>

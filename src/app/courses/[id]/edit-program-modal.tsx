@@ -10,6 +10,7 @@ import { btn, inputClass, labelClass } from '@/lib/ui';
 import type { CourseDetail } from '@/lib/types';
 import { DurationField } from '../duration-field';
 import { MeetingSchedule } from '../meeting-schedule';
+import { COURSE_CATEGORIES } from '../catalog-lib';
 
 const initial: ActionState = { error: null };
 
@@ -92,7 +93,7 @@ export function EditProgramButton({
             role="dialog"
             aria-modal="true"
             aria-label="Edit program"
-            className="my-4 w-full max-w-lg rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl sm:my-8"
+            className="animate-fade-up my-4 w-full max-w-lg rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl sm:my-8 lg:max-w-3xl lg:p-8"
           >
             <div className="flex items-center justify-between">
               <h2 className="font-display text-xl font-extrabold tracking-tight text-neutral-950">
@@ -150,11 +151,9 @@ export function EditProgramButton({
                     className={inputClass}
                   />
                   <datalist id="edit-course-categories">
-                    <option value="Software Engineering" />
-                    <option value="Design" />
-                    <option value="Business" />
-                    <option value="Data" />
-                    <option value="Languages" />
+                    {COURSE_CATEGORIES.map((c) => (
+                      <option key={c} value={c} />
+                    ))}
                   </datalist>
                 </div>
                 <div className="space-y-1.5">

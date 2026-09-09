@@ -11,6 +11,7 @@ import {
   type TLShapePartial,
 } from 'tldraw';
 import { io, type Socket } from 'socket.io-client';
+import { PiArrowsClockwiseBold } from 'react-icons/pi';
 import * as Y from 'yjs';
 import { API_URL } from '@/lib/api';
 import { getRealtimeToken, clearRealtimeToken } from '@/lib/client-token';
@@ -23,6 +24,29 @@ type BoardSocket = Socket<BoardServerToClientEvents, BoardClientToServerEvents>;
 
 // Yjs transaction origin for edits made on this client (vs. remote/server).
 const LOCAL = 'local';
+
+/**
+ * Socket.IO normally reconstructs binary packets as ArrayBuffers in browsers,
+ * but relayed packets can arrive as typed views, byte arrays, or Node's
+ * JSON-shaped Buffer form. Normalize every supported transport shape before
+ * handing it to Yjs so a valid remote update is never silently treated as empty.
+ */
+function boardBytes(data: unknown): Uint8Array | null {
+  if (data instanceof Uint8Array) return data;
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (ArrayBuffer.isView(data)) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  }
+  if (Array.isArray(data)) return Uint8Array.from(data as number[]);
+  if (
+    data &&
+    typeof data === 'object' &&
+    Array.isArray((data as { data?: unknown }).data)
+  ) {
+    return Uint8Array.from((data as { data: number[] }).data);
+  }
+  return null;
+}
 
 /** A thin grey bar used to draw guide lines (stable geo-rectangle shape). */
 const bar = (x: number, y: number, w: number, h: number): TLShapePartial =>
@@ -104,6 +128,9 @@ function loadPdfjs() {
 // synced PNG asset) or freeze a low-end device mid-class.
 const PDF_MAX_PAGES = 30;
 const PDF_TARGET_WIDTH = 1600; // px on the long edge — legible without being huge
+// Freehand drawing changes a tldraw shape many times per second. Coalescing
+// those mutations keeps the shared-board transport responsive on modest devices.
+const BOARD_SYNC_INTERVAL_MS = 50;
 
 /**
  * Rasterise a PDF into one PNG File per page, so document/slide imports land on
@@ -323,11 +350,23 @@ export function BoardTldraw({
   const [store] = useState(() =>
     createTLStore({ assets: makeBoardAssetStore(sessionId) }),
   );
+  // Do not let anyone edit until the server has supplied the initial Yjs state.
+  // A visible loading state is safer than accepting strokes before a socket
+  // handshake exists to relay them.
+  const [boardReady, setBoardReady] = useState(false);
   // Presenter tools (camera-follow + shared laser). Refs bridge the socket
   // handlers in onMount to React state for the overlay + follow button.
   const editorRef = useRef<Editor | null>(null);
   const socketRef = useRef<BoardSocket | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  // Recovery hook: set in onMount, invoked by the manual "Resync" control to
+  // rebuild a stuck/blank canvas from the shared doc + re-pull server state,
+  // so a wedged board recovers in one tap instead of a full page reload.
+  const resyncRef = useRef<() => void>(() => {});
+  const [resyncing, setResyncing] = useState(false);
+  // Re-frame a following viewer on resize (see the ResizeObserver effect) —
+  // set in onMount so it can reach the editor + follow state.
+  const refitRef = useRef<() => void>(() => {});
   const followingRef = useRef(true);
   const lastCameraRef = useRef<{ x: number; y: number; z: number } | null>(null);
   // The presenter's visible page rectangle. Followers fit this to their own
@@ -370,6 +409,33 @@ export function BoardTldraw({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [fullscreen]);
+  // Re-frame a following viewer whenever the board changes size — above all when
+  // it first becomes visible (the class switches to the Chalkboard, or the panel
+  // reflows). Without this, a viewer that synced the board while it was hidden is
+  // left with an unframed camera and a blank-looking board even though the shapes
+  // are all there (shapes:N in ?boarddebug). No-op for the presenter and for a
+  // viewer who has taken manual control (applyPresenterView bails when not
+  // following).
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        try {
+          refitRef.current();
+        } catch {
+          /* never let a re-frame throw */
+        }
+      });
+    });
+    ro.observe(el);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, []);
   // Opt-in on-screen diagnostics for a student (add ?boarddebug to the URL) —
   // lets us read the live follow/page/shape state on a phone where there's no
   // dev console. `shapes:0` ⇒ nothing synced; `page ≠ pres` ⇒ page-follow issue;
@@ -417,7 +483,7 @@ export function BoardTldraw({
   }, [boardOpen, canDraw]);
 
   const handleMount = (editor: Editor) => {
-    if (!canDraw) editor.updateInstanceState({ isReadonly: true });
+    editor.updateInstanceState({ isReadonly: true });
     editorRef.current = editor;
 
     const doc = new Y.Doc();
@@ -430,12 +496,26 @@ export function BoardTldraw({
         void getRealtimeToken().then((token) => cb({ token: token ?? '' })),
       transports: ['websocket'],
     });
-    const applyRemote = (u: ArrayBuffer | Uint8Array) =>
-      Y.applyUpdate(
-        doc,
-        u instanceof Uint8Array ? u : new Uint8Array(u),
-        'remote',
-      );
+    const applyRemote = (u: unknown): boolean => {
+      try {
+        const update = boardBytes(u);
+        if (!update) {
+          console.error('[board] received an unrecognized remote update');
+          return false;
+        }
+        Y.applyUpdate(doc, update, 'remote');
+        return true;
+      } catch (e) {
+        // A garbled/truncated binary frame must NEVER wedge the board. Before
+        // this guard, a throw here (esp. on the initial board:state, which runs
+        // before reconcile()) left `initialized` false forever, so every later
+        // update was ignored and the canvas stayed permanently blank — even
+        // across a rejoin. Swallow + log so reconcile() still runs and the user
+        // can recover via the Resync control.
+        console.error('[board] failed to apply a remote update', e);
+        return false;
+      }
+    };
 
     // Keep a non-presenter on the presenter's page. tldraw gives every fresh
     // store a *random* default page id, so a viewer left on its own local page
@@ -468,8 +548,45 @@ export function BoardTldraw({
     // page switch or PDF import that raced ahead of its records (the presenter
     // announces a change only once) still lands the moment the content exists
     // locally, instead of stranding the viewer on the old page/scroll position.
-    const applyPresenterView = () => {
+    // Frame whatever is on the viewer's current page. Used as the follow
+    // fallback when we have NO presenter view yet: a viewer that joins (or
+    // reloads) while the presenter's camera is static receives no
+    // board:presenter packet, so without this its camera sits at tldraw's
+    // default origin and the synced shapes render off-screen — a blank board
+    // even though shapes:N are present (the real "student sees nothing"
+    // failure). Framing the page content shows the drawing immediately; once
+    // presenter packets arrive we switch to following those.
+    const fitContent = (attempt = 0) => {
+      try {
+        const b = editor.getCurrentPageBounds();
+        if (!b) return;
+        // The editor measures its container asynchronously (after mount, and
+        // after the board first becomes visible). Fitting before then makes
+        // zoomToBounds clamp to the MINIMUM zoom — the content becomes a tiny,
+        // invisible speck: exactly the "synced but blank" board. Wait for a real
+        // viewport first, capped so this can never spin forever.
+        const vsb = editor.getViewportScreenBounds();
+        if ((!vsb || vsb.w < 10 || vsb.h < 10) && attempt < 30) {
+          requestAnimationFrame(() => fitContent(attempt + 1));
+          return;
+        }
+        editor.zoomToBounds(b, { inset: 48, force: true, immediate: true });
+      } catch {
+        // Editor not ready / torn down — never let a re-frame throw.
+      }
+    };
+
+    const applyPresenterView = (attempt = 0) => {
       if (canDraw || !followingRef.current) return;
+      // Same viewport-timing guard as fitContent: fitting before the editor has
+      // measured its container clamps the zoom to the minimum. This matters most
+      // for a presenter view *replayed on join* (the server now sends the last
+      // view immediately), which can arrive before the board is measured/visible.
+      const vsb = editor.getViewportScreenBounds();
+      if ((!vsb || vsb.w < 10 || vsb.h < 10) && attempt < 30) {
+        requestAnimationFrame(() => applyPresenterView(attempt + 1));
+        return;
+      }
       const page = presenterPageRef.current as
         | Parameters<typeof editor.getPage>[0]
         | null;
@@ -479,11 +596,15 @@ export function BoardTldraw({
       // Fit the presenter's visible rectangle to *this* viewport so the same
       // region fills the follower's screen whatever its size (a phone shows the
       // same content a laptop does, just scaled). Fall back to the raw camera
-      // only for an older presenter that doesn't send bounds.
+      // for an older presenter that doesn't send bounds, and — when there's no
+      // presenter view at all yet — to framing the content so the board is
+      // never blank while the instructor's camera happens to be still.
       if (lastBoundsRef.current) {
         fitToPresenterView(editor, lastBoundsRef.current);
       } else if (lastCameraRef.current) {
         editor.setCamera(lastCameraRef.current);
+      } else {
+        fitContent();
       }
     };
 
@@ -522,6 +643,72 @@ export function BoardTldraw({
         const page = yRecords.find((r) => r.typeName === 'page');
         if (page) editor.setCurrentPage(page.id as Parameters<typeof editor.setCurrentPage>[0]);
       }
+      // A viewer that just adopted the initial doc must frame the content now —
+      // otherwise a join during a presenter lull (no board:presenter packet yet)
+      // leaves its camera at the origin and the board looks blank despite the
+      // shapes being synced. Guarded inside applyPresenterView (following only).
+      if (!canDraw) {
+        try {
+          applyPresenterView();
+        } catch {
+          /* never let framing throw out of the initial reconcile */
+        }
+      }
+    };
+
+    // Recover a stuck/blank canvas from the shared doc. The Y.Doc is the
+    // authority (kept current by applyRemote even if tldraw's store somehow went
+    // blank), so re-projecting it into the editor store restores what the class
+    // should see — no page reload, no lost socket/scroll state.
+    const rebuildFromDoc = () => {
+      const yRecords = [...yStore.values()].filter(isSharedRecord);
+      if (yRecords.length === 0) return;
+      try {
+        editor.store.mergeRemoteChanges(() => {
+          const keep = new Set(yRecords.map((r) => r.id));
+          const stale = editor.store
+            .allRecords()
+            .filter((r) => isDocumentRecord(r) && !keep.has(r.id))
+            .map((r) => r.id);
+          if (stale.length) editor.store.remove(stale);
+          putRecordsSafely(editor, yRecords);
+        });
+        // A viewer should land back on the presenter's (or first shared) page.
+        const page =
+          (presenterPageRef.current &&
+            yRecords.find((r) => r.id === presenterPageRef.current)) ||
+          yRecords.find((r) => r.typeName === 'page');
+        if (page && !canDraw) {
+          editor.setCurrentPage(
+            page.id as Parameters<typeof editor.setCurrentPage>[0],
+          );
+        }
+        // Re-frame the content: the blank we're recovering from is usually a
+        // viewer whose camera drifted off the (synced) shapes. Resync is an
+        // explicit "show me the board" gesture, so fit regardless of follow.
+        if (!canDraw) fitContent();
+      } catch {
+        // Best-effort recovery — never throw out of the Resync control.
+      }
+    };
+    // Manual resync: rebuild the canvas from the doc, then reconnect so the
+    // gateway resends full board:state (covers the rare case the local doc
+    // itself fell behind — a fresh socket re-runs board:join).
+    resyncRef.current = () => {
+      rebuildFromDoc();
+      const s = socketRef.current;
+      if (s) {
+        s.disconnect();
+        s.connect();
+      }
+    };
+    // Re-frame this (following) viewer's camera. Called on resize — crucially
+    // when the board first becomes visible: the initial reconcile fit runs while
+    // the board is still display:none (zero-size viewport, so zoomToBounds can't
+    // frame anything), which is why a viewer that synced content while the class
+    // was on another surface then showed a blank board.
+    refitRef.current = () => {
+      if (!canDraw) applyPresenterView();
     };
 
     socketRef.current = socket;
@@ -534,14 +721,45 @@ export function BoardTldraw({
     // capped, resetting on a good connect. Mirrors the room socket (see #5).
     let authRetries = 0;
     const MAX_AUTH_RETRIES = 2;
-    socket.on('connect', () => {
-      // Re-emitted on reconnect too, so a dropped/rejoined student re-syncs via
-      // the board:state that follows.
-      authRetries = 0;
+    let boardJoined = false;
+    let joinTimer: ReturnType<typeof setTimeout> | undefined;
+    const clearJoinRetry = () => {
+      if (joinTimer) {
+        clearTimeout(joinTimer);
+        joinTimer = undefined;
+      }
+    };
+    // Canvas mount is independent from the socket's board-state handshake. On
+    // a page reload, drawing can begin while the viewer is reconnecting; retry
+    // the idempotent join until the server confirms state so that viewer cannot
+    // remain silently out of sync.
+    const joinBoard = () => {
+      if (!socket.connected) return;
       socket.emit('board:join', {
         sessionId,
         ...(teaching ? { as: 'teach' as const } : {}),
       });
+      clearJoinRetry();
+      joinTimer = setTimeout(() => {
+        if (!boardJoined) joinBoard();
+      }, 2_000);
+    };
+    const markBoardJoined = () => {
+      boardJoined = true;
+      clearJoinRetry();
+    };
+    socket.on('connect', () => {
+      // Re-emitted on reconnect too, so a dropped/rejoined student re-syncs via
+      // the board:state that follows.
+      authRetries = 0;
+      boardJoined = false;
+      joinBoard();
+    });
+    socket.on('disconnect', () => {
+      boardJoined = false;
+      clearJoinRetry();
+      setBoardReady(false);
+      editor.updateInstanceState({ isReadonly: true });
     });
     // The gateway emits a custom 'error' (e.g. UNAUTHORIZED) before disconnecting.
     (socket as unknown as {
@@ -555,10 +773,32 @@ export function BoardTldraw({
         }, 600);
       }
     });
-    socket.on('board:writable', (p) => setBoardOpen(p.open));
+    socket.on('board:writable', (p) => {
+      markBoardJoined();
+      setBoardOpen(p.open);
+      if (!canDraw) editor.updateInstanceState({ isReadonly: !p.open });
+    });
     socket.on('board:state', (p) => {
-      applyRemote(p.update);
+      markBoardJoined();
+      const applied = applyRemote(p.update);
       reconcile();
+      if (applied) {
+        setBoardReady(true);
+        // The state packet always precedes board:writable. Presenters can work
+        // immediately; students are updated again by the writable packet.
+        editor.updateInstanceState({ isReadonly: canDraw ? false : !boardOpen });
+      }
+      // A presenter may start drawing before the board socket has completed its
+      // first join. Those local Yjs updates had no connected socket to forward
+      // them through, so publish the complete merged document after the server
+      // confirms state. This makes the handshake authoritative instead of
+      // losing the instructor's first strokes to a connection-timing race.
+      if (canDraw && applied && socket.connected) {
+        socket.emit('board:update', {
+          sessionId,
+          update: Y.encodeStateAsUpdate(doc),
+        });
+      }
     });
     socket.on('board:update', (p) => applyRemote(p.update));
     // Brand-new rooms still need to seed even if state arrives empty/slow.
@@ -609,27 +849,53 @@ export function BoardTldraw({
     };
     yStore.observe(onYChange);
 
-    // tldraw -> yjs: mirror the user's document changes into the Y.Map. Guarded
-    // so a mirror failure can't propagate out of tldraw's store listener and
-    // wedge local editing (this listener also fires for the user's own drawing).
+    // tldraw -> yjs: mirror the user's document changes into the Y.Map. A
+    // freehand stroke mutates its shape many times per second; synchronizing
+    // each point independently overwhelmed slower student devices with a large
+    // queue of redundant record revisions. Keep only the latest mutation for
+    // each record, then send it at a responsive 20 fps cadence.
+    const pendingUpserts = new Map<TLRecord['id'], TLRecord>();
+    const pendingDeletes = new Set<TLRecord['id']>();
+    let localSyncTimer: ReturnType<typeof setTimeout> | undefined;
+    const flushLocalChanges = () => {
+      if (localSyncTimer) {
+        clearTimeout(localSyncTimer);
+        localSyncTimer = undefined;
+      }
+      if (pendingUpserts.size === 0 && pendingDeletes.size === 0) return;
+      const upserts = [...pendingUpserts.values()];
+      const deletes = [...pendingDeletes];
+      pendingUpserts.clear();
+      pendingDeletes.clear();
+      try {
+        doc.transact(() => {
+          for (const id of deletes) yStore.delete(id);
+          for (const record of upserts) yStore.set(record.id, record);
+        }, LOCAL);
+      } catch {
+        // A failed mirror must not break the local board.
+      }
+    };
+    const scheduleLocalSync = () => {
+      if (localSyncTimer) return;
+      localSyncTimer = setTimeout(flushLocalChanges, BOARD_SYNC_INTERVAL_MS);
+    };
     const unlisten = editor.store.listen(
       (entry) => {
         const { added, updated, removed } = entry.changes;
-        try {
-          doc.transact(() => {
-            for (const record of Object.values(added)) {
-              yStore.set(record.id, record);
-            }
-            for (const [, to] of Object.values(updated)) {
-              yStore.set(to.id, to);
-            }
-            for (const record of Object.values(removed)) {
-              yStore.delete(record.id);
-            }
-          }, LOCAL);
-        } catch {
-          // A failed mirror must not break the local board.
+        for (const record of Object.values(added)) {
+          pendingDeletes.delete(record.id);
+          pendingUpserts.set(record.id, record);
         }
+        for (const [, to] of Object.values(updated)) {
+          pendingDeletes.delete(to.id);
+          pendingUpserts.set(to.id, to);
+        }
+        for (const record of Object.values(removed)) {
+          pendingUpserts.delete(record.id);
+          pendingDeletes.add(record.id);
+        }
+        scheduleLocalSync();
       },
       { source: 'user', scope: 'document' },
     );
@@ -728,6 +994,7 @@ export function BoardTldraw({
 
     return () => {
       clearTimeout(initTimer);
+      clearJoinRetry();
       if (presenterTimer) clearInterval(presenterTimer);
       el?.removeEventListener('pointerenter', onEnter);
       el?.removeEventListener('pointerleave', onLeave);
@@ -736,6 +1003,9 @@ export function BoardTldraw({
       el?.removeEventListener('pointermove', onDragMove);
       el?.removeEventListener('pointerup', onDragEnd);
       el?.removeEventListener('pointercancel', onDragEnd);
+      // Do not lose the tail of an in-progress stroke when the user switches
+      // surfaces or the room unmounts.
+      flushLocalChanges();
       unlisten();
       yStore.unobserve(onYChange);
       doc.off('update', onDocUpdate);
@@ -746,6 +1016,17 @@ export function BoardTldraw({
 
   const toggleWritable = () =>
     socketRef.current?.emit('board:writable', { sessionId, open: !boardOpen });
+
+  // Recover a stuck/blank board without reloading the page (see resyncRef).
+  const resync = () => {
+    setResyncing(true);
+    try {
+      resyncRef.current();
+    } catch {
+      // best-effort — never let the control itself throw
+    }
+    window.setTimeout(() => setResyncing(false), 800);
+  };
 
   const insertTemplate = (key: string) => {
     const t = TEMPLATES[key];
@@ -941,7 +1222,75 @@ export function BoardTldraw({
           : 'relative isolate h-full min-h-[320px] overflow-hidden rounded-xl border border-neutral-300 bg-white'
       }
     >
+      {/* Move tldraw's main toolbar off the bottom-centre (where it covered the
+          lower part of the drawing) to a compact cluster on the left edge. */}
+      <style>{`
+        /* Desktop/tablet only — on phones (narrow viewport) tldraw's own bottom
+           toolbar is the right layout, and forcing it left/vertical there turned
+           it into a tall column overlapping the board. */
+        @media (min-width: 768px) {
+          .tlui-main-toolbar {
+            position: absolute;
+            left: 6px;
+            top: 50%;
+            bottom: auto;
+            transform: translateY(-50%);
+            /*
+             * OverflowingToolbar calculates how many controls to expose from
+             * this element's width. Once its contents are stacked, auto width
+             * shrinks to one button and hides nearly every tool. Reserve the
+             * native maximum so the full palette remains available.
+             */
+            width: 470px;
+            justify-content: flex-start;
+          }
+          .tlui-main-toolbar--horizontal .tlui-main-toolbar__inner {
+            flex-direction: column;
+          }
+          /* Stack the tool buttons vertically (overflow into the "more" popup
+             still works — it stays width-based, only a few show + the chevron). */
+          .tlui-main-toolbar__tools,
+          .tlui-main-toolbar__tools .tlui-row {
+            flex-direction: column;
+          }
+          .tlui-layout__bottom { align-items: flex-start; }
+        }
+      `}</style>
       <Tldraw store={store} onMount={handleMount} licenseKey={licenseKey} />
+
+      {!boardReady && (
+        <div
+          className="absolute inset-0 z-[450] flex flex-col items-center justify-center gap-3 bg-white/94 px-6 text-center backdrop-blur-sm"
+          role="status"
+          aria-live="polite"
+        >
+          <span className="h-8 w-8 animate-spin rounded-full border-[3px] border-signal-100 border-t-signal-600" />
+          <div>
+            <p className="text-sm font-bold text-neutral-900">
+              Loading shared chalkboard
+            </p>
+            <p className="mt-1 text-xs text-neutral-500">
+              Syncing the class board before editing begins.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Resync — everyone. If the board ever looks stuck or blank, this rebuilds
+          it from the shared doc and re-pulls state, recovering in one tap without
+          a full page reload (which would drop the call + scroll position). */}
+      <button
+        onClick={resync}
+        disabled={resyncing}
+        aria-label="Resync board"
+        title="Board stuck or blank? Tap to resync"
+        className="pointer-events-auto absolute bottom-16 right-14 z-[402] grid h-9 w-9 place-items-center rounded-lg bg-white/90 text-neutral-700 shadow ring-1 ring-neutral-200 backdrop-blur transition hover:bg-white hover:text-neutral-900 disabled:opacity-60"
+      >
+        <PiArrowsClockwiseBold
+          className={`h-[18px] w-[18px] ${resyncing ? 'animate-spin' : ''}`}
+          aria-hidden
+        />
+      </button>
 
       {/* Full-screen toggle — everyone (a student can enlarge the board to read
           it). Bottom-right corner to stay clear of tldraw's top menus + style
@@ -950,7 +1299,7 @@ export function BoardTldraw({
         onClick={() => setFullscreen((f) => !f)}
         aria-label={fullscreen ? 'Exit full screen' : 'Full screen'}
         title={fullscreen ? 'Exit full screen (Esc)' : 'Full screen'}
-        className="pointer-events-auto absolute bottom-3 right-3 z-[402] grid h-9 w-9 place-items-center rounded-lg bg-white/90 text-neutral-700 shadow ring-1 ring-neutral-200 backdrop-blur transition hover:bg-white hover:text-neutral-900"
+        className="pointer-events-auto absolute bottom-16 right-3 z-[402] grid h-9 w-9 place-items-center rounded-lg bg-white/90 text-neutral-700 shadow ring-1 ring-neutral-200 backdrop-blur transition hover:bg-white hover:text-neutral-900"
       >
         {fullscreen ? (
           <svg viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]" aria-hidden>

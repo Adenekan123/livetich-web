@@ -337,6 +337,14 @@ export function ClassRoom({
   // Admins otherwise shadow-join: hidden from everyone, read-only. They watch
   // and listen but never publish, raise a hand, or post — presence stays unseen.
   const isShadow = me.role === 'ORG_ADMIN' && !teaching;
+
+  // Warm the heavy tldraw board chunk shortly after mount so opening the
+  // chalkboard is near-instant instead of a multi-second first-load download.
+  // Delayed so the download doesn't compete with the join's connection requests.
+  useEffect(() => {
+    const t = setTimeout(() => void import('./board-tldraw'), 1500);
+    return () => clearTimeout(t);
+  }, []);
   // Pack-gated surfaces: the mushaf needs Islamic Education, the code editor
   // needs Code Instruction. Everything else (video, chalkboard) is core.
   const views = VIEWS.filter(

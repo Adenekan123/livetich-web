@@ -10,6 +10,41 @@ import type { BrowseSession, CatalogCourse } from '@/lib/types';
  * `Date.now()` hydration drift.
  */
 
+/**
+ * Quick-pick suggestions for the program create/edit "Category" field. The
+ * field stays free-text — an admin can type anything — these just autocomplete
+ * the common ones. Ordered with the Islamic-education focus first (the
+ * platform's beachhead) and broader skills after, so the likeliest picks sit at
+ * the top of the dropdown. Shared by both the create and edit forms so the two
+ * never drift apart.
+ */
+export const COURSE_CATEGORIES = [
+  // Islamic education
+  "Qur'an & Tajweed",
+  'Hifz (Memorization)',
+  'Arabic Language',
+  'Islamic Studies',
+  'Fiqh',
+  'Hadith',
+  'Tafsir',
+  'Seerah',
+  'Aqeedah',
+  // General academic & skills
+  'Software Engineering',
+  'Web Development',
+  'Data & Analytics',
+  'Design',
+  'Business & Entrepreneurship',
+  'Mathematics',
+  'Science',
+  'Languages',
+  'Test Prep',
+  'Music',
+  'Art & Creativity',
+  'Health & Fitness',
+  'Personal Development',
+] as const;
+
 export type CohortStatus =
   | 'LIVE' // a session is running right now
   | 'IN_PROGRESS' // cohort started, not yet finished
