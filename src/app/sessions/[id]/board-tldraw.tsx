@@ -347,6 +347,10 @@ export function BoardTldraw({
   const [store] = useState(() =>
     createTLStore({ assets: makeBoardAssetStore(sessionId) }),
   );
+  // Do not let anyone edit until the server has supplied the initial Yjs state.
+  // A visible loading state is safer than accepting strokes before a socket
+  // handshake exists to relay them.
+  const [boardReady, setBoardReady] = useState(false);
   // Presenter tools (camera-follow + shared laser). Refs bridge the socket
   // handlers in onMount to React state for the overlay + follow button.
   const editorRef = useRef<Editor | null>(null);
@@ -476,7 +480,7 @@ export function BoardTldraw({
   }, [boardOpen, canDraw]);
 
   const handleMount = (editor: Editor) => {
-    if (!canDraw) editor.updateInstanceState({ isReadonly: true });
+    editor.updateInstanceState({ isReadonly: true });
     editorRef.current = editor;
 
     const doc = new Y.Doc();
@@ -751,6 +755,8 @@ export function BoardTldraw({
     socket.on('disconnect', () => {
       boardJoined = false;
       clearJoinRetry();
+      setBoardReady(false);
+      editor.updateInstanceState({ isReadonly: true });
     });
     // The gateway emits a custom 'error' (e.g. UNAUTHORIZED) before disconnecting.
     (socket as unknown as {
@@ -767,11 +773,18 @@ export function BoardTldraw({
     socket.on('board:writable', (p) => {
       markBoardJoined();
       setBoardOpen(p.open);
+      if (!canDraw) editor.updateInstanceState({ isReadonly: !p.open });
     });
     socket.on('board:state', (p) => {
       markBoardJoined();
       const applied = applyRemote(p.update);
       reconcile();
+      if (applied) {
+        setBoardReady(true);
+        // The state packet always precedes board:writable. Presenters can work
+        // immediately; students are updated again by the writable packet.
+        editor.updateInstanceState({ isReadonly: canDraw ? false : !boardOpen });
+      }
       // A presenter may start drawing before the board socket has completed its
       // first join. Those local Yjs updates had no connected socket to forward
       // them through, so publish the complete merged document after the server
@@ -1212,6 +1225,24 @@ export function BoardTldraw({
         }
       `}</style>
       <Tldraw store={store} onMount={handleMount} licenseKey={licenseKey} />
+
+      {!boardReady && (
+        <div
+          className="absolute inset-0 z-[450] flex flex-col items-center justify-center gap-3 bg-white/94 px-6 text-center backdrop-blur-sm"
+          role="status"
+          aria-live="polite"
+        >
+          <span className="h-8 w-8 animate-spin rounded-full border-[3px] border-signal-100 border-t-signal-600" />
+          <div>
+            <p className="text-sm font-bold text-neutral-900">
+              Loading shared chalkboard
+            </p>
+            <p className="mt-1 text-xs text-neutral-500">
+              Syncing the class board before editing begins.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Resync — everyone. If the board ever looks stuck or blank, this rebuilds
           it from the shared doc and re-pulls state, recovering in one tap without
