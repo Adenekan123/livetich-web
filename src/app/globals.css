@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "react-day-picker/style.css";
 
 /*
  * livetich design foundation — "flat & accessible, one warm brand pair."
@@ -469,4 +470,3 @@ h4 {
   --color-signal-800: #9f1239;
   --color-signal-900: #881337;
 }
-

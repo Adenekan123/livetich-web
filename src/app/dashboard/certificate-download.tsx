@@ -13,9 +13,10 @@ export function CertificateDownload({
   ready: boolean;
 }) {
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   if (!ready) {
     return (
-      <span className="flex items-center gap-1.5 text-neutral-400">
+      <span className="flex items-center gap-1.5 text-sm text-neutral-600" role="status">
         <span className="h-3 w-3 animate-spin rounded-full border-2 border-neutral-300 border-t-transparent" />
         Generating PDF…
       </span>
@@ -24,6 +25,7 @@ export function CertificateDownload({
 
   const download = async () => {
     setBusy(true);
+    setError(null);
     try {
       const token = await getRealtimeToken();
       const res = await fetch(`${API_URL}/certificates/${certificateId}/download`, {
@@ -36,21 +38,27 @@ export function CertificateDownload({
       a.download = 'certificate.pdf';
       a.click();
       URL.revokeObjectURL(url);
+    } catch {
+      setError('We could not download this certificate. Please try again.');
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <button
-      onClick={download}
-      disabled={busy}
-      className="flex items-center gap-1.5 text-signal-600 transition hover:text-signal-500 disabled:opacity-50"
-    >
-      {busy && (
-        <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-      )}
-      {busy ? 'Downloading…' : 'Download PDF'}
-    </button>
+    <div className="text-right">
+      <button
+        type="button"
+        onClick={download}
+        disabled={busy}
+        className="flex items-center gap-1.5 text-sm font-semibold text-signal-700 transition hover:text-signal-800 disabled:opacity-50"
+      >
+        {busy && (
+          <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        )}
+        {busy ? 'Downloading…' : 'Download PDF'}
+      </button>
+      {error && <p className="mt-1 max-w-48 text-xs text-rose-700" role="status">{error}</p>}
+    </div>
   );
 }

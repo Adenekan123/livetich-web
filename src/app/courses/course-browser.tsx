@@ -5,7 +5,7 @@ import Link, { useLinkStatus } from 'next/link';
 import { btn, cn } from '@/lib/ui';
 import { RefreshButton } from '@/components/refresh-button';
 import type { ClassItem, CohortStatus } from './catalog-lib';
-import { NewProgramButton } from './new-program-modal';
+import { NewProgramButton, NewProgramModal } from './new-program-modal';
 
 type Role = 'STUDENT' | 'INSTRUCTOR' | 'ORG_ADMIN';
 
@@ -112,11 +112,22 @@ function StatusPill({ status, label }: { status: CohortStatus; label: string }) 
 
 /* ---------- One cohort card ---------- */
 
-function MetaRow({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+function MetaRow({
+  icon,
+  label,
+  children,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="flex items-center gap-2 text-neutral-600">
-      <span className="text-neutral-400">{icon}</span>
-      <span className="min-w-0 truncate">{children}</span>
+    <div className="flex items-start gap-2.5">
+      <span className="mt-0.5 text-neutral-500">{icon}</span>
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{label}</p>
+        <p className="mt-0.5 text-sm font-medium text-neutral-800">{children}</p>
+      </div>
     </div>
   );
 }
@@ -157,101 +168,94 @@ function CohortCard({ c, isAdmin = false }: { c: ClassItem; isAdmin?: boolean })
     <div
       className={cn(
         'group flex flex-col rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm transition duration-200 ease-out hover:-translate-y-0.5 hover:border-neutral-400 hover:shadow-md',
+        c.isLive && 'border-rose-200 shadow-rose-950/5',
         dim && 'opacity-70 hover:opacity-100',
       )}
     >
-      {/* Header */}
       <div className="flex items-start justify-between gap-3">
-        <span
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-signal-700 text-sm font-bold tracking-tight text-white"
-          aria-hidden
-        >
-          {c.monogram}
-        </span>
+        <div className="flex min-w-0 items-start gap-3">
+          <span
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-signal-700 text-sm font-bold tracking-tight text-white"
+            aria-hidden
+          >
+            {c.monogram}
+          </span>
+          <div className="min-w-0">
+            <Link
+              href={`/courses/${c.courseId}`}
+              className="line-clamp-2 font-display text-lg font-extrabold leading-tight tracking-tight text-neutral-950 hover:text-signal-800 hover:underline"
+            >
+              {c.title}
+            </Link>
+            <p className="mt-1 truncate text-sm text-neutral-600">{c.instructor}</p>
+          </div>
+        </div>
         <StatusPill status={c.status} label={c.statusLabel} />
       </div>
 
-      {/* Title + provenance */}
-      <div className="mt-4">
-        <Link
-          href={`/courses/${c.courseId}`}
-          className="line-clamp-2 font-display text-lg font-extrabold leading-tight tracking-tight text-neutral-950 hover:underline"
-        >
-          {c.title}
-        </Link>
-        <p className="mt-1.5 truncate text-sm text-neutral-500">
-          {c.instructor}
-          <span className="mx-1.5 text-neutral-300">·</span>
-          {c.category}
-          {c.level && (
-            <>
-              <span className="mx-1.5 text-neutral-300">·</span>
-              {c.level}
-            </>
-          )}
-        </p>
+      <div className="mt-4 flex flex-wrap gap-2 text-xs font-medium text-neutral-600">
+        <span className="rounded-full bg-neutral-100 px-2.5 py-1">{c.category}</span>
+        {c.level && <span className="rounded-full bg-signal-50 px-2.5 py-1 text-signal-800">{c.level}</span>}
       </div>
 
-      {/* Schedule block — a program that runs in batches has no cadence of its
-          own (each batch does), so point the student at the batch picker. */}
-      <div className="mt-4 space-y-2 border-t border-neutral-100 pt-4 text-sm">
+      <div className="mt-5 grid gap-3 rounded-xl bg-neutral-50 p-3.5">
         {c.batchCount > 0 ? (
           <>
-            <MetaRow icon={<CalendarIcon />}>
+            <MetaRow icon={<CalendarIcon />} label="Schedule">
               Runs in {c.batchCount} {c.batchCount === 1 ? 'batch' : 'batches'} —
               choose a time
             </MetaRow>
-            <MetaRow icon={<CapIcon />}>Certificate on completion</MetaRow>
+            <MetaRow icon={<CapIcon />} label="Outcome">Certificate on completion</MetaRow>
           </>
         ) : (
           <>
             {c.scheduleLabel ? (
-              <MetaRow icon={<CalendarIcon />}>
+              <MetaRow icon={<CalendarIcon />} label="Meets">
                 {c.scheduleLabel}
-                {c.tzLabel && <span className="text-neutral-400"> {c.tzLabel}</span>}
+                {c.tzLabel && <span className="text-neutral-500"> {c.tzLabel}</span>}
               </MetaRow>
             ) : (
-              <MetaRow icon={<CalendarIcon />}>
-                <span className="text-neutral-400">Schedule to be announced</span>
+              <MetaRow icon={<CalendarIcon />} label="Meets">
+                <span className="text-neutral-600">Schedule to be announced</span>
               </MetaRow>
             )}
 
-            <MetaRow icon={<ClockIcon />}>
+            <div className="grid grid-cols-2 gap-3 border-t border-neutral-200 pt-3">
+              <MetaRow icon={<ClockIcon />} label="Length">
               {c.durationLabel ?? 'Self-paced length'}
               {c.startText &&
                 (c.status === 'ENROLLING' ||
                   c.status === 'STARTING_SOON' ||
                   c.status === 'OPEN') && (
-                  <span className="text-neutral-400"> · starts {c.startText}</span>
+                  <span className="block text-xs font-normal text-neutral-500">Starts {c.startText}</span>
                 )}
               {c.status === 'IN_PROGRESS' && c.statusHint && (
-                <span className="text-neutral-400"> · {c.statusHint}</span>
+                  <span className="block text-xs font-normal text-neutral-500">{c.statusHint}</span>
               )}
-            </MetaRow>
-
-            <MetaRow icon={<CapIcon />}>Certificate on completion</MetaRow>
+              </MetaRow>
+              <MetaRow icon={<CapIcon />} label="Outcome">Certificate on completion</MetaRow>
+            </div>
           </>
         )}
       </div>
 
-      {/* Footer */}
-      <div className="mt-5 flex items-center justify-between gap-3 pt-1">
-        <span className="text-xs text-neutral-400">
-          {c.enrollments} {c.enrollments === 1 ? 'student' : 'students'}
+      <div className="mt-5 flex flex-col gap-3 border-t border-neutral-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <span className="text-sm text-neutral-600">
+          <span className="font-semibold text-neutral-800">{c.enrollments}</span> enrolled
         </span>
         {c.isLive && c.liveSessionId ? (
           isAdmin ? (
             // Admins pick Shadow vs Join-as-instructor on the program page — a
             // bare "Join live" that drops them straight into the room is
             // confusing (and can put them in as the presenter unintentionally).
-            <Link href={`/courses/${c.courseId}`} className={btn('primary', 'sm')}>
+            <Link href={`/courses/${c.courseId}`} className={btn('primary', 'sm', 'w-full sm:w-auto')}>
               Join live →
             </Link>
           ) : (
             <JoinLiveButton sessionId={c.liveSessionId} />
           )
         ) : (
-          <Link href={`/courses/${c.courseId}`} className={btn('secondary', 'sm')}>
+          <Link href={`/courses/${c.courseId}`} className={btn('secondary', 'sm', 'w-full sm:w-auto')}>
             {c.status === 'COMPLETED' ? 'View' : 'View program'}
           </Link>
         )}
@@ -266,10 +270,12 @@ function PageHeader({
   classes,
   canCreate,
   subtitle,
+  onCreate,
 }: {
   classes: ClassItem[];
   canCreate: boolean;
   subtitle: string;
+  onCreate?: () => void;
 }) {
   const liveCount = classes.filter((c) => c.isLive).length;
   const enrollingCount = classes.filter(
@@ -283,7 +289,7 @@ function PageHeader({
         </h1>
         <div className="flex shrink-0 items-center gap-2">
           <RefreshButton title="Refresh programs" />
-          {canCreate && <NewProgramButton />}
+          {canCreate && onCreate && <NewProgramButton onClick={onCreate} />}
         </div>
       </div>
       <p className="mt-2 max-w-2xl text-sm leading-relaxed text-neutral-500">{subtitle}</p>
@@ -397,7 +403,13 @@ function CardGrid({ items, isAdmin = false }: { items: ClassItem[]; isAdmin?: bo
   );
 }
 
-function EmptyCatalog({ canCreate }: { canCreate: boolean }) {
+function EmptyCatalog({
+  canCreate,
+  onCreate,
+}: {
+  canCreate: boolean;
+  onCreate?: () => void;
+}) {
   return (
     <div className="mt-4 rounded-2xl border border-dashed border-neutral-300 bg-neutral-50 px-6 py-16 text-center">
       <p className="font-display text-lg font-bold text-neutral-950">
@@ -410,7 +422,7 @@ function EmptyCatalog({ canCreate }: { canCreate: boolean }) {
       </p>
       {canCreate && (
         <div className="mt-5 flex justify-center">
-          <NewProgramButton />
+          {onCreate && <NewProgramButton onClick={onCreate} />}
         </div>
       )}
     </div>
@@ -476,6 +488,7 @@ function AdminBrowser({ classes, canCreate }: { classes: ClassItem[]; canCreate:
   const [query, setQuery] = useState('');
   const [cat, setCat] = useState('All');
   const [filter, setFilter] = useState<AdminFilter>('All');
+  const [createOpen, setCreateOpen] = useState(false);
 
   const categories = useMemo(
     () => ['All', ...Array.from(new Set(classes.map((c) => c.category))).sort()],
@@ -492,6 +505,7 @@ function AdminBrowser({ classes, canCreate }: { classes: ClassItem[]; canCreate:
       <PageHeader
         classes={classes}
         canCreate={canCreate}
+        onCreate={() => setCreateOpen(true)}
         subtitle="Cohort-based classes your students join on a fixed weekly schedule. Every program runs live for a set number of weeks and ends with a verifiable certificate."
       />
 
@@ -510,7 +524,7 @@ function AdminBrowser({ classes, canCreate }: { classes: ClassItem[]; canCreate:
       {filtered.length > 0 ? (
         <CardGrid items={filtered} isAdmin />
       ) : classes.length === 0 ? (
-        <EmptyCatalog canCreate={canCreate} />
+        <EmptyCatalog canCreate={canCreate} onCreate={() => setCreateOpen(true)} />
       ) : (
         <NoMatch
           onClear={() => {
@@ -520,6 +534,7 @@ function AdminBrowser({ classes, canCreate }: { classes: ClassItem[]; canCreate:
           }}
         />
       )}
+      <NewProgramModal open={createOpen} onClose={() => setCreateOpen(false)} />
     </div>
   );
 }

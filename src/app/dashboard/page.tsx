@@ -2,8 +2,12 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import {
   PiArrowRightBold,
+  PiBooksBold,
+  PiCalendarBold,
   PiCertificate,
+  PiChalkboardTeacherBold,
   PiPlusBold,
+  PiStudentBold,
   PiUsersBold,
 } from 'react-icons/pi';
 import { api } from '@/lib/api';
@@ -145,7 +149,12 @@ function pickBanner(courses: CatalogCourse[]): Banner | null {
 
 function Card({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
-    <div className={cn('rounded-2xl border border-neutral-200 bg-white p-4', className)}>
+    <div
+      className={cn(
+        'rounded-2xl border border-neutral-200/90 bg-white p-5 shadow-[0_1px_2px_rgba(15,46,42,0.03)] sm:p-6',
+        className,
+      )}
+    >
       {children}
     </div>
   );
@@ -155,21 +164,28 @@ function PanelHeader({
   title,
   count,
   link,
+  icon,
 }: {
   title: string;
   count?: number;
   link?: { label: string; href: string };
+  icon?: React.ReactNode;
 }) {
   return (
-    <div className="mb-3 flex items-center gap-2">
-      <h3 className="text-[20px] font-bold tracking-tight text-neutral-950">{title}</h3>
+    <div className="mb-5 flex items-center gap-2.5">
+      {icon && (
+        <span className="grid h-8 w-8 place-items-center rounded-lg bg-signal-50 text-signal-800">
+          {icon}
+        </span>
+      )}
+      <h3 className="text-lg font-bold tracking-tight text-neutral-950">{title}</h3>
       {count !== undefined && (
-        <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[14px] font-semibold text-neutral-500">
+        <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-semibold text-neutral-500">
           {count}
         </span>
       )}
       {link && (
-        <Link href={link.href} className="ml-auto text-[18px] font-bold text-signal-700 hover:text-signal-600">
+        <Link href={link.href} className="ml-auto text-sm font-semibold text-signal-700 hover:text-signal-600">
           {link.label} →
         </Link>
       )}
@@ -183,28 +199,37 @@ function StatCard({
   desc,
   href,
   teal,
+  icon,
 }: {
   label: string;
   value: number | string;
   desc?: string;
   href: string;
   teal?: boolean;
+  icon?: React.ReactNode;
 }) {
   return (
     <Link
       href={href}
       className={cn(
-        'rounded-2xl border p-4 transition',
+        'rounded-2xl border p-4 transition duration-200 hover:-translate-y-0.5',
         teal
           ? 'border-signal-100 bg-gradient-to-br from-signal-50 to-white hover:border-signal-200'
           : 'border-neutral-200 bg-white hover:border-neutral-300 hover:shadow-sm',
       )}
     >
-      <p className="font-mono text-[13.5px] font-bold uppercase tracking-wider text-neutral-400">{label}</p>
-      <p className={cn('mt-2 text-[36px] font-extrabold leading-none tracking-tight', teal ? 'text-signal-800' : 'text-neutral-950')}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-neutral-400">{label}</p>
+        {icon && (
+          <span className={cn('grid h-8 w-8 place-items-center rounded-lg', teal ? 'bg-signal-100 text-signal-800' : 'bg-neutral-100 text-neutral-600')}>
+            {icon}
+          </span>
+        )}
+      </div>
+      <p className={cn('mt-2 text-3xl font-extrabold leading-none tracking-tight', teal ? 'text-signal-800' : 'text-neutral-950')}>
         {value}
       </p>
-      {desc && <p className="mt-1.5 truncate text-[18px] font-medium text-neutral-500">{desc}</p>}
+      {desc && <p className="mt-1.5 truncate text-sm text-neutral-500">{desc}</p>}
     </Link>
   );
 }
@@ -214,31 +239,31 @@ function LiveBanner({ banner }: { banner: Banner }) {
   return (
     <div
       className={cn(
-        'flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:gap-4',
+        'flex flex-col gap-4 rounded-2xl border p-5 shadow-[0_1px_2px_rgba(15,46,42,0.03)] sm:flex-row sm:items-center sm:px-6',
         live
-          ? 'border-lime-200 bg-gradient-to-r from-lime-50 to-white'
+          ? 'border-rose-200 bg-gradient-to-r from-rose-50 to-white'
           : 'border-accent-100 bg-gradient-to-r from-accent-50 to-white',
       )}
     >
       <span className="relative flex h-2.5 w-2.5 shrink-0">
         {live && (
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-lime-400 opacity-60" />
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-60" />
         )}
-        <span className={cn('relative inline-flex h-2.5 w-2.5 rounded-full', live ? 'bg-lime-500' : 'bg-accent-600')} />
+        <span className={cn('relative inline-flex h-2.5 w-2.5 rounded-full', live ? 'bg-rose-600' : 'bg-accent-600')} />
       </span>
       <div className="min-w-0 flex-1">
         <p className="font-semibold text-neutral-950">
           <span
             className={cn(
               'mr-2 rounded px-1.5 py-0.5 align-[1px] font-mono text-[13px] font-extrabold uppercase tracking-wider',
-              live ? 'bg-lime-100 text-lime-700' : 'bg-accent-100 text-accent-700',
+              live ? 'bg-rose-100 text-rose-700' : 'bg-accent-100 text-accent-700',
             )}
           >
             {live ? 'Live' : 'Next'}
           </span>
           {banner.title}
         </p>
-        <p className="mt-1 text-[20px] text-neutral-500">{banner.subtitle}</p>
+        <p className="mt-1 text-sm text-neutral-600">{banner.subtitle}</p>
       </div>
       <Link href={banner.href} className={btn(live ? 'primary' : 'secondary', 'sm', 'shrink-0')}>
         {live ? 'Join session →' : 'View program →'}
@@ -249,12 +274,12 @@ function LiveBanner({ banner }: { banner: Banner }) {
 
 function SchedulePanel({ rows }: { rows: SessionRow[] }) {
   const kindDot: Record<SessionKind, string> = {
-    live: 'bg-lime-500',
+    live: 'bg-rose-600',
     next: 'bg-accent-600',
     later: 'bg-neutral-300',
   };
   const kindPill: Record<SessionKind, string> = {
-    live: 'bg-lime-100 text-lime-700',
+    live: 'bg-rose-100 text-rose-700',
     next: 'bg-accent-50 text-accent-700 border border-accent-100',
     later: 'bg-neutral-100 text-neutral-500',
   };
@@ -267,17 +292,31 @@ function SchedulePanel({ rows }: { rows: SessionRow[] }) {
           href={`/courses/${s.id}`}
           className="group flex items-center gap-3 py-3 first:pt-0 last:pb-0"
         >
-          <span className="w-14 shrink-0 font-mono text-[18px] font-bold text-neutral-700">{s.time}</span>
+          <span className="w-14 shrink-0 font-mono text-sm font-bold text-neutral-700">{s.time}</span>
           <span className={cn('h-9 w-[3px] shrink-0 rounded-full', kindDot[s.kind])} />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[20px] font-semibold text-neutral-950 group-hover:text-signal-700">{s.title}</p>
-            <p className="truncate text-[18px] text-neutral-500">{s.instructor}</p>
+            <p className="truncate text-base font-semibold text-neutral-950 group-hover:text-signal-700">{s.title}</p>
+            <p className="truncate text-sm text-neutral-500">{s.instructor}</p>
           </div>
-          <span className={cn('rounded-full px-2 py-0.5 font-mono text-[13.5px] font-bold uppercase tracking-wide', kindPill[s.kind])}>
+          <span className={cn('rounded-full px-2 py-0.5 font-mono text-[11px] font-bold uppercase tracking-wide', kindPill[s.kind])}>
             {kindLabel[s.kind]}
           </span>
         </Link>
       ))}
+    </div>
+  );
+}
+
+function EmptySessions({ message = 'No sessions scheduled today.' }: { message?: string }) {
+  return (
+    <div className="flex flex-col items-center px-4 py-8 text-center sm:py-10">
+      <span className="grid h-14 w-14 place-items-center rounded-2xl border border-signal-100 bg-signal-50 text-signal-700">
+        <PiCalendarBold className="h-7 w-7" aria-hidden />
+      </span>
+      <p className="mt-4 text-base font-semibold text-neutral-900">{message}</p>
+      <p className="mt-1 max-w-sm text-sm text-neutral-600">
+        Your scheduled and live classes will appear here when they are ready.
+      </p>
     </div>
   );
 }
@@ -298,7 +337,7 @@ function ProgramTile({
   right?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-neutral-200 p-3 transition hover:border-neutral-300 hover:bg-neutral-50/60">
+    <div className="flex items-center gap-3 rounded-xl border border-neutral-200 p-3.5 transition duration-200 hover:border-signal-200 hover:bg-signal-50/40">
       {ring ? (
         <span
           className="grid h-10 w-10 shrink-0 place-items-center rounded-full"
@@ -321,8 +360,8 @@ function ProgramTile({
         </span>
       )}
       <Link href={href} className="min-w-0 flex-1">
-        <p className="truncate text-[20px] font-bold tracking-tight text-neutral-950">{title}</p>
-        <p className="truncate text-[18px] text-neutral-500">{subtitle}</p>
+        <p className="truncate text-base font-bold tracking-tight text-neutral-950">{title}</p>
+        <p className="truncate text-sm text-neutral-500">{subtitle}</p>
       </Link>
       {right}
     </div>
@@ -332,12 +371,12 @@ function ProgramTile({
 /* status pill used inside program tiles */
 function StatusPill({ status, label }: { status: CohortStatus; label: string }) {
   const styles: Record<CohortStatus, string> = {
-    LIVE: 'bg-lime-100 text-lime-700',
+    LIVE: 'bg-rose-100 text-rose-700',
     STARTING_SOON: 'bg-accent-50 text-accent-700 border border-accent-100',
     ENROLLING: 'bg-signal-50 text-signal-800',
     OPEN: 'bg-neutral-100 text-neutral-500',
     IN_PROGRESS: 'bg-signal-50 text-signal-800',
-    COMPLETED: 'bg-neutral-100 text-neutral-400',
+    COMPLETED: 'bg-neutral-100 text-neutral-600',
   };
   return (
     <span className={cn('shrink-0 rounded-full px-2 py-0.5 font-mono text-[13.5px] font-bold uppercase tracking-wide', styles[status])}>
@@ -354,7 +393,7 @@ export default async function DashboardPage() {
   const token = (await getToken())!;
 
   return (
-    <main className="mx-auto w-full max-w-[1600px] px-4 py-7 sm:px-8">
+    <main className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       {user.role === 'ORG_ADMIN' ? (
         <AdminConsole token={token} name={user.name} />
       ) : user.role === 'INSTRUCTOR' ? (
@@ -366,15 +405,24 @@ export default async function DashboardPage() {
   );
 }
 
-function DashHead({ title, subtitle }: { title: string; subtitle: string }) {
+function DashHead({
+  title,
+  subtitle,
+  action,
+}: {
+  title: string;
+  subtitle: string;
+  action?: React.ReactNode;
+}) {
   return (
-    <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+    <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="text-[30px] font-extrabold tracking-tight text-neutral-950">{title}</h1>
-        <p className="mt-1 text-[20px] text-neutral-500">{subtitle}</p>
+        <h1 className="text-3xl font-extrabold tracking-tight text-neutral-950 sm:text-[34px]">{title}</h1>
+        <p className="mt-1.5 max-w-2xl text-base text-neutral-600">{subtitle}</p>
       </div>
       <div className="flex items-center gap-2">
-        <span className="rounded-full border border-neutral-200 bg-white px-3 py-1.5 font-mono text-[18px] font-bold text-neutral-500">
+        {action}
+        <span className="rounded-full border border-neutral-200 bg-white px-3 py-1.5 font-mono text-xs font-bold text-neutral-500">
           {todayPill()}
         </span>
         <RefreshButton title="Refresh dashboard" />
@@ -424,7 +472,7 @@ function FirstRunGuide({
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-extrabold tracking-tight text-neutral-950">Get your first class running</h2>
-          <p className="mt-1 text-[20px] text-neutral-600">A few steps and you’re teaching live.</p>
+          <p className="mt-1 text-base text-neutral-600">A few steps and you’re teaching live.</p>
         </div>
         <span className="shrink-0 rounded-full bg-white px-3 py-1 text-[18px] font-semibold text-signal-700 ring-1 ring-signal-200">
           {doneCount} of {steps.length} done
@@ -450,7 +498,7 @@ function FirstRunGuide({
             </span>
             <div className="min-w-0 flex-1">
               <p className={cn('font-semibold', s.done ? 'text-neutral-400 line-through' : 'text-neutral-950')}>{s.title}</p>
-              {!s.done && <p className="mt-0.5 text-[20px] text-neutral-500">{s.desc}</p>}
+              {!s.done && <p className="mt-0.5 text-sm text-neutral-600">{s.desc}</p>}
             </div>
             {!s.done && (
               <Link href={s.href} className={btn(i === 0 ? 'primary' : 'secondary', 'sm', 'shrink-0')}>
@@ -502,17 +550,23 @@ async function AdminConsole({ token, name }: { token: string; name: string }) {
             ? `${liveCourses.length} class${liveCourses.length === 1 ? '' : 'es'} live now · ${sessions.length} session${sessions.length === 1 ? '' : 's'} today`
             : `${sessions.length} session${sessions.length === 1 ? '' : 's'} scheduled today`
         }
+        action={
+          <Link href="/courses" className={btn('primary', 'sm')}>
+            <PiPlusBold className="h-4 w-4" />
+            New program
+          </Link>
+        }
       />
-      <div className="space-y-4">
+      <div className="space-y-6">
         {banner && <LiveBanner banner={banner} />}
-        <div className="grid gap-4 lg:grid-cols-3">
-          <div className="space-y-4 lg:col-span-2">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(320px,1fr)]">
+          <div className="space-y-6">
             <Card>
-              <PanelHeader title="Today’s sessions" count={sessions.length} link={{ label: 'Programs', href: '/courses' }} />
+              <PanelHeader title="Today’s sessions" count={sessions.length} icon={<PiCalendarBold className="h-4 w-4" />} link={{ label: 'Programs', href: '/courses' }} />
               {sessions.length > 0 ? (
                 <SchedulePanel rows={sessions} />
               ) : (
-                <p className="py-6 text-center text-[20px] text-neutral-400">No sessions scheduled today.</p>
+                <EmptySessions />
               )}
             </Card>
             {enrolling.length > 0 && (
@@ -537,24 +591,24 @@ async function AdminConsole({ token, name }: { token: string; name: string }) {
             )}
           </div>
 
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <StatCard label="Programs" value={courses.length} href="/courses" teal desc={enrolling.length > 0 ? `${enrolling.length} enrolling` : undefined} />
-              <StatCard label="Enrollments" value={enrollments} href="/courses" desc={`across ${courses.length}`} />
-              <StatCard label="Instructors" value={instructors.length} href="/account/instructors" />
-              <StatCard label="Students" value={students.length} href="/account/students" />
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+              <StatCard label="Programs" value={courses.length} href="/courses" teal icon={<PiBooksBold className="h-4 w-4" />} desc={enrolling.length > 0 ? `${enrolling.length} enrolling` : undefined} />
+              <StatCard label="Enrollments" value={enrollments} href="/courses" icon={<PiUsersBold className="h-4 w-4" />} desc={`across ${courses.length}`} />
+              <StatCard label="Instructors" value={instructors.length} href="/account/instructors" icon={<PiChalkboardTeacherBold className="h-4 w-4" />} />
+              <StatCard label="Students" value={students.length} href="/account/students" icon={<PiStudentBold className="h-4 w-4" />} />
             </div>
             <Card>
               <PanelHeader title="Quick actions" />
               <div className="space-y-2.5">
                 <Link href="/courses" className="flex items-center gap-3 rounded-xl border border-neutral-200 p-3 transition hover:border-neutral-300 hover:bg-neutral-50/60">
                   <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-signal-700 text-white"><PiPlusBold className="h-4 w-4" /></span>
-                  <span className="min-w-0 flex-1"><span className="block text-[20px] font-bold text-neutral-950">New program</span><span className="block text-[18px] text-neutral-500">Create a cohort &amp; set its schedule</span></span>
+                  <span className="min-w-0 flex-1"><span className="block text-base font-bold text-neutral-950">New program</span><span className="block text-sm text-neutral-600">Create a cohort &amp; set its schedule</span></span>
                   <PiArrowRightBold className="h-4 w-4 text-neutral-300" />
                 </Link>
                 <Link href="/account" className="flex items-center gap-3 rounded-xl border border-neutral-200 p-3 transition hover:border-neutral-300 hover:bg-neutral-50/60">
                   <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-signal-800 text-white"><PiUsersBold className="h-4 w-4" /></span>
-                  <span className="min-w-0 flex-1"><span className="block text-[20px] font-bold text-neutral-950">Invite people</span><span className="block text-[18px] text-neutral-500">Instructors &amp; students</span></span>
+                  <span className="min-w-0 flex-1"><span className="block text-base font-bold text-neutral-950">Invite people</span><span className="block text-sm text-neutral-600">Instructors &amp; students</span></span>
                   <PiArrowRightBold className="h-4 w-4 text-neutral-300" />
                 </Link>
               </div>
@@ -580,15 +634,15 @@ async function InstructorDashboard({ token, name }: { token: string; name: strin
       <DashHead title={`${greeting()}, ${name.split(' ')[0]}`} subtitle="The programs you teach." />
       {courses.length === 0 ? (
         <Card className="max-w-2xl border-dashed bg-neutral-50 text-center">
-          <p className="py-6 text-[20px] text-neutral-500">
+          <p className="py-6 text-base text-neutral-600">
             No programs are assigned to you yet. Your company admin assigns the courses you&apos;ll teach.
           </p>
         </Card>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-6">
           {banner && <LiveBanner banner={banner} />}
-          <div className="grid gap-4 lg:grid-cols-3">
-            <div className="lg:col-span-2">
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(320px,1fr)]">
+              <div>
               <Card>
                 <PanelHeader title="Your programs" count={courses.length} />
                 <div className="space-y-2.5">
@@ -619,17 +673,17 @@ async function InstructorDashboard({ token, name }: { token: string; name: strin
                 </div>
               </Card>
             </div>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <StatCard label="Teaching today" value={teachingToday} href="/courses" teal desc={`of ${courses.length} programs`} />
-                <StatCard label="Students" value={students} href="/courses" desc="across programs" />
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+                <StatCard label="Teaching today" value={teachingToday} href="/courses" teal icon={<PiChalkboardTeacherBold className="h-4 w-4" />} desc={`of ${courses.length} programs`} />
+                <StatCard label="Students" value={students} href="/courses" icon={<PiStudentBold className="h-4 w-4" />} desc="across programs" />
               </div>
               <Card>
-                <PanelHeader title="Today’s sessions" count={sessions.length} />
+                <PanelHeader title="Today’s sessions" count={sessions.length} icon={<PiCalendarBold className="h-4 w-4" />} />
                 {sessions.length > 0 ? (
                   <SchedulePanel rows={sessions} />
                 ) : (
-                  <p className="py-6 text-center text-[20px] text-neutral-400">Nothing scheduled today.</p>
+                  <EmptySessions message="Nothing is scheduled today." />
                 )}
               </Card>
             </div>
@@ -678,8 +732,15 @@ async function StudentDashboard({ token, name }: { token: string; name: string }
       <DashHead
         title={`Welcome back, ${name.split(' ')[0]}`}
         subtitle={next ? `Your next class is ${next.when.toLowerCase()}` : 'Jump back into a class or enroll in a new one.'}
+        action={
+          enrollments.length === 0 ? (
+            <Link href="/courses" className={btn('primary', 'sm')}>
+              Browse programs
+            </Link>
+          ) : undefined
+        }
       />
-      <div className="space-y-4">
+      <div className="space-y-6">
         {next && (
           <div className="flex flex-col gap-3 rounded-2xl border border-accent-100 bg-gradient-to-r from-accent-50 to-white p-4 sm:flex-row sm:items-center sm:gap-4">
             <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-accent-600" />
@@ -688,20 +749,30 @@ async function StudentDashboard({ token, name }: { token: string; name: string }
                 <span className="mr-2 rounded bg-accent-100 px-1.5 py-0.5 align-[1px] font-mono text-[13px] font-extrabold uppercase tracking-wider text-accent-700">Next</span>
                 {next.title}
               </p>
-              <p className="mt-1 text-[20px] text-neutral-500">{next.when}</p>
+              <p className="mt-1 text-sm text-neutral-600">{next.when}</p>
             </div>
             <Link href="/courses" className={btn('secondary', 'sm', 'shrink-0')}>My classes →</Link>
           </div>
         )}
-        <div className="grid gap-4 lg:grid-cols-3">
-          <div className="lg:col-span-2">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.65fr)_minmax(320px,1fr)]">
+          <div>
             <Card>
-              <PanelHeader title="Continue learning" count={enrollments.length} link={{ label: 'Catalog', href: '/courses' }} />
+              <PanelHeader title="Continue learning" count={enrollments.length} icon={<PiBooksBold className="h-4 w-4" />} link={{ label: 'Catalog', href: '/courses' }} />
               {enrollments.length === 0 ? (
-                <p className="py-6 text-center text-[20px] text-neutral-500">
-                  You&apos;re not enrolled in anything yet.{' '}
-                  <Link href="/courses" className="font-semibold text-signal-700 hover:text-signal-600">Browse programs →</Link>
-                </p>
+                <div className="flex flex-col items-center px-4 py-8 text-center sm:py-10">
+                  <span className="grid h-14 w-14 place-items-center rounded-2xl border border-signal-100 bg-signal-50 text-signal-700">
+                    <PiBooksBold className="h-7 w-7" aria-hidden />
+                  </span>
+                  <p className="mt-4 text-base font-semibold text-neutral-900">
+                    You&apos;re not enrolled in anything yet.
+                  </p>
+                  <p className="mt-1 max-w-sm text-sm text-neutral-600">
+                    Browse available programs to find a live class that fits your learning goals.
+                  </p>
+                  <Link href="/courses" className={btn('primary', 'sm', 'mt-4')}>
+                    Browse programs
+                  </Link>
+                </div>
               ) : (
                 <div className="space-y-2.5">
                   {enrollments.map((e) => {
@@ -728,16 +799,16 @@ async function StudentDashboard({ token, name }: { token: string; name: string }
               )}
             </Card>
           </div>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <StatCard label="Enrolled" value={enrollments.length} href="/courses" teal desc="active programs" />
-              <StatCard label="Certificates" value={certificates.length} href="#certificates" desc="earned" />
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+              <StatCard label="Enrolled" value={enrollments.length} href="/courses" teal icon={<PiBooksBold className="h-4 w-4" />} desc="active programs" />
+              <StatCard label="Certificates" value={certificates.length} href="/certificates" icon={<PiCertificate className="h-4 w-4" />} desc="earned" />
             </div>
             <Card>
               <div id="certificates" />
               <PanelHeader title="Certificates" count={certificates.length} />
               {certificates.length === 0 ? (
-                <p className="py-5 text-center text-[20px] text-neutral-500">None yet. Finish a program to earn a verifiable certificate.</p>
+                <p className="py-5 text-center text-base text-neutral-600">None yet. Finish a program to earn a verifiable certificate.</p>
               ) : (
                 <div className="divide-y divide-neutral-100">
                   {certificates.map((c) => (
@@ -746,7 +817,7 @@ async function StudentDashboard({ token, name }: { token: string; name: string }
                         <PiCertificate className="h-5 w-5" />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[20px] font-bold text-neutral-950">{c.course?.title ?? 'Certificate'}</p>
+                        <p className="truncate text-base font-bold text-neutral-950">{c.course?.title ?? 'Certificate'}</p>
                         <p className="truncate font-mono text-[14px] text-neutral-500">
                           {c.verificationCode} · {new Date(c.issuedAt).toLocaleDateString()}
                         </p>

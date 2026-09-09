@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { IconType } from 'react-icons';
@@ -89,20 +89,70 @@ export function ShellChrome({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const drawerRef = useRef<HTMLDivElement>(null);
 
-  const items: NavItem[] = [
-    ...(NAV[user.role] ?? NAV.STUDENT),
-    ...(user.isSuperAdmin
-      ? [
-          {
-            href: '/admin',
-            label: 'Platform admin',
-            icon: PiShieldCheckBold,
-            group: 'Platform',
-          },
-        ]
-      : []),
-  ];
+  const closeMenu = useCallback(() => {
+    setOpen(false);
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLButtonElement>('[data-dashboard-menu-trigger]')?.focus();
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const drawer = drawerRef.current;
+    if (!drawer) return;
+    const focusableSelector =
+      'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const focusable = () =>
+      Array.from(drawer.querySelectorAll<HTMLElement>(focusableSelector)).filter(
+        (element) => !element.hasAttribute('hidden'),
+      );
+    const first = focusable()[0];
+    first?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeMenu();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const elements = focusable();
+      const firstElement = elements[0];
+      const lastElement = elements[elements.length - 1];
+      if (!firstElement || !lastElement) return;
+      if (event.shiftKey && document.activeElement === firstElement) {
+        event.preventDefault();
+        lastElement.focus();
+      } else if (!event.shiftKey && document.activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [closeMenu, open]);
+
+  const items = useMemo<NavItem[]>(
+    () => [
+      ...(NAV[user.role] ?? NAV.STUDENT),
+      ...(user.isSuperAdmin
+        ? [
+            {
+              href: '/admin',
+              label: 'Platform admin',
+              icon: PiShieldCheckBold,
+              group: 'Platform',
+            },
+          ]
+        : []),
+    ],
+    [user.isSuperAdmin, user.role],
+  );
   const activeHref = useMemo(() => {
     const matches = items.filter(
       (i) => pathname === i.href || pathname.startsWith(`${i.href}/`),
@@ -125,7 +175,7 @@ export function ShellChrome({
             type="button"
             onClick={onNavigate}
             aria-label="Close menu"
-            className="grid h-8 w-8 place-items-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white lg:hidden"
+            className="grid h-11 w-11 place-items-center rounded-lg text-white/70 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-300 lg:hidden"
           >
             <PiXBold className="h-4 w-4" />
           </button>
@@ -230,15 +280,20 @@ export function ShellChrome({
 
       {/* Mobile drawer */}
       {open && (
-        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true">
+        <div
+          className="fixed inset-0 z-50 lg:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Main navigation"
+        >
           <button
             type="button"
             aria-label="Close menu"
-            onClick={() => setOpen(false)}
+            onClick={closeMenu}
             className="absolute inset-0 bg-black/40"
           />
-          <div className="absolute inset-y-0 left-0 w-[264px] max-w-[82%] shadow-2xl">
-            {sidebar(() => setOpen(false))}
+          <div ref={drawerRef} className="absolute inset-y-0 left-0 w-[264px] max-w-[82%] shadow-2xl">
+            {sidebar(closeMenu)}
           </div>
         </div>
       )}
@@ -247,10 +302,12 @@ export function ShellChrome({
         {/* Mobile top bar */}
         <div className="sticky top-0 z-30 flex items-center gap-3 border-b border-neutral-200 bg-white/85 px-4 py-2.5 backdrop-blur-md lg:hidden">
           <button
+            data-dashboard-menu-trigger
             type="button"
             onClick={() => setOpen(true)}
             aria-label="Open menu"
-            className="grid h-9 w-9 place-items-center rounded-lg text-neutral-600 hover:bg-neutral-100"
+            aria-expanded={open}
+            className="grid h-11 w-11 place-items-center rounded-lg text-neutral-600 transition hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-600"
           >
             <PiListBold className="h-5 w-5" />
           </button>
