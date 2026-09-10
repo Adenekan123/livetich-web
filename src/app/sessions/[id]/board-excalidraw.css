@@ -73,4 +73,55 @@
   .livetich-board .layer-ui__wrapper__top-right .sidebar-trigger__label-element {
     display: none;
   }
+
+  /* The shape-properties panel (stroke, background, width, opacity...) is
+     Excalidraw's top-left island. With the tools now down the left edge the two
+     sat on top of each other, so the panel moves to the right side, below the
+     classroom pills. It is the tallest thing on the board, so it scrolls rather
+     than running off the bottom. */
+  .livetich-board .App-menu__left {
+    position: absolute;
+    right: 0.5rem;
+    left: auto;
+    top: 3.25rem;
+    max-height: calc(100% - 8rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* "More tools" hangs off the bottom of the rail, where the board's rounded
+     overflow clip cuts it off. Open it to the right of the rail instead. */
+  .livetich-board .App-toolbar__extra-tools-dropdown {
+    left: calc(100% + 0.5rem);
+    right: auto;
+    top: auto;
+    bottom: 0;
+  }
+
+  /* Square, diamond and circle are folded into our own shapes control, which
+     also carries the shapes Excalidraw has no tool for (triangle, star...).
+     The tools themselves still exist and are still armed by setActiveTool and
+     by their number keys — only the three rail buttons are hidden. */
+  .livetich-board label:has(> input[data-testid='toolbar-rectangle']),
+  .livetich-board label:has(> input[data-testid='toolbar-diamond']),
+  .livetich-board label:has(> input[data-testid='toolbar-ellipse']) {
+    display: none;
+  }
+
+  /* Place the shapes control immediately after the selection tool. The row is a
+     grid, and our button is appended last in the DOM, so `order` does the
+     positioning: everything that should follow it is pushed to order 2. */
+  .livetich-board [data-board-shapes] {
+    order: 1;
+  }
+
+  .livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-arrow']),
+  .livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-line']),
+  .livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-freedraw']),
+  .livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-text']),
+  .livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-image']),
+  .livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-eraser']),
+  .livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-frame']) {
+    order: 2;
+  }
 }

@@ -123,7 +123,7 @@ export async function compressImageFile(file: File): Promise<File> {
 export async function uploadBoardAsset(
   sessionId: string,
   file: File,
-): Promise<string> {
+): Promise<{ url: string; file: File }> {
   const light = await compressImageFile(file);
   const post = async () => {
     const token = await getRealtimeToken();
@@ -142,7 +142,10 @@ export async function uploadBoardAsset(
   }
   if (!res.ok) throw new Error(`board asset upload failed (${res.status})`);
   const { url } = (await res.json()) as { url: string };
-  return url;
+  // Hand back the bytes that were actually sent. The caller needs a data URL
+  // for the local scene, and re-fetching what we just uploaded is a pointless
+  // round trip per page — slow enough on a class-sized deck to matter.
+  return { url, file: light };
 }
 
 /** Turn a base64 data URL back into a File so it can be uploaded. */
@@ -165,5 +168,15 @@ export async function fetchAsDataURL(url: string): Promise<string> {
     reader.onload = () => resolve(String(reader.result));
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(blob);
+  });
+}
+
+/** Read a local File as a data URL, for Excalidraw's in-memory files map. */
+export function fileToDataURL(file: File): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
   });
 }

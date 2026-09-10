@@ -3,6 +3,7 @@
 import '@excalidraw/excalidraw/index.css';
 import './board-excalidraw.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   CaptureUpdateAction,
   Excalidraw,
@@ -20,6 +21,7 @@ import type {
   Collaborator,
   ExcalidrawImperativeAPI,
   SocketId,
+  ToolType,
 } from '@excalidraw/excalidraw/types';
 import type {
   ExcalidrawElement,
@@ -56,6 +58,7 @@ import {
   PDF_MAX_PAGES,
   dataURLToFile,
   fetchAsDataURL,
+  fileToDataURL,
   pdfToImageFiles,
   uploadBoardAsset,
   type SharedBoardFile,
@@ -84,6 +87,9 @@ const SYNC_INTERVAL_MS = 50;
 /** The presenter's camera is broadcast less often than strokes — it only needs
  *  to feel attached, not be frame-accurate. */
 const PRESENTER_INTERVAL_MS = 100;
+/** Hydration retries per file, and the base of their exponential backoff. */
+const MAX_FILE_RETRIES = 3;
+const FILE_RETRY_BASE_MS = 500;
 /** Identifier for the presenter's laser in the collaborator overlay. It rides
  *  the presenter channel rather than awareness, so it needs a reserved slot. */
 const PRESENTER_ID = 'presenter' as SocketId;
@@ -141,6 +147,103 @@ const TEMPLATES: Record<string, { label: string; make: () => ExcalidrawElement[]
       ),
   },
 };
+
+/**
+ * Extra shapes.
+ *
+ * Excalidraw's toolbar offers rectangle, diamond and ellipse only — there is no
+ * triangle, and no way to register a new tool. These are inserted as closed
+ * `line` elements instead, which is what Excalidraw's own diamond effectively
+ * is: once placed they are ordinary elements, so they select, resize, restyle
+ * and sync like anything else drawn by hand.
+ */
+type Point = [number, number];
+
+/** A regular polygon inscribed in a size x size box, first vertex at the top. */
+function polygonPoints(sides: number, size: number): Point[] {
+  const r = size / 2;
+  const pts: Point[] = [];
+  for (let i = 0; i < sides; i++) {
+    const a = -Math.PI / 2 + (i * 2 * Math.PI) / sides;
+    pts.push([r + r * Math.cos(a), r + r * Math.sin(a)]);
+  }
+  pts.push(pts[0]);
+  return pts;
+}
+
+/** A star, alternating between the outer and inner radius. */
+function starPoints(spikes: number, size: number): Point[] {
+  const r = size / 2;
+  const inner = r * 0.4;
+  const pts: Point[] = [];
+  for (let i = 0; i < spikes * 2; i++) {
+    const rad = i % 2 === 0 ? r : inner;
+    const a = -Math.PI / 2 + (i * Math.PI) / spikes;
+    pts.push([r + rad * Math.cos(a), r + rad * Math.sin(a)]);
+  }
+  pts.push(pts[0]);
+  return pts;
+}
+
+const SHAPE_SIZE = 160;
+
+/**
+ * The shape menu. Excalidraw's own square/diamond/circle are *tools* — pick one
+ * and the next drag draws it. The rest have no tool to select, so they are
+ * dropped straight onto the board as closed line elements. One menu presents
+ * both; the distinction is an implementation detail, not something to make the
+ * instructor think about mid-lesson.
+ */
+type ShapeEntry =
+  | { key: string; label: string; tool: ToolType; icon: string }
+  | { key: string; label: string; points: Point[]; icon: string };
+
+const SHAPES: ShapeEntry[] = [
+  { key: 'rectangle', label: 'Square', tool: 'rectangle', icon: 'M4 4h16v16H4z' },
+  { key: 'diamond', label: 'Diamond', tool: 'diamond', icon: 'M12 2l10 10-10 10L2 12z' },
+  { key: 'ellipse', label: 'Circle', tool: 'ellipse', icon: 'M12 2a10 10 0 110 20 10 10 0 010-20z' },
+  {
+    key: 'triangle',
+    label: 'Triangle',
+    points: polygonPoints(3, SHAPE_SIZE),
+    icon: 'M12 3l9 18H3z',
+  },
+  {
+    key: 'right-triangle',
+    label: 'Right triangle',
+    points: [
+      [0, 0],
+      [0, SHAPE_SIZE],
+      [SHAPE_SIZE, SHAPE_SIZE],
+      [0, 0],
+    ],
+    icon: 'M4 3v18h17z',
+  },
+  {
+    key: 'pentagon',
+    label: 'Pentagon',
+    points: polygonPoints(5, SHAPE_SIZE),
+    icon: 'M12 2l10 7.3-3.8 11.7H5.8L2 9.3z',
+  },
+  {
+    key: 'hexagon',
+    label: 'Hexagon',
+    points: polygonPoints(6, SHAPE_SIZE),
+    icon: 'M7 3h10l5 9-5 9H7l-5-9z',
+  },
+  {
+    key: 'octagon',
+    label: 'Octagon',
+    points: polygonPoints(8, SHAPE_SIZE),
+    icon: 'M8 2h8l6 6v8l-6 6H8l-6-6V8z',
+  },
+  {
+    key: 'star',
+    label: 'Star',
+    points: starPoints(5, SHAPE_SIZE),
+    icon: 'M12 2l3 7h7l-5.5 4.5L18.5 21 12 16.8 5.5 21l2-7.5L2 9h7z',
+  },
+];
 
 /**
  * Only ever hand Excalidraw well-formed elements. The shared Y.Map is bytes on
@@ -211,6 +314,13 @@ export function BoardExcalidraw({
   /** Files already pushed to (or pulled from) the asset store, so an image is
    *  never uploaded or re-hydrated twice. */
   const syncedFilesRef = useRef(new Set<string>());
+  /** Failed hydration attempts per file id. A fetch failure must not simply
+   *  clear the synced marker: hydration is driven by the shared files map, so
+   *  an immediate retry is re-triggered by the next map change, and one
+   *  rate-limited response turns into a request storm against the API. Retries
+   *  are capped and backed off instead. */
+  const fileRetriesRef = useRef(new Map<string, number>());
+  const retryTimersRef = useRef(new Set<ReturnType<typeof setTimeout>>());
   /** Latest scene from onChange, flushed to Yjs on a timer. */
   const pendingRef = useRef<readonly OrderedExcalidrawElement[] | null>(null);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -248,6 +358,21 @@ export function BoardExcalidraw({
   const [fullscreen, setFullscreen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [shapesOpen, setShapesOpen] = useState(false);
+  /** Excalidraw's tool-rail container, so the shapes button can live inside it
+   *  rather than float alongside and drift out of alignment. */
+  const [railNode, setRailNode] = useState<HTMLElement | null>(null);
+  /** The shape the rail button displays — the last one picked, so the control
+   *  reads like Excalidraw's own tools rather than a fixed icon. */
+  const [activeShape, setActiveShape] = useState('rectangle');
+  /** A polygon waiting for a drag. Excalidraw cannot register new tools, so the
+   *  rectangle tool is armed for the drag (giving a live rubber-band preview
+   *  and exact bounds) and whatever it draws is swapped for the polygon on
+   *  pointer up. */
+  const armedShapeRef = useRef<string | null>(null);
+  /** Element ids present when the shape was armed, so the rectangle drawn by
+   *  the drag can be told apart from everything already on the board. */
+  const armedBaselineRef = useRef<Set<string>>(new Set());
   const [resyncing, setResyncing] = useState(false);
   const [boardMsg, setBoardMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -305,7 +430,7 @@ export function BoardExcalidraw({
   }, []);
 
   /** Pull any shared image this client hasn't hydrated yet. */
-  const hydrateFiles = useCallback(() => {
+  const hydrateFiles = useCallback(function hydrate() {
     const map = filesRef.current;
     if (!apiRef.current || !map) return;
     for (const value of map.values()) {
@@ -324,12 +449,23 @@ export function BoardExcalidraw({
           ]);
         })
         .catch(() => {
-          // Let a later change (or Resync) try again rather than wedging.
-          syncedFilesRef.current.delete(value.id);
+          // Back off, and give up after a few tries — Resync is the escape
+          // hatch for a file that never arrives.
+          const attempts = (fileRetriesRef.current.get(value.id) ?? 0) + 1;
+          fileRetriesRef.current.set(value.id, attempts);
+          if (attempts > MAX_FILE_RETRIES) return;
+          const timer = setTimeout(
+            () => {
+              retryTimersRef.current.delete(timer);
+              syncedFilesRef.current.delete(value.id);
+              hydrate();
+            },
+            FILE_RETRY_BASE_MS * 2 ** attempts,
+          );
+          retryTimersRef.current.add(timer);
         });
     }
   }, []);
-
   /**
    * Fit the presenter's visible rectangle to *this* viewport rather than
    * copying their raw camera, so the same region fills a phone and a laptop
@@ -406,6 +542,7 @@ export function BoardExcalidraw({
     // reading them at teardown time would trip the ref-in-cleanup lint rule.
     const syncedVersions = syncedVersionsRef.current;
     const syncedFiles = syncedFilesRef.current;
+    const retryTimers = retryTimersRef.current;
     docRef.current = doc;
     elementsRef.current = elements;
     filesRef.current = files;
@@ -572,6 +709,8 @@ export function BoardExcalidraw({
       socketRef.current = null;
       syncedVersions.clear();
       syncedFiles.clear();
+      for (const t of retryTimers) clearTimeout(t);
+      retryTimers.clear();
     };
   }, [
     sessionId,
@@ -662,7 +801,7 @@ export function BoardExcalidraw({
         if (!file?.dataURL) continue;
         syncedFilesRef.current.add(id);
         void uploadBoardAsset(sessionId, dataURLToFile(file.dataURL, `${id}.png`))
-          .then((url) => {
+          .then(({ url }) => {
             doc.transact(() => {
               map.set(id, {
                 id,
@@ -673,8 +812,25 @@ export function BoardExcalidraw({
             }, LOCAL);
           })
           .catch(() => {
-            syncedFilesRef.current.delete(id);
-            flash('An image failed to upload — students may not see it.');
+            // Same trap as hydration, but hotter: this runs from onChange,
+            // which fires on every pointer move, so clearing the marker
+            // outright retries the upload on the next stroke — and one
+            // rate-limited response becomes a request storm. Back off, and stop
+            // after a few tries.
+            const attempts = (fileRetriesRef.current.get(id) ?? 0) + 1;
+            fileRetriesRef.current.set(id, attempts);
+            if (attempts > MAX_FILE_RETRIES) {
+              flash('An image failed to upload — students may not see it.');
+              return;
+            }
+            const timer = setTimeout(
+              () => {
+                retryTimersRef.current.delete(timer);
+                syncedFilesRef.current.delete(id);
+              },
+              FILE_RETRY_BASE_MS * 2 ** attempts,
+            );
+            retryTimersRef.current.add(timer);
           });
       }
     },
@@ -758,6 +914,66 @@ export function BoardExcalidraw({
         if (unshared.length) shareNewFiles(unshared);
       }
 
+      const state = editor.getAppState();
+      const armedKey = armedShapeRef.current;
+
+      // A polygon is armed and the drag has finished (`newElement` is only set
+      // while one is being drawn): swap the rectangle it drew for the polygon,
+      // scaled to exactly that box. This rides onChange rather than the pointer
+      // callbacks because the scene is guaranteed to be committed here.
+      if (armedKey && !state.newElement) {
+        const shape = SHAPES.find((x) => x.key === armedKey);
+        const box =
+          shape && !('tool' in shape)
+            ? scene.find(
+                (el) =>
+                  el.type === 'rectangle' &&
+                  !el.isDeleted &&
+                  !armedBaselineRef.current.has(el.id),
+              )
+            : undefined;
+        if (shape && !('tool' in shape) && box) {
+          const w = Math.max(8, box.width);
+          const h = Math.max(8, box.height);
+          const polygon = convertToExcalidrawElements([
+            {
+              type: 'line',
+              x: box.x,
+              y: box.y,
+              width: w,
+              height: h,
+              points: shape.points.map(
+                ([px, py]) =>
+                  [(px / SHAPE_SIZE) * w, (py / SHAPE_SIZE) * h] as Point,
+              ),
+              strokeColor: box.strokeColor,
+              backgroundColor: box.backgroundColor,
+              fillStyle: box.fillStyle,
+              strokeWidth: box.strokeWidth,
+              strokeStyle: box.strokeStyle,
+              roughness: box.roughness,
+              opacity: box.opacity,
+            },
+          ]);
+          // Cleared first: updateScene re-enters onChange, and a second pass
+          // must not try to convert the polygon it just created.
+          armedShapeRef.current = null;
+          editor.updateScene({
+            elements: [...scene.filter((el) => el.id !== box.id), ...polygon],
+            captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+          });
+          editor.setActiveTool({ type: 'selection' });
+          return;
+        }
+      }
+
+      // Keep the shapes button showing whatever is armed, including when a tool
+      // is picked with its number key.
+      const tool = state.activeTool.type;
+      if (tool === 'rectangle' || tool === 'diamond' || tool === 'ellipse') {
+        if (!armedKey) setActiveShape(tool);
+      }
+
       emitPresenter(null);
     },
     [canEdit, flushLocal, shareNewFiles, emitPresenter],
@@ -769,11 +985,16 @@ export function BoardExcalidraw({
       pointer: { x: number; y: number; tool: 'pointer' | 'laser' };
       button: 'down' | 'up';
     }) => {
-      awarenessRef.current?.setLocalStateField('collab', {
-        pointer: payload.pointer,
-        button: payload.button,
-        username: canDraw ? 'Instructor' : 'Student',
-      });
+      // A viewer who cannot draw has no reason to put a cursor on everyone
+      // else's board — it is just a pointer wandering over the lesson. Only
+      // broadcast while this user can actually act on the board.
+      if (canEdit) {
+        awarenessRef.current?.setLocalStateField('collab', {
+          pointer: payload.pointer,
+          button: payload.button,
+          username: canDraw ? 'Instructor' : 'Student',
+        });
+      }
       if (!canDraw) return;
       emitPresenter(
         payload.pointer.tool === 'laser'
@@ -781,8 +1002,15 @@ export function BoardExcalidraw({
           : null,
       );
     },
-    [canDraw, emitPresenter],
+    [canDraw, canEdit, emitPresenter],
   );
+
+  // Withdraw this client's cursor as soon as it loses the right to draw, so a
+  // locked board doesn't leave a stale pointer sitting on everyone's screen.
+  useEffect(() => {
+    if (canEdit) return;
+    awarenessRef.current?.setLocalStateField('collab', null);
+  }, [canEdit]);
 
   /**
    * The presenter's pan/zoom is broadcast from here — scrolling and zooming
@@ -828,6 +1056,30 @@ export function BoardExcalidraw({
     });
   }, []);
 
+  /**
+   * Pick a shape. Every entry behaves the same way from the instructor's side:
+   * arm it, then drag on the board to draw it. Excalidraw's own shapes arm
+   * their real tool; the rest arm the rectangle tool for the drag and are
+   * swapped in on pointer up (see the effect above).
+   */
+  const addShape = useCallback((key: string) => {
+    const editor = apiRef.current;
+    const shape = SHAPES.find((x) => x.key === key);
+    if (!editor || !shape) return;
+    setShapesOpen(false);
+    setActiveShape(key);
+    if ('tool' in shape) {
+      armedShapeRef.current = null;
+      editor.setActiveTool({ type: shape.tool });
+      return;
+    }
+    armedShapeRef.current = key;
+    armedBaselineRef.current = new Set(
+      editor.getSceneElementsIncludingDeleted().map((el) => el.id),
+    );
+    editor.setActiveTool({ type: 'rectangle' });
+  }, []);
+
   const resync = useCallback(() => {
     const socket = socketRef.current;
     if (!socket) return;
@@ -836,6 +1088,7 @@ export function BoardExcalidraw({
     // again — a wedged board recovers in one tap instead of a page reload.
     syncedVersionsRef.current.clear();
     syncedFilesRef.current.clear();
+    fileRetriesRef.current.clear();
     socket.emit('board:join', {
       sessionId,
       ...(teaching ? { as: 'teach' as const } : {}),
@@ -876,8 +1129,9 @@ export function BoardExcalidraw({
           const height = (bitmap.height / bitmap.width) * width;
           bitmap.close?.();
           const fileId = crypto.randomUUID();
-          const url = await uploadBoardAsset(sessionId, image);
-          const dataURL = await fetchAsDataURL(url);
+          const { url, file: uploaded } = await uploadBoardAsset(sessionId, image);
+          // Same bytes the other clients will fetch, without fetching them back.
+          const dataURL = await fileToDataURL(uploaded);
           const created = Date.now();
           editor.addFiles([
             { id: fileId as FileId, dataURL, mimeType: image.type, created } as BinaryFileData,
@@ -962,6 +1216,46 @@ export function BoardExcalidraw({
     api?.refresh();
   }, [api, fullscreen]);
 
+  // Find the tool rail so the shapes button can be portalled into it. The rail
+  // only exists once the editor has rendered in edit mode, and there is no
+  // callback for that, so look on each frame until it appears.
+  useEffect(() => {
+    if (!api || !canEdit) {
+      setRailNode(null);
+      return;
+    }
+    let raf = 0;
+    const find = () => {
+      // The row holding the shape tools — CSS `order` puts our button right
+      // after the selection tool (see board-excalidraw.css).
+      const node = wrapperRef.current?.querySelector<HTMLElement>(
+        '.App-toolbar .Stack_horizontal',
+      );
+      if (node) setRailNode(node);
+      else raf = requestAnimationFrame(find);
+    };
+    raf = requestAnimationFrame(find);
+    return () => cancelAnimationFrame(raf);
+  }, [api, canEdit]);
+
+  // Close the shapes flyout on a click anywhere else, or on Escape.
+  useEffect(() => {
+    if (!shapesOpen) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t?.closest('[data-board-shapes]')) setShapesOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShapesOpen(false);
+    };
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [shapesOpen]);
+
   // Test hook. Excalidraw draws to a canvas rather than to DOM nodes, so the
   // end-to-end specs have nothing to query for "what is on the board"; they
   // read the scene through this instead.
@@ -978,6 +1272,11 @@ export function BoardExcalidraw({
 
   const pill =
     'rounded-full px-3 py-1.5 text-xs font-semibold shadow ring-1 ring-neutral-200 transition';
+  const current = SHAPES.find((x) => x.key === activeShape) ?? SHAPES[0];
+  const armed =
+    api?.getAppState().activeTool.type === 'rectangle' ||
+    api?.getAppState().activeTool.type === 'diamond' ||
+    api?.getAppState().activeTool.type === 'ellipse';
 
   return (
     <div
@@ -1015,6 +1314,65 @@ export function BoardExcalidraw({
           <MainMenu.DefaultItems.ChangeCanvasBackground />
         </MainMenu>
       </Excalidraw>
+
+      {/* One shapes control in the rail, standing in for Excalidraw's separate
+          square/diamond/circle buttons (hidden in CSS) and carrying the extra
+          shapes it has no tool for. Portalled into the rail so it sits in the
+          stack instead of floating beside it. */}
+      {railNode &&
+        createPortal(
+          <div data-board-shapes className="relative">
+            <button
+              type="button"
+              title={`${current.label} — click for more shapes`}
+              aria-haspopup="menu"
+              aria-expanded={shapesOpen}
+              onClick={() => setShapesOpen((v) => !v)}
+              className={`relative grid h-9 w-9 place-items-center rounded-lg transition ${
+                shapesOpen
+                  ? 'bg-neutral-900 text-white'
+                  : armed
+                    ? 'bg-[#e0dfff] text-neutral-900'
+                    : 'text-neutral-700 hover:bg-neutral-100'
+              }`}
+            >
+              {/* The shape currently armed, so the button reads like a tool. */}
+              <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden>
+                <path d={current.icon} fill="currentColor" />
+              </svg>
+              {/* Corner caret: this one opens a menu, the others don't. */}
+              <svg
+                viewBox="0 0 6 6"
+                className="absolute bottom-[3px] right-[3px] h-1.5 w-1.5 opacity-70"
+                aria-hidden
+              >
+                <path d="M0 0h6L3 5z" fill="currentColor" />
+              </svg>
+            </button>
+            {shapesOpen && (
+              <div
+                role="menu"
+                className="absolute left-[calc(100%+0.5rem)] top-0 z-[403] w-40 overflow-hidden rounded-xl bg-white py-1 shadow-lg ring-1 ring-neutral-200"
+              >
+                {SHAPES.map((shape) => (
+                  <button
+                    key={shape.key}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => addShape(shape.key)}
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-100"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" aria-hidden>
+                      <path d={shape.icon} fill="currentColor" />
+                    </svg>
+                    {shape.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>,
+          railNode,
+        )}
 
       {!ready && (
         <div className="absolute inset-0 z-[450] flex flex-col items-center justify-center gap-3 bg-white/94 px-6 text-center backdrop-blur-sm">
