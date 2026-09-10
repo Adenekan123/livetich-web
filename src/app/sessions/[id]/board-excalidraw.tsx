@@ -373,6 +373,20 @@ export function BoardExcalidraw({
   /** Element ids present when the shape was armed, so the rectangle drawn by
    *  the drag can be told apart from everything already on the board. */
   const armedBaselineRef = useRef<Set<string>>(new Set());
+  /** The placeholder rectangle is drawn at zero opacity so the drag shows the
+   *  real shape instead of a box; this is the opacity to give the finished
+   *  polygon, and to hand back when the shape is disarmed. */
+  const armedOpacityRef = useRef(100);
+  /** Set once the armed tool has actually taken effect, so a disarm can never
+   *  fire on the render between picking a shape and the tool switching. */
+  const armedActiveRef = useRef(false);
+  /** Live drag box in viewport pixels, for the preview overlay. Mirrored in a
+   *  ref so onChange can tell a real change from a repeat without taking the
+   *  state as a dependency — Excalidraw calls onChange on every update, so a
+   *  fresh object each time is an infinite render loop. */
+  type PreviewBox = { x: number; y: number; w: number; h: number; key: string };
+  const [preview, setPreview] = useState<PreviewBox | null>(null);
+  const previewRef = useRef<PreviewBox | null>(null);
   const [resyncing, setResyncing] = useState(false);
   const [boardMsg, setBoardMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -917,6 +931,34 @@ export function BoardExcalidraw({
       const state = editor.getAppState();
       const armedKey = armedShapeRef.current;
 
+      // Track the in-flight drag so the overlay can draw the real shape over
+      // the invisible placeholder. Scene coords -> viewport pixels.
+      if (armedKey && state.newElement) {
+        const z = state.zoom.value;
+        const next: PreviewBox = {
+          x: (state.newElement.x + state.scrollX) * z,
+          y: (state.newElement.y + state.scrollY) * z,
+          w: state.newElement.width * z,
+          h: state.newElement.height * z,
+          key: armedKey,
+        };
+        const cur = previewRef.current;
+        if (
+          !cur ||
+          cur.x !== next.x ||
+          cur.y !== next.y ||
+          cur.w !== next.w ||
+          cur.h !== next.h ||
+          cur.key !== next.key
+        ) {
+          previewRef.current = next;
+          setPreview(next);
+        }
+      } else if (previewRef.current) {
+        previewRef.current = null;
+        setPreview(null);
+      }
+
       // A polygon is armed and the drag has finished (`newElement` is only set
       // while one is being drawn): swap the rectangle it drew for the polygon,
       // scaled to exactly that box. This rides onChange rather than the pointer
@@ -952,7 +994,7 @@ export function BoardExcalidraw({
               strokeWidth: box.strokeWidth,
               strokeStyle: box.strokeStyle,
               roughness: box.roughness,
-              opacity: box.opacity,
+              opacity: armedOpacityRef.current,
             },
           ]);
           // Cleared first: updateScene re-enters onChange, and a second pass
@@ -960,6 +1002,9 @@ export function BoardExcalidraw({
           armedShapeRef.current = null;
           editor.updateScene({
             elements: [...scene.filter((el) => el.id !== box.id), ...polygon],
+            // Hand back the opacity borrowed to hide the placeholder, or the
+            // instructor's next shape would come out invisible.
+            appState: { currentItemOpacity: armedOpacityRef.current },
             captureUpdate: CaptureUpdateAction.IMMEDIATELY,
           });
           editor.setActiveTool({ type: 'selection' });
@@ -967,9 +1012,28 @@ export function BoardExcalidraw({
         }
       }
 
+      const tool = state.activeTool.type;
+
+      // Abandoning an armed shape — switching tool, or a drag that produced
+      // nothing — must hand back the borrowed opacity, or the next shape the
+      // instructor draws comes out invisible.
+      if (armedKey) {
+        if (tool === 'rectangle') {
+          armedActiveRef.current = true;
+        } else if (armedActiveRef.current && !state.newElement) {
+          armedShapeRef.current = null;
+          armedActiveRef.current = false;
+          previewRef.current = null;
+          setPreview(null);
+          editor.updateScene({
+            appState: { currentItemOpacity: armedOpacityRef.current },
+            captureUpdate: CaptureUpdateAction.NEVER,
+          });
+        }
+      }
+
       // Keep the shapes button showing whatever is armed, including when a tool
       // is picked with its number key.
-      const tool = state.activeTool.type;
       if (tool === 'rectangle' || tool === 'diamond' || tool === 'ellipse') {
         if (!armedKey) setActiveShape(tool);
       }
@@ -1077,6 +1141,14 @@ export function BoardExcalidraw({
     armedBaselineRef.current = new Set(
       editor.getSceneElementsIncludingDeleted().map((el) => el.id),
     );
+    // Draw the placeholder invisibly — the overlay shows the real shape while
+    // the drag is in flight, so the instructor never sees a box.
+    armedOpacityRef.current = editor.getAppState().currentItemOpacity;
+    armedActiveRef.current = false;
+    editor.updateScene({
+      appState: { currentItemOpacity: 0 },
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
     editor.setActiveTool({ type: 'rectangle' });
   }, []);
 
@@ -1273,6 +1345,11 @@ export function BoardExcalidraw({
   const pill =
     'rounded-full px-3 py-1.5 text-xs font-semibold shadow ring-1 ring-neutral-200 transition';
   const current = SHAPES.find((x) => x.key === activeShape) ?? SHAPES[0];
+  const previewEntry = preview
+    ? SHAPES.find((x) => x.key === preview.key)
+    : undefined;
+  const previewShape =
+    previewEntry && !('tool' in previewEntry) ? previewEntry : undefined;
   const armed =
     api?.getAppState().activeTool.type === 'rectangle' ||
     api?.getAppState().activeTool.type === 'diamond' ||
@@ -1373,6 +1450,33 @@ export function BoardExcalidraw({
           </div>,
           railNode,
         )}
+
+      {/* Live preview of the armed polygon. Excalidraw is drawing a rectangle
+          underneath at zero opacity — this is what the instructor actually
+          sees follow the drag. */}
+      {preview && previewShape && (
+        <svg
+          data-shape-preview
+          className="pointer-events-none absolute inset-0 z-[399] h-full w-full"
+          aria-hidden
+        >
+          <polyline
+            points={previewShape.points
+              .map(
+                ([px, py]) =>
+                  `${preview.x + (px / SHAPE_SIZE) * preview.w},${
+                    preview.y + (py / SHAPE_SIZE) * preview.h
+                  }`,
+              )
+              .join(' ')}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinejoin="round"
+            className="text-neutral-500"
+          />
+        </svg>
+      )}
 
       {!ready && (
         <div className="absolute inset-0 z-[450] flex flex-col items-center justify-center gap-3 bg-white/94 px-6 text-center backdrop-blur-sm">
