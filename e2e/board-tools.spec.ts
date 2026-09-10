@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { tool } from './board-tools-helper';
 
 // Exercises the actual Excalidraw surface + the app's Import pipeline on the live
 // board (instructor = canDraw). Shapes sync through the real Yjs/socket stack,
@@ -37,7 +38,7 @@ test('instructor can draw with the pen and add a shape tool', async ({ page }) =
   const cy = box.y + box.height / 2;
 
   // --- Pen / draw tool (select via Excalidraw's toolbar, not a keyboard guess) ---
-  await page.getByTestId('toolbar-freedraw').click();
+  await tool(page, 'freedraw').click();
   await page.mouse.move(cx - 120, cy + 40);
   await page.mouse.down();
   for (const [dx, dy] of [
@@ -55,7 +56,7 @@ test('instructor can draw with the pen and add a shape tool', async ({ page }) =
 
   // --- Another native tool: rectangle ---
   const afterDraw = await shapeCount(page);
-  await page.getByTestId('toolbar-rectangle').click();
+  await tool(page, 'rectangle').click();
   await page.mouse.move(cx + 160, cy - 120);
   await page.mouse.down();
   await page.mouse.move(cx + 280, cy - 30, { steps: 8 });

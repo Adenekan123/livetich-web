@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { tool } from './board-tools-helper';
 
 // Verifies the three new chalkboard features against the real stack:
 //  1. Full-screen toggle (CSS overlay) enters/exits.
@@ -26,7 +27,7 @@ async function drawStroke(page: Page) {
   if (!box) throw new Error('no board bounds');
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
-  await page.getByTestId('toolbar-freedraw').click();
+  await tool(page, 'freedraw').click();
   await page.mouse.move(cx - 60, cy);
   await page.mouse.down();
   await page.mouse.move(cx, cy - 30, { steps: 4 });

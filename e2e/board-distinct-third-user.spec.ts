@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Browser, devices } from '@playwright/test';
+import { tool } from './board-tools-helper';
 
 // The faithful reproduction of #8: a THIRD, genuinely DISTINCT desktop user
 // (kealan) joins a session where an instructor + a mobile student are already
@@ -56,7 +57,7 @@ async function openBoardStudent(page: Page) {
 }
 
 async function clearBoard(page: Page) {
-  await page.getByTestId('toolbar-selection').click();
+  await tool(page, 'selection').click();
   await page.keyboard.press('Escape');
   await page.locator('.excalidraw-container').first().click({ position: { x: 120, y: 260 } });
   await page.keyboard.press('Control+a');
@@ -68,7 +69,7 @@ async function drawStroke(page: Page, dx = 0) {
   if (!box) throw new Error('no board bounds');
   const cx = box.x + box.width / 2 + dx;
   const cy = box.y + box.height / 2;
-  await page.getByTestId('toolbar-freedraw').click();
+  await tool(page, 'freedraw').click();
   await page.mouse.move(cx - 70, cy);
   await page.mouse.down();
   await page.mouse.move(cx - 20, cy - 25, { steps: 4 });
@@ -118,7 +119,7 @@ test.describe('live board — distinct third desktop user (#8 faithful repro)', 
 
     // And a student (kealan) draws once the board is opened → syncs to all.
     await teacher.getByRole('button', { name: /let students draw/i }).click();
-    await expect(kealan.page.getByTestId('toolbar-freedraw')).toBeVisible({ timeout: 15_000 });
+    await expect(tool(kealan.page, 'freedraw')).toBeVisible({ timeout: 15_000 });
     const beforeStudentDraw = await shapeCount(teacher);
     await drawStroke(kealan.page, 40);
     await expect.poll(() => shapeCount(teacher), { timeout: 20_000 }).toBeGreaterThan(beforeStudentDraw);

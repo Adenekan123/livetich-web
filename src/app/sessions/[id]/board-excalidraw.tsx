@@ -343,26 +343,30 @@ export function BoardExcalidraw({
     if (!appState.width || !appState.height) return;
 
     let { x, y, w, h } = bounds;
-    // Drop the presenter's empty margin on whichever axis their viewport spills
-    // past the content. For the common wide-desktop -> portrait-phone case that
-    // is the horizontal slack that would otherwise strand a shared page at a
-    // third of the screen width. Clamp that axis to the content's extent so the
-    // page fills the follower's screen, while keeping the presenter's framing on
-    // the other axis so their pan still tracks. Only clamp an axis where the
-    // presenter overhangs the content on BOTH sides — never crop content they
-    // have deliberately zoomed into.
+    // Follow the part of the presenter's view that actually has something in
+    // it, by intersecting their visible rectangle with the content bounds.
+    //
+    // Fitting their raw viewport is what leaves a shared page tiny on a phone:
+    // a wide desktop viewport is mostly empty margin around a portrait page, and
+    // scaling all that emptiness to a narrow screen shrinks the page itself. The
+    // intersection handles every case with one rule — zoomed into part of a
+    // page, it is their view; viewport larger than the content, it is the
+    // content; panned off to one side, it is whatever overlaps. Only when they
+    // are looking at genuinely empty canvas is there nothing to intersect, and
+    // then their framing is the best signal we have.
     const elements = editor.getSceneElements();
     if (elements.length) {
       const [cx0, cy0, cx1, cy1] = getCommonBounds(elements);
-      if (x < cx0 && x + w > cx1) {
-        x = cx0;
-        w = cx1 - cx0;
+      const ix0 = Math.max(x, cx0);
+      const iy0 = Math.max(y, cy0);
+      const ix1 = Math.min(x + w, cx1);
+      const iy1 = Math.min(y + h, cy1);
+      if (ix1 - ix0 > 1 && iy1 - iy0 > 1) {
+        x = ix0;
+        y = iy0;
+        w = ix1 - ix0;
+        h = iy1 - iy0;
       }
-      if (y < cy0 && y + h > cy1) {
-        y = cy0;
-        h = cy1 - cy0;
-      }
-      if (w <= 1 || h <= 1) ({ x, y, w, h } = bounds);
     }
 
     const { appState: fitted } = zoomToFitBounds({
@@ -895,7 +899,17 @@ export function BoardExcalidraw({
           elements: [...editor.getSceneElementsIncludingDeleted(), ...added],
           captureUpdate: CaptureUpdateAction.IMMEDIATELY,
         });
-        editor.scrollToContent(added, { fitToContent: true });
+        // Frame the FIRST page, not the whole deck. Fitting every imported
+        // page at once zooms the instructor out far enough that each page is a
+        // thumbnail — and because followers fit whatever the presenter is
+        // looking at, that shrinks the page on every student's screen too,
+        // which is unreadable on a phone. Presenting starts at page one; the
+        // instructor scrolls from there and students follow.
+        editor.scrollToContent(added[0] ?? added, {
+          fitToContent: true,
+          viewportZoomFactor: 0.9,
+          animate: false,
+        });
       } catch {
         flash('Import failed — please try again.');
       } finally {

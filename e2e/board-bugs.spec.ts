@@ -1,4 +1,5 @@
 import { test, expect, type Page, devices } from '@playwright/test';
+import { tool } from './board-tools-helper';
 
 // The live session these specs drive. Sessions are per-class rows, so this id
 // goes stale whenever the local seed is rebuilt — override it without editing
@@ -24,7 +25,7 @@ async function drawStroke(page: Page) {
   if (!box) throw new Error('no board bounds');
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
-  await page.getByTestId('toolbar-freedraw').click();
+  await tool(page, 'freedraw').click();
   await page.mouse.move(cx - 100, cy);
   await page.mouse.down();
   await page.mouse.move(cx - 40, cy - 40, { steps: 5 });
@@ -34,7 +35,7 @@ async function drawStroke(page: Page) {
 }
 
 async function clearBoard(page: Page) {
-  await page.getByTestId('toolbar-selection').click();
+  await tool(page, 'selection').click();
   await page.keyboard.press('Escape');
   await page.locator('.excalidraw-container').first().click({ position: { x: 120, y: 260 } });
   await page.keyboard.press('Control+a');
@@ -209,7 +210,7 @@ test('draw still works after ERASING an imported PDF', async ({ page }) => {
 
   // Erase: drag the eraser across the board where the pages sit.
   const box = (await page.locator('.excalidraw-container').first().boundingBox())!;
-  await page.getByTestId('toolbar-eraser').click();
+  await tool(page, 'eraser').click();
   const cx = box.x + box.width / 2;
   for (let y = 0.2; y <= 0.85; y += 0.06) {
     await page.mouse.move(cx - 140, box.y + box.height * y);
@@ -277,7 +278,7 @@ test('draw still works after importing then deleting a PDF', async ({ page }) =>
   // Delete it: select everything and delete (the user's "delete the PDF").
   // Focus the canvas on an empty mid-left spot (NOT the top-left menu button),
   // close any stray menu, then select-all + delete.
-  await page.getByTestId('toolbar-selection').click();
+  await tool(page, 'selection').click();
   await page.keyboard.press('Escape');
   await page.locator('.excalidraw-container').first().click({ position: { x: 120, y: 260 } });
   await page.keyboard.press('Control+a');
@@ -307,7 +308,7 @@ test('draw still works after deleting a PDF mid-import (race)', async ({ page })
   await openBoard(page);
 
   // Clean slate first.
-  await page.getByTestId('toolbar-selection').click();
+  await tool(page, 'selection').click();
   await page.keyboard.press('Escape');
   await page.locator('.excalidraw-container').first().click({ position: { x: 120, y: 260 } });
   await page.keyboard.press('Control+a');
@@ -346,7 +347,7 @@ test('mobile student sees an imported PDF at a sane scale', async ({ browser }) 
 
   // Start from a clean board so the imported PDF is the only content (both for a
   // realistic measurement and because getCurrentPageBounds spans ALL shapes).
-  await teacher.getByTestId('toolbar-selection').click();
+  await tool(teacher, 'selection').click();
   await teacher.keyboard.press('Escape');
   await teacher.locator('.excalidraw-container').first().click({ position: { x: 120, y: 260 } });
   await teacher.keyboard.press('Control+a');

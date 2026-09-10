@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Browser, devices } from '@playwright/test';
+import { tool } from './board-tools-helper';
 
 // Regression cover for: "board works with instructor + a mobile student, but when
 // another (desktop) user joins, everything stops — though 'Let students draw'
@@ -49,7 +50,7 @@ async function openBoardStudent(page: Page) {
 }
 
 async function clearBoard(page: Page) {
-  await page.getByTestId('toolbar-selection').click();
+  await tool(page, 'selection').click();
   await page.keyboard.press('Escape');
   await page.locator('.excalidraw-container').first().click({ position: { x: 120, y: 260 } });
   await page.keyboard.press('Control+a');
@@ -61,7 +62,7 @@ async function drawStroke(page: Page, dx = 0) {
   if (!box) throw new Error('no board bounds');
   const cx = box.x + box.width / 2 + dx;
   const cy = box.y + box.height / 2;
-  await page.getByTestId('toolbar-freedraw').click();
+  await tool(page, 'freedraw').click();
   await page.mouse.move(cx - 80, cy);
   await page.mouse.down();
   await page.mouse.move(cx - 30, cy - 30, { steps: 5 });
@@ -167,7 +168,7 @@ test.describe('live board — three-client sync (desktop joins mid-session)', ()
 
     // The DESKTOP student draws — it must sync to the instructor and the mobile
     // student (student-originated edits still flow with three clients present).
-    await expect(desktop.page.getByTestId('toolbar-freedraw')).toBeVisible({ timeout: 15_000 });
+    await expect(tool(desktop.page, 'freedraw')).toBeVisible({ timeout: 15_000 });
     await drawStroke(desktop.page, 40);
     await expect.poll(() => shapeCount(desktop.page), { timeout: 8_000 }).toBeGreaterThan(0);
     await expect.poll(() => shapeCount(teacher), { timeout: 20_000 }).toBeGreaterThan(0);
