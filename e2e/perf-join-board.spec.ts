@@ -43,8 +43,8 @@ test('measure: join session + first board load (instructor)', async ({ page }) =
   // ---- Board first-load timing ----
   const tBoardClick = Date.now();
   await page.getByRole('button', { name: /^chalkboard$/i }).click();
-  await expect(page.locator('.tl-container').first()).toBeVisible({ timeout: 40_000 });
-  await expect(page.locator('.tl-container canvas').first()).toBeVisible({ timeout: 40_000 });
+  await expect(page.locator('.excalidraw-container').first()).toBeVisible({ timeout: 40_000 });
+  await expect(page.locator('.excalidraw-container canvas').first()).toBeVisible({ timeout: 40_000 });
   const boardReady = Date.now();
 
   const ms = (a: number, b: number) => `${((b - a) / 1000).toFixed(1)}s`;

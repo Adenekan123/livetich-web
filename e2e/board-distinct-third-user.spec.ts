@@ -13,7 +13,8 @@ const STUDENT_STATE = 'e2e/.auth/student.json';
 const KEALAN_EMAIL = 'kealan.sahim@forliion.com';
 const PASSWORD = 'Test1234!';
 
-const shapeCount = (p: Page) => p.locator('.tl-shape').count();
+const shapeCount = (p: Page) =>
+  p.evaluate(() => window.__livetichBoard?.getSceneElements().length ?? 0);
 
 function trackErrors(page: Page, label: string, pageErrors: string[], consoleErrors: string[]) {
   page.on('pageerror', (e) => pageErrors.push(`[${label}] pageerror: ${e.message}`));
@@ -38,8 +39,8 @@ async function loginDesktop(browser: Browser, email: string) {
 async function openBoardInstructor(page: Page) {
   await page.goto(`/sessions/${LIVE_SESSION}`);
   await page.getByRole('button', { name: /^chalkboard$/i }).click();
-  await expect(page.locator('.tl-container').first()).toBeVisible({ timeout: 20_000 });
-  await expect(page.locator('.tl-container canvas').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.excalidraw-container').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.excalidraw-container canvas').first()).toBeVisible({ timeout: 20_000 });
 }
 
 async function openBoardStudent(page: Page) {
@@ -47,23 +48,23 @@ async function openBoardStudent(page: Page) {
   await expect(page.getByRole('button', { name: /^leave$/i })).toBeVisible({ timeout: 20_000 });
   const closeChat = page.getByRole('button', { name: /close panel/i });
   if (await closeChat.isVisible().catch(() => false)) await closeChat.click();
-  await expect(page.locator('.tl-container').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.excalidraw-container').first()).toBeVisible({ timeout: 20_000 });
 }
 
 async function clearBoard(page: Page) {
-  await page.getByTestId('tools.select').click();
+  await page.getByTestId('toolbar-selection').click();
   await page.keyboard.press('Escape');
-  await page.locator('.tl-container').first().click({ position: { x: 120, y: 260 } });
+  await page.locator('.excalidraw-container').first().click({ position: { x: 120, y: 260 } });
   await page.keyboard.press('Control+a');
   await page.keyboard.press('Delete');
 }
 
 async function drawStroke(page: Page, dx = 0) {
-  const box = await page.locator('.tl-container').first().boundingBox();
+  const box = await page.locator('.excalidraw-container').first().boundingBox();
   if (!box) throw new Error('no board bounds');
   const cx = box.x + box.width / 2 + dx;
   const cy = box.y + box.height / 2;
-  await page.getByTestId('tools.draw').click();
+  await page.getByTestId('toolbar-freedraw').click();
   await page.mouse.move(cx - 70, cy);
   await page.mouse.down();
   await page.mouse.move(cx - 20, cy - 25, { steps: 4 });
@@ -113,7 +114,7 @@ test.describe('live board — distinct third desktop user (#8 faithful repro)', 
 
     // And a student (kealan) draws once the board is opened → syncs to all.
     await teacher.getByRole('button', { name: /let students draw/i }).click();
-    await expect(kealan.page.getByTestId('tools.draw')).toBeVisible({ timeout: 15_000 });
+    await expect(kealan.page.getByTestId('toolbar-freedraw')).toBeVisible({ timeout: 15_000 });
     const beforeStudentDraw = await shapeCount(teacher);
     await drawStroke(kealan.page, 40);
     await expect.poll(() => shapeCount(teacher), { timeout: 20_000 }).toBeGreaterThan(beforeStudentDraw);

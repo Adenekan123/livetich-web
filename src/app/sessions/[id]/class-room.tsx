@@ -66,9 +66,9 @@ import {
 } from './live-coding-panel';
 import { QuranReader } from './quran-reader';
 
-// tldraw touches browser-only APIs, so it must not render on the server.
-const BoardTldraw = dynamic(
-  () => import('./board-tldraw').then((m) => m.BoardTldraw),
+// Excalidraw touches browser-only APIs, so it must not render on the server.
+const BoardExcalidraw = dynamic(
+  () => import('./board-excalidraw').then((m) => m.BoardExcalidraw),
   {
     ssr: false,
     loading: () => (
@@ -212,7 +212,6 @@ export function ClassRoom({
   islamicEducation = false,
   codeInstruction = false,
   testPrep = false,
-  tldrawLicenseKey,
 }: {
   sessionId: string;
   courseId: string;
@@ -228,8 +227,6 @@ export function ClassRoom({
   codeInstruction?: boolean;
   /** Test Prep pack on — adds exam-style chalkboard templates (axes). */
   testPrep?: boolean;
-  /** tldraw license key (from the server env) for the shared chalkboard. */
-  tldrawLicenseKey?: string;
 }) {
   const router = useRouter();
   const [ending, startEnding] = useTransition();
@@ -338,11 +335,11 @@ export function ClassRoom({
   // and listen but never publish, raise a hand, or post — presence stays unseen.
   const isShadow = me.role === 'ORG_ADMIN' && !teaching;
 
-  // Warm the heavy tldraw board chunk shortly after mount so opening the
+  // Warm the heavy Excalidraw board chunk shortly after mount so opening the
   // chalkboard is near-instant instead of a multi-second first-load download.
   // Delayed so the download doesn't compete with the join's connection requests.
   useEffect(() => {
-    const t = setTimeout(() => void import('./board-tldraw'), 1500);
+    const t = setTimeout(() => void import('./board-excalidraw'), 1500);
     return () => clearTimeout(t);
   }, []);
   // Pack-gated surfaces: the mushaf needs Islamic Education, the code editor
@@ -1022,7 +1019,7 @@ export function ClassRoom({
                   />
                   {/* Anchored to the header (not the button) and pushed left of
                       the board's top-right style panel (~180px) so the two never
-                      collide; elevated above tldraw so it can't be clipped. On a
+                      collide; elevated above the board so it can't be clipped. On a
                       narrow viewport it clamps to the right edge instead. */}
                   <div
                     role="menu"
@@ -1109,11 +1106,10 @@ export function ClassRoom({
             />
           </div>
           <div className={cn('absolute inset-3', view === 'board' ? '' : 'hidden')}>
-            <BoardTldraw
+            <BoardExcalidraw
               sessionId={sessionId}
               canDraw={isInstructor}
               teaching={teaching}
-              licenseKey={tldrawLicenseKey}
               templates={[
                 'lined',
                 ...(testPrep ? ['axes'] : []),

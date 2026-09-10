@@ -95,7 +95,6 @@ export default async function SessionPage(props: {
       islamicEducation={islamicEducation}
       codeInstruction={codeInstruction}
       testPrep={testPrep}
-      tldrawLicenseKey={process.env.TLDRAW_LICENSE_KEY}
     />
   );
 }

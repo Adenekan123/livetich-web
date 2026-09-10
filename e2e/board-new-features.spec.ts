@@ -13,16 +13,16 @@ test.use({ storageState: INSTRUCTOR_STATE });
 async function openBoard(page: Page) {
   await page.goto(`/sessions/${LIVE_SESSION}`);
   await page.getByRole('button', { name: /^chalkboard$/i }).click();
-  await expect(page.locator('.tl-container').first()).toBeVisible({ timeout: 20_000 });
-  await expect(page.locator('.tl-container canvas').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.excalidraw-container').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.excalidraw-container canvas').first()).toBeVisible({ timeout: 20_000 });
 }
 
 async function drawStroke(page: Page) {
-  const box = await page.locator('.tl-container').first().boundingBox();
+  const box = await page.locator('.excalidraw-container').first().boundingBox();
   if (!box) throw new Error('no board bounds');
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
-  await page.getByTestId('tools.draw').click();
+  await page.getByTestId('toolbar-freedraw').click();
   await page.mouse.move(cx - 60, cy);
   await page.mouse.down();
   await page.mouse.move(cx, cy - 30, { steps: 4 });

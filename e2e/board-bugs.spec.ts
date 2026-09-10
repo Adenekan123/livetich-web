@@ -8,18 +8,19 @@ const STUDENT_STATE = 'e2e/.auth/student.json';
 async function openBoard(page: Page) {
   await page.goto(`/sessions/${LIVE_SESSION}`);
   await page.getByRole('button', { name: /^chalkboard$/i }).click();
-  await expect(page.locator('.tl-container').first()).toBeVisible({ timeout: 20_000 });
-  await expect(page.locator('.tl-container canvas').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.excalidraw-container').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.excalidraw-container canvas').first()).toBeVisible({ timeout: 20_000 });
 }
 
-const shapeCount = (page: Page) => page.locator('.tl-shape').count();
+const shapeCount = (page: Page) =>
+  page.evaluate(() => window.__livetichBoard?.getSceneElements().length ?? 0);
 
 async function drawStroke(page: Page) {
-  const box = await page.locator('.tl-container').first().boundingBox();
+  const box = await page.locator('.excalidraw-container').first().boundingBox();
   if (!box) throw new Error('no board bounds');
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
-  await page.getByTestId('tools.draw').click();
+  await page.getByTestId('toolbar-freedraw').click();
   await page.mouse.move(cx - 100, cy);
   await page.mouse.down();
   await page.mouse.move(cx - 40, cy - 40, { steps: 5 });
@@ -29,9 +30,9 @@ async function drawStroke(page: Page) {
 }
 
 async function clearBoard(page: Page) {
-  await page.getByTestId('tools.select').click();
+  await page.getByTestId('toolbar-selection').click();
   await page.keyboard.press('Escape');
-  await page.locator('.tl-container').first().click({ position: { x: 120, y: 260 } });
+  await page.locator('.excalidraw-container').first().click({ position: { x: 120, y: 260 } });
   await page.keyboard.press('Control+a');
   await page.keyboard.press('Delete');
 }
@@ -70,7 +71,7 @@ test('mobile classroom loads with the chat panel closed', async ({ browser }) =>
 
 // BUG 1 (multi-client): the instructor imports a PDF then deletes it; those
 // asset/shape records sync to a student. If a bad record or ordering corrupts
-// the tldraw store mid-merge, the board freezes and "drawing stops working".
+// the scene mid-merge, the board freezes and "drawing stops working".
 // After the cycle, BOTH boards must still accept and sync new drawing.
 test('board stays live for instructor + student across a PDF import/delete cycle', async ({
   browser,
@@ -96,7 +97,7 @@ test('board stays live for instructor + student across a PDF import/delete cycle
   });
   const closeChat = student.getByRole('button', { name: /close panel/i });
   if (await closeChat.isVisible().catch(() => false)) await closeChat.click();
-  await expect(student.locator('.tl-container').first()).toBeVisible({ timeout: 20_000 });
+  await expect(student.locator('.excalidraw-container').first()).toBeVisible({ timeout: 20_000 });
 
   // Import the PDF; it should sync to the student.
   const uploads: string[] = [];
@@ -186,7 +187,7 @@ test('draw works after deleting a heavy PDF mid-import (wide race)', async ({ pa
 });
 
 // BUG 1 (eraser): a user often "deletes" a PDF by erasing it — a distinct
-// tldraw code path from select+delete. Erase the imported pages, then draw.
+// code path from select+delete. Erase the imported pages, then draw.
 test('draw still works after ERASING an imported PDF', async ({ page }) => {
   const errors: string[] = [];
   trackErrors(page, errors);
@@ -203,8 +204,8 @@ test('draw still works after ERASING an imported PDF', async ({ page }) => {
   await expect.poll(() => shapeCount(page), { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
 
   // Erase: drag the eraser across the board where the pages sit.
-  const box = (await page.locator('.tl-container').first().boundingBox())!;
-  await page.getByTestId('tools.eraser').click();
+  const box = (await page.locator('.excalidraw-container').first().boundingBox())!;
+  await page.getByTestId('toolbar-eraser').click();
   const cx = box.x + box.width / 2;
   for (let y = 0.2; y <= 0.85; y += 0.06) {
     await page.mouse.move(cx - 140, box.y + box.height * y);
@@ -272,9 +273,9 @@ test('draw still works after importing then deleting a PDF', async ({ page }) =>
   // Delete it: select everything and delete (the user's "delete the PDF").
   // Focus the canvas on an empty mid-left spot (NOT the top-left menu button),
   // close any stray menu, then select-all + delete.
-  await page.getByTestId('tools.select').click();
+  await page.getByTestId('toolbar-selection').click();
   await page.keyboard.press('Escape');
-  await page.locator('.tl-container').first().click({ position: { x: 120, y: 260 } });
+  await page.locator('.excalidraw-container').first().click({ position: { x: 120, y: 260 } });
   await page.keyboard.press('Control+a');
   await page.keyboard.press('Delete');
   await expect.poll(() => shapeCount(page), { timeout: 10_000 }).toBe(0);
@@ -302,9 +303,9 @@ test('draw still works after deleting a PDF mid-import (race)', async ({ page })
   await openBoard(page);
 
   // Clean slate first.
-  await page.getByTestId('tools.select').click();
+  await page.getByTestId('toolbar-selection').click();
   await page.keyboard.press('Escape');
-  await page.locator('.tl-container').first().click({ position: { x: 120, y: 260 } });
+  await page.locator('.excalidraw-container').first().click({ position: { x: 120, y: 260 } });
   await page.keyboard.press('Control+a');
   await page.keyboard.press('Delete');
   await expect.poll(() => shapeCount(page), { timeout: 10_000 }).toBe(0);
@@ -341,9 +342,9 @@ test('mobile student sees an imported PDF at a sane scale', async ({ browser }) 
 
   // Start from a clean board so the imported PDF is the only content (both for a
   // realistic measurement and because getCurrentPageBounds spans ALL shapes).
-  await teacher.getByTestId('tools.select').click();
+  await teacher.getByTestId('toolbar-selection').click();
   await teacher.keyboard.press('Escape');
-  await teacher.locator('.tl-container').first().click({ position: { x: 120, y: 260 } });
+  await teacher.locator('.excalidraw-container').first().click({ position: { x: 120, y: 260 } });
   await teacher.keyboard.press('Control+a');
   await teacher.keyboard.press('Delete');
 
@@ -362,7 +363,7 @@ test('mobile student sees an imported PDF at a sane scale', async ({ browser }) 
   await expect(student.getByText(/following/i).first()).toBeVisible({ timeout: 20_000 });
   const closeChat = student.getByRole('button', { name: /close panel/i });
   if (await closeChat.isVisible().catch(() => false)) await closeChat.click();
-  await expect(student.locator('.tl-container').first()).toBeVisible({ timeout: 20_000 });
+  await expect(student.locator('.excalidraw-container').first()).toBeVisible({ timeout: 20_000 });
 
   // Presenter imports the PDF.
   const uploads: string[] = [];
@@ -375,13 +376,19 @@ test('mobile student sees an imported PDF at a sane scale', async ({ browser }) 
 
   // Give the follow-sync a moment to land the page + fit bounds on the student.
   // Widest rendered PDF-page image as a fraction of the phone width.
+  // Excalidraw draws images into the canvas, so their on-screen size comes from
+  // the scene rather than from an <img> box: a page's rendered width is its
+  // element width scaled by the current zoom.
   const widthFrac = () =>
     student.evaluate(() => {
-      const vw = window.innerWidth;
-      const ws = (
-        Array.from(document.querySelectorAll('.tl-container img')) as HTMLImageElement[]
-      )
-        .map((im) => im.getBoundingClientRect().width)
+      const api = window.__livetichBoard;
+      const state = api?.getAppState();
+      if (!api || !state) return 0;
+      const vw = state.width || window.innerWidth;
+      const ws = api
+        .getSceneElements()
+        .filter((el) => el.type === 'image')
+        .map((el) => el.width * state.zoom.value)
         .filter((w) => w > 2);
       return ws.length ? Math.max(...ws) / vw : 0;
     });
@@ -396,15 +403,21 @@ test('mobile student sees an imported PDF at a sane scale', async ({ browser }) 
 
   // Record the final layout + screenshots.
   const metrics = await student.evaluate(() => {
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const rects = (
-      Array.from(document.querySelectorAll('.tl-container img')) as HTMLImageElement[]
-    )
-      .map((im) => im.getBoundingClientRect())
-      .filter((r) => r.width > 2 && r.height > 2)
-      .map((r) => ({ w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.x), y: Math.round(r.y) }));
-    return { vw, vh, rects };
+    const api = window.__livetichBoard;
+    const state = api?.getAppState();
+    if (!api || !state) return { vw: window.innerWidth, vh: window.innerHeight, rects: [] };
+    const z = state.zoom.value;
+    const rects = api
+      .getSceneElements()
+      .filter((el) => el.type === 'image')
+      .map((el) => ({
+        w: Math.round(el.width * z),
+        h: Math.round(el.height * z),
+        x: Math.round((el.x + state.scrollX) * z),
+        y: Math.round((el.y + state.scrollY) * z),
+      }))
+      .filter((r) => r.w > 2 && r.h > 2);
+    return { vw: state.width, vh: state.height, rects };
   });
   console.log('MOBILE PDF METRICS:', JSON.stringify(metrics));
   await student.screenshot({ path: 'test-results/mobile-pdf-student.png' });

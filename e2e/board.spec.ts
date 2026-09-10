@@ -37,8 +37,8 @@ test('instructor opens the live classroom board without runtime errors', async (
   // The room opens on the Qur'an/Hifz panel; switch to the board explicitly.
   await page.getByRole('button', { name: /^chalkboard$/i }).click();
 
-  // The board canvas (tldraw) should now mount.
-  await expect(page.locator('.tl-container, canvas').first()).toBeVisible({
+  // The board canvas (Excalidraw) should now mount.
+  await expect(page.locator('.excalidraw-container, canvas').first()).toBeVisible({
     timeout: 20_000,
   });
 
