@@ -57,6 +57,13 @@ import type {
   BoardServerToClientEvents,
 } from '@/lib/realtime-contract';
 import {
+  MATH_CATEGORIES,
+  MATH_ENTRIES,
+  searchMath,
+  type MathCategory,
+  type MathEntry,
+} from './board-math-palette';
+import {
   mathError,
   renderMathHtml,
   renderMathToPng,
@@ -279,6 +286,39 @@ function isSharedFile(value: unknown): value is SharedBoardFile {
 }
 
 /**
+ * One palette button. Entries with a character show it directly; the rest are
+ * rendered as maths, so a structure button looks like the thing it inserts
+ * rather than like its source.
+ */
+function MathButton({
+  entry,
+  onPick,
+}: {
+  entry: MathEntry;
+  onPick: (entry: MathEntry) => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={`${entry.label}${entry.keywords ? ` — ${entry.keywords}` : ''}`}
+      aria-label={entry.label}
+      onClick={() => onPick(entry)}
+      className="grid h-8 min-w-[2rem] place-items-center rounded-lg bg-neutral-50 px-1.5 text-sm text-neutral-800 ring-1 ring-neutral-200 transition hover:bg-neutral-100"
+    >
+      {entry.char ? (
+        <span className="pointer-events-none leading-none">{entry.char}</span>
+      ) : (
+        <span
+          className="pointer-events-none text-[13px] leading-none"
+          // KaTeX rendering of a fixed palette entry, not user input.
+          dangerouslySetInnerHTML={{ __html: renderMathHtml(entry.preview ?? entry.latex, false) }}
+        />
+      )}
+    </button>
+  );
+}
+
+/**
  * Excalidraw whiteboard bound to the /board Yjs namespace.
  *
  * The shared doc holds one entry per element, keyed by element id. Excalidraw
@@ -370,6 +410,21 @@ export function BoardExcalidraw({
   const [mathOpen, setMathOpen] = useState(false);
   const [mathSource, setMathSource] = useState('');
   const [mathBusy, setMathBusy] = useState(false);
+  const mathInputRef = useRef<HTMLTextAreaElement>(null);
+  const [mathQuery, setMathQuery] = useState('');
+  const [mathTab, setMathTab] = useState<MathCategory>('Structures');
+  /** What this instructor actually reaches for, which after a lesson or two
+   *  covers most of what they need. Per-browser; losing it costs nothing. */
+  const [mathRecent, setMathRecent] = useState<string[]>([]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('livetich:math-recent');
+      if (raw) setMathRecent(JSON.parse(raw) as string[]);
+    } catch {
+      // A blocked or full store is not worth failing the board over.
+    }
+  }, []);
   /** Excalidraw's tool-rail container, so the shapes button can live inside it
    *  rather than float alongside and drift out of alignment. */
   const [railNode, setRailNode] = useState<HTMLElement | null>(null);
@@ -1164,12 +1219,53 @@ export function BoardExcalidraw({
   }, []);
 
   /**
+   * Drop LaTeX in at the cursor and select the blank inside it, so the next
+   * keystroke replaces the placeholder rather than landing after it. This is
+   * what lets the palette be used without reading the LaTeX it inserts.
+   */
+  const insertMath = useCallback(
+    (latex: string, select?: [number, number]) => {
+      const box = mathInputRef.current;
+      const start = box?.selectionStart ?? mathSource.length;
+      const end = box?.selectionEnd ?? start;
+      setMathSource(mathSource.slice(0, start) + latex + mathSource.slice(end));
+      const caret = start + (select ? select[0] : latex.length);
+      const length = select ? select[1] : 0;
+      // After the controlled value has been applied, not before.
+      requestAnimationFrame(() => {
+        const el = mathInputRef.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(caret, caret + length);
+      });
+    },
+    [mathSource],
+  );
+
+  /** Insert a palette entry and remember it as recently used. */
+  const pickMath = useCallback(
+    (entry: MathEntry) => {
+      insertMath(entry.latex, entry.select);
+      setMathRecent((prev) => {
+        const next = [entry.latex, ...prev.filter((l) => l !== entry.latex)].slice(0, 12);
+        try {
+          localStorage.setItem('livetich:math-recent', JSON.stringify(next));
+        } catch {
+          // Not worth failing the insert over.
+        }
+        return next;
+      });
+    },
+    [insertMath],
+  );
+
+  /**
    * Rasterise the formula and place it on the board. The PNG rides the same
    * asset pipeline as an imported page — uploaded once, shared by URL — and the
    * LaTeX source is kept on the element so it can be edited later rather than
    * being frozen into a picture.
    */
-  const insertMath = useCallback(async () => {
+  const addMathToBoard = useCallback(async () => {
     const editor = apiRef.current;
     const map = filesRef.current;
     const doc = docRef.current;
@@ -1411,6 +1507,14 @@ export function BoardExcalidraw({
 
   const pill =
     'rounded-full px-3 py-1.5 text-xs font-semibold shadow ring-1 ring-neutral-200 transition';
+  const visibleMath =
+    mathQuery.trim() === ''
+      ? MATH_ENTRIES.filter((e) => e.category === mathTab)
+      : searchMath(MATH_ENTRIES, mathQuery);
+  const recentEntries = mathRecent
+    .map((latex) => MATH_ENTRIES.find((e) => e.latex === latex))
+    .filter((e): e is MathEntry => !!e)
+    .slice(0, 12);
   const mathIssue = mathSource.trim() === '' ? null : mathError(mathSource);
   const mathPreview =
     mathSource.trim() === '' || mathIssue ? '' : renderMathHtml(mathSource);
@@ -1680,20 +1784,80 @@ export function BoardExcalidraw({
           board gets a high-DPI raster of the same output. */}
       {mathOpen && canDraw && (
         <div className="pointer-events-auto absolute left-1/2 top-14 z-[403] w-[min(30rem,calc(100%-2rem))] -translate-x-1/2 rounded-xl bg-white p-3 shadow-lg ring-1 ring-neutral-200">
-          <label
-            htmlFor="board-math-input"
-            className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-neutral-400"
-          >
-            LaTeX
+          <p className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">
+            Formula
+          </p>
+          <p className="mt-0.5 text-xs text-neutral-500">
+            Pick a shape, then type over the highlighted blanks.
+          </p>
+          {/* Search first: with 150-odd entries, typing "integral" beats
+              hunting through a grid. Categories are for when you don't yet
+              know the word. */}
+          <input
+            type="search"
+            value={mathQuery}
+            onChange={(e) => setMathQuery(e.target.value)}
+            placeholder="Search symbols — integral, subset, theta…"
+            aria-label="Search math symbols"
+            className="mt-1.5 w-full rounded-lg border border-neutral-300 px-2.5 py-1.5 text-sm text-neutral-900 outline-none focus:border-neutral-500"
+          />
+
+          {mathQuery.trim() === '' && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {MATH_CATEGORIES.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setMathTab(cat)}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+                    mathTab === cat
+                      ? 'bg-neutral-900 text-white'
+                      : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {mathQuery.trim() === '' && recentEntries.length > 0 && (
+            <>
+              <p className="mt-2 font-mono text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+                Recent
+              </p>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {recentEntries.map((e) => (
+                  <MathButton key={`recent-${e.latex}`} entry={e} onPick={pickMath} />
+                ))}
+              </div>
+            </>
+          )}
+
+          <div className="mt-1.5 flex max-h-40 flex-wrap gap-1 overflow-y-auto">
+            {visibleMath.length === 0 ? (
+              <p className="px-1 py-2 text-xs text-neutral-400">
+                Nothing matches “{mathQuery.trim()}”.
+              </p>
+            ) : (
+              visibleMath.map((e) => (
+                <MathButton key={e.latex} entry={e} onPick={pickMath} />
+              ))
+            )}
+          </div>
+
+          <label htmlFor="board-math-input" className="sr-only">
+            Formula source
           </label>
           <textarea
             id="board-math-input"
+            ref={mathInputRef}
             value={mathSource}
             onChange={(e) => setMathSource(e.target.value)}
             rows={2}
             spellCheck={false}
             autoFocus
-            placeholder="\frac{-b \pm \sqrt{b^2 - 4ac}}{2a}"
+            placeholder="Pick a template above, or type LaTeX directly"
             className="mt-1 w-full resize-y rounded-lg border border-neutral-300 px-2.5 py-1.5 font-mono text-sm text-neutral-900 outline-none focus:border-neutral-500"
           />
           <div className="mt-2 min-h-[3rem] overflow-x-auto rounded-lg bg-neutral-50 px-3 py-2 text-neutral-900">
@@ -1721,7 +1885,7 @@ export function BoardExcalidraw({
             </button>
             <button
               type="button"
-              onClick={() => void insertMath()}
+              onClick={() => void addMathToBoard()}
               disabled={mathBusy || !!mathIssue || mathSource.trim() === ''}
               className={`${pill} bg-neutral-900 text-white ring-neutral-900 disabled:opacity-50`}
             >

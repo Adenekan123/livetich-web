@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "node scripts/copy-excalidraw-assets.mjs"
+    "postinstall": "node scripts/copy-excalidraw-assets.mjs",
+    "check:math": "node --experimental-strip-types scripts/check-math-palette.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",
