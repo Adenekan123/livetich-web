@@ -1,6 +1,10 @@
 import { test, expect, type Page, devices } from '@playwright/test';
 
-const LIVE_SESSION = 'cmtfiqi9y0001vilcs0gefpq4';
+// The live session these specs drive. Sessions are per-class rows, so this id
+// goes stale whenever the local seed is rebuilt — override it without editing
+// every spec:  LIVE_SESSION=<id> npx playwright test
+const LIVE_SESSION =
+  process.env.LIVE_SESSION ?? 'cmtu8bru50005vi7gvmrogb4a';
 const INSTRUCTOR_STATE = 'e2e/.auth/instructor.json';
 const STUDENT_STATE = 'e2e/.auth/student.json';
 

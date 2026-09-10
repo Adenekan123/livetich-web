@@ -1,6 +1,7 @@
 'use client';
 
 import '@excalidraw/excalidraw/index.css';
+import './board-excalidraw.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   CaptureUpdateAction,
@@ -8,6 +9,7 @@ import {
   MainMenu,
   convertToExcalidrawElements,
   exportToBlob,
+  getCommonBounds,
   getVisibleSceneBounds,
   reconcileElements,
   restoreElements,
@@ -44,6 +46,7 @@ import {
   PiUploadSimpleBold,
 } from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
+import { cn } from '@/lib/ui';
 import { getRealtimeToken, clearRealtimeToken } from '@/lib/client-token';
 import type {
   BoardClientToServerEvents,
@@ -212,10 +215,26 @@ export function BoardExcalidraw({
   const pendingRef = useRef<readonly OrderedExcalidrawElement[] | null>(null);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastPresenterRef = useRef(0);
-  /** Set while we move the camera for a follower, so the resulting scroll
-   *  change isn't mistaken for the viewer panning away. */
-  const applyingViewRef = useRef(false);
+  /** Trailing send for the presenter camera: without it, a pan that stops
+   *  inside the throttle window never delivers its final position and every
+   *  follower is left a beat behind. */
+  const presenterTrailingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Read by the presenter emitter, which is deliberately identity-stable so
+   *  its own trailing timer can call it without risking a stale closure. */
+  const canDrawRef = useRef(canDraw);
+  const sessionIdRef = useRef(sessionId);
+  /** The last camera we applied for a follower. Excalidraw reports scroll
+   *  changes asynchronously, so a timing flag can't tell our own programmatic
+   *  move apart from the viewer panning — comparing against the values we set
+   *  can. */
+  const lastAppliedViewRef = useRef<{
+    scrollX: number;
+    scrollY: number;
+    zoom: number;
+  } | null>(null);
   const followingRef = useRef(true);
+  /** Whether we have framed the board once for this mount. */
+  const didInitialFitRef = useRef(false);
   const lastBoundsRef = useRef<{ x: number; y: number; w: number; h: number } | null>(
     null,
   );
@@ -246,6 +265,10 @@ export function BoardExcalidraw({
   useEffect(() => {
     followingRef.current = following;
   }, [following]);
+  useEffect(() => {
+    canDrawRef.current = canDraw;
+    sessionIdRef.current = sessionId;
+  }, [canDraw, sessionId]);
 
   // ---- Shared state -> local scene ----------------------------------------
   /**
@@ -318,18 +341,47 @@ export function BoardExcalidraw({
     if (!editor || !bounds || bounds.w <= 0 || bounds.h <= 0) return;
     const appState = editor.getAppState();
     if (!appState.width || !appState.height) return;
+
+    let { x, y, w, h } = bounds;
+    // Drop the presenter's empty margin on whichever axis their viewport spills
+    // past the content. For the common wide-desktop -> portrait-phone case that
+    // is the horizontal slack that would otherwise strand a shared page at a
+    // third of the screen width. Clamp that axis to the content's extent so the
+    // page fills the follower's screen, while keeping the presenter's framing on
+    // the other axis so their pan still tracks. Only clamp an axis where the
+    // presenter overhangs the content on BOTH sides — never crop content they
+    // have deliberately zoomed into.
+    const elements = editor.getSceneElements();
+    if (elements.length) {
+      const [cx0, cy0, cx1, cy1] = getCommonBounds(elements);
+      if (x < cx0 && x + w > cx1) {
+        x = cx0;
+        w = cx1 - cx0;
+      }
+      if (y < cy0 && y + h > cy1) {
+        y = cy0;
+        h = cy1 - cy0;
+      }
+      if (w <= 1 || h <= 1) ({ x, y, w, h } = bounds);
+    }
+
     const { appState: fitted } = zoomToFitBounds({
-      bounds: [
-        bounds.x,
-        bounds.y,
-        bounds.x + bounds.w,
-        bounds.y + bounds.h,
-      ] as SceneBounds,
+      bounds: [x, y, x + w, y + h] as SceneBounds,
       appState,
+      // Scale the presenter's region to whatever screen this is — the whole
+      // point of following bounds rather than copying their raw camera.
       fitToViewport: true,
       viewportZoomFactor: 0.95,
+      // Guard rails so a degenerate region can't leave a follower at 4000% or
+      // at a zoom too small to read on a phone.
+      minZoom: 0.1,
+      maxZoom: 4,
     });
-    applyingViewRef.current = true;
+    lastAppliedViewRef.current = {
+      scrollX: fitted.scrollX,
+      scrollY: fitted.scrollY,
+      zoom: fitted.zoom.value,
+    };
     editor.updateScene({
       appState: {
         scrollX: fitted.scrollX,
@@ -338,10 +390,6 @@ export function BoardExcalidraw({
       },
       captureUpdate: CaptureUpdateAction.NEVER,
     });
-    // Released once the scroll callback for this update has run.
-    window.setTimeout(() => {
-      applyingViewRef.current = false;
-    }, 0);
   }, []);
 
   // ---- Shared document + socket -------------------------------------------
@@ -541,6 +589,29 @@ export function BoardExcalidraw({
     hydrateFiles();
   }, [api, applyRemoteElements, hydrateFiles]);
 
+  /**
+   * Frame whatever is already on the board, once, when this client is ready.
+   * A late joiner otherwise lands on Excalidraw's default camera at 100% — which
+   * on a board whose content sits elsewhere is an empty screen, and on a phone
+   * is a corner of a page. Skipped once the presenter has sent a view (that is
+   * better than any guess we could make) or once the user has taken over.
+   */
+  useEffect(() => {
+    if (!ready || !api || didInitialFitRef.current) return;
+    if (lastBoundsRef.current) return;
+    const elements = api.getSceneElements();
+    if (!elements.length) return;
+    const appState = api.getAppState();
+    if (!appState.width || !appState.height) return;
+    didInitialFitRef.current = true;
+    api.scrollToContent(elements, {
+      fitToContent: true,
+      // Leave a margin so strokes at the very edge aren't flush to the bezel.
+      viewportZoomFactor: 0.9,
+      animate: false,
+    });
+  }, [ready, api]);
+
   // Re-frame a following viewer when their own viewport changes size (rotating
   // a phone, opening the side panel) — the presenter won't re-announce.
   useEffect(() => {
@@ -606,6 +677,67 @@ export function BoardExcalidraw({
     [sessionId, flash],
   );
 
+  /**
+   * Send the presenter's camera now. `bounds` is the visible scene rectangle;
+   * followers fit that to their own viewport, which is what carries pan AND
+   * zoom across to every screen size.
+   */
+  const sendPresenter = useCallback(
+    (cursor: { x: number; y: number } | null) => {
+      const editor = apiRef.current;
+      if (!editor || !canDrawRef.current) return;
+      const appState = editor.getAppState();
+      if (!appState.width || !appState.height) return;
+      lastPresenterRef.current = Date.now();
+      const [x1, y1, x2, y2] = getVisibleSceneBounds(appState);
+      socketRef.current?.emit('board:presenter', {
+        sessionId: sessionIdRef.current,
+        camera: {
+          x: appState.scrollX,
+          y: appState.scrollY,
+          z: appState.zoom.value,
+        },
+        cursor,
+        bounds: { x: x1, y: y1, w: x2 - x1, h: y2 - y1 },
+      });
+    },
+    [],
+  );
+
+  /**
+   * Throttled wrapper. The camera only needs to feel attached, not be
+   * frame-accurate — but the *last* position of a gesture always matters, so a
+   * throttled call schedules a trailing send rather than dropping it. Without
+   * that, a pan or zoom that ends inside the throttle window leaves every
+   * follower a beat behind the instructor.
+   */
+  const emitPresenter = useCallback(
+    (cursor: { x: number; y: number } | null) => {
+      if (Date.now() - lastPresenterRef.current < PRESENTER_INTERVAL_MS) {
+        if (!presenterTrailingRef.current) {
+          presenterTrailingRef.current = setTimeout(() => {
+            presenterTrailingRef.current = null;
+            sendPresenter(cursor);
+          }, PRESENTER_INTERVAL_MS);
+        }
+        return;
+      }
+      if (presenterTrailingRef.current) {
+        clearTimeout(presenterTrailingRef.current);
+        presenterTrailingRef.current = null;
+      }
+      sendPresenter(cursor);
+    },
+    [sendPresenter],
+  );
+
+  useEffect(
+    () => () => {
+      if (presenterTrailingRef.current) clearTimeout(presenterTrailingRef.current);
+    },
+    [],
+  );
+
   const onChange = useCallback(
     (scene: readonly OrderedExcalidrawElement[]) => {
       const editor = apiRef.current;
@@ -622,23 +754,9 @@ export function BoardExcalidraw({
         if (unshared.length) shareNewFiles(unshared);
       }
 
-      // Presenter camera: broadcast the visible rectangle so followers can fit
-      // it to their own screen.
-      if (!canDraw) return;
-      const now = Date.now();
-      if (now - lastPresenterRef.current < PRESENTER_INTERVAL_MS) return;
-      const appState = editor.getAppState();
-      if (!appState.width || !appState.height) return;
-      lastPresenterRef.current = now;
-      const [x1, y1, x2, y2] = getVisibleSceneBounds(appState);
-      socketRef.current?.emit('board:presenter', {
-        sessionId,
-        camera: { x: appState.scrollX, y: appState.scrollY, z: appState.zoom.value },
-        cursor: null,
-        bounds: { x: x1, y: y1, w: x2 - x1, h: y2 - y1 },
-      });
+      emitPresenter(null);
     },
-    [canEdit, canDraw, sessionId, flushLocal, shareNewFiles],
+    [canEdit, flushLocal, shareNewFiles, emitPresenter],
   );
 
   /** Broadcast this user's pointer; the instructor's also drives the laser. */
@@ -653,28 +771,41 @@ export function BoardExcalidraw({
         username: canDraw ? 'Instructor' : 'Student',
       });
       if (!canDraw) return;
-      const appState = apiRef.current?.getAppState();
-      socketRef.current?.emit('board:presenter', {
-        sessionId,
-        camera: {
-          x: appState?.scrollX ?? 0,
-          y: appState?.scrollY ?? 0,
-          z: appState?.zoom.value ?? 1,
-        },
-        cursor:
-          payload.pointer.tool === 'laser'
-            ? { x: payload.pointer.x, y: payload.pointer.y }
-            : null,
-      });
+      emitPresenter(
+        payload.pointer.tool === 'laser'
+          ? { x: payload.pointer.x, y: payload.pointer.y }
+          : null,
+      );
     },
-    [canDraw, sessionId],
+    [canDraw, emitPresenter],
   );
 
-  /** A viewer who pans or zooms themselves stops following. */
-  const onScrollChange = useCallback(() => {
-    if (canDraw || applyingViewRef.current) return;
-    if (followingRef.current) setFollowing(false);
-  }, [canDraw]);
+  /**
+   * The presenter's pan/zoom is broadcast from here — scrolling and zooming
+   * change no elements, so onChange alone was never a reliable signal for it.
+   * On a viewer, this is the "did they take over the view" test: a scroll that
+   * matches the camera we just applied is our own follow move, not a gesture.
+   */
+  const onScrollChange = useCallback(
+    (scrollX: number, scrollY: number, zoom: { value: number }) => {
+      if (canDraw) {
+        emitPresenter(null);
+        return;
+      }
+      if (!followingRef.current) return;
+      // Excalidraw normalises the zoom it actually applies, so compare with a
+      // tolerance — still an order of magnitude tighter than any real gesture,
+      // where one wheel step is ~10%.
+      const applied = lastAppliedViewRef.current;
+      const isOurs =
+        applied !== null &&
+        Math.abs(applied.scrollX - scrollX) < 0.5 &&
+        Math.abs(applied.scrollY - scrollY) < 0.5 &&
+        Math.abs(applied.zoom - zoom.value) < 0.01;
+      if (!isOurs) setFollowing(false);
+    },
+    [canDraw, emitPresenter],
+  );
 
   // ---- Board controls ------------------------------------------------------
   const toggleBoardOpen = useCallback(() => {
@@ -837,11 +968,12 @@ export function BoardExcalidraw({
   return (
     <div
       ref={wrapperRef}
-      className={
+      className={cn(
+        'livetich-board',
         fullscreen
           ? 'fixed inset-0 z-[500] isolate overflow-hidden bg-white'
-          : 'relative isolate h-full min-h-[320px] overflow-hidden rounded-xl border border-neutral-300 bg-white'
-      }
+          : 'relative isolate h-full min-h-[320px] overflow-hidden rounded-xl border border-neutral-300 bg-white',
+      )}
     >
       <Excalidraw
         excalidrawAPI={setApi}
@@ -899,7 +1031,7 @@ export function BoardExcalidraw({
       </button>
 
       {/* Instructor controls / viewer follow, above the editor's top bar. */}
-      <div className="pointer-events-none absolute right-3 top-3 z-[401] flex flex-wrap items-center justify-end gap-1.5">
+      <div className="pointer-events-none absolute left-1/2 top-3 z-[401] flex max-w-[calc(100%-6rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5">
         {canDraw ? (
           <>
             <button

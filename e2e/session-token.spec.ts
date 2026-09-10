@@ -8,7 +8,11 @@ import { test, expect, type Page } from '@playwright/test';
 //
 // Assumes the seeded LIVE session (status=LIVE renders ClassRoom) — same one the
 // board specs use — owned by the seed instructor, with the seed student enrolled.
-const LIVE_SESSION = 'cmtfiqi9y0001vilcs0gefpq4';
+// The live session these specs drive. Sessions are per-class rows, so this id
+// goes stale whenever the local seed is rebuilt — override it without editing
+// every spec:  LIVE_SESSION=<id> npx playwright test
+const LIVE_SESSION =
+  process.env.LIVE_SESSION ?? 'cmtu8bru50005vi7gvmrogb4a';
 const STUDENT_STATE = 'e2e/.auth/student.json';
 
 // The top-bar connection pill reads "Connected" once the room socket authed.

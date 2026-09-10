@@ -3,7 +3,11 @@ import { test, expect, type Page } from '@playwright/test';
 // Bugs #3/#4: measure how long joining a live session and first-loading the
 // board actually take (instructor). Not a pass/fail — it logs milestones so we
 // can see where the time goes.
-const LIVE_SESSION = 'cmtfiqi9y0001vilcs0gefpq4';
+// The live session these specs drive. Sessions are per-class rows, so this id
+// goes stale whenever the local seed is rebuilt — override it without editing
+// every spec:  LIVE_SESSION=<id> npx playwright test
+const LIVE_SESSION =
+  process.env.LIVE_SESSION ?? 'cmtu8bru50005vi7gvmrogb4a';
 
 test('measure: join session + first board load (instructor)', async ({ page }) => {
   test.setTimeout(120_000);

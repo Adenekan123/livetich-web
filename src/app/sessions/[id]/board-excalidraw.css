@@ -1,0 +1,76 @@
+/**
+ * Classroom layout overrides for Excalidraw's own chrome.
+ *
+ * Excalidraw ships its tool palette as a horizontal island across the top
+ * centre. In a live class that lands right where the instructor is writing and
+ * competes with our own board controls, so the tools move to a vertical strip
+ * down the left edge and the top centre is left for the classroom pills
+ * (board lock, templates, import/export).
+ *
+ * These are Excalidraw's internal class names, so treat this file as a
+ * pinned-version dependency: re-check it when bumping @excalidraw/excalidraw.
+ * Everything is scoped under .livetich-board so it can never leak into another
+ * Excalidraw instance on the page.
+ *
+ * Only applied above Excalidraw's own mobile breakpoint. Below it Excalidraw
+ * collapses the toolbar into a bottom bar, which is already the right shape for
+ * a phone — we leave that alone.
+ */
+@media (min-width: 730px) {
+  /* Lift the tool palette out of the top grid and park it against the left
+     edge, vertically centred so it clears the menu button above it. */
+  .livetich-board .shapes-section {
+    position: absolute;
+    left: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    justify-content: flex-start;
+  }
+
+  /* Excalidraw's Stack components are CSS grids with `grid-auto-flow: column`,
+     not flexboxes — flex-direction does nothing to them. Turning the flow to
+     `row` is what actually stacks the tools. The explicit column track has to
+     be reset too, or the generated 36px columns keep the old width. */
+  .livetich-board .App-toolbar-container {
+    grid-auto-flow: row;
+    justify-items: start;
+  }
+
+  .livetich-board .App-toolbar {
+    width: auto;
+  }
+
+  .livetich-board .App-toolbar .Stack_horizontal {
+    grid-auto-flow: row;
+    grid-template-columns: auto;
+    grid-template-rows: none;
+    justify-items: center;
+  }
+
+  /* A vertical stack needs horizontal rules, not vertical ones. */
+  .livetich-board .App-toolbar__divider {
+    width: 100%;
+    height: 1px;
+    margin: 0.25rem 0;
+  }
+
+  /* The laser button sits in its own island, spaced by an inline margin-left
+     that only makes sense in a row. */
+  .livetich-board .App-toolbar-container > .Island + .Island {
+    margin-left: 0 !important;
+    margin-top: 0.5rem !important;
+    align-self: start !important;
+  }
+
+  /* Excalidraw's hint line is laid out for a wide top bar; inside a narrow left
+     rail it wraps to a column of single words on top of the tools. */
+  .livetich-board .HintViewer {
+    display: none;
+  }
+
+  /* The library is an excalidraw.com surface (and its own brand surface); a
+     classroom board has no use for it, and it collided with our pills. */
+  .livetich-board .layer-ui__wrapper__top-right .sidebar-trigger__label-element {
+    display: none;
+  }
+}

@@ -4,7 +4,11 @@ import { test, expect, type Page } from '@playwright/test';
 // board (instructor = canDraw). Shapes sync through the real Yjs/socket stack,
 // and imported images/PDFs upload to the API's board-asset endpoint (the fix
 // that made shared media visible to students, not blob: URLs).
-const LIVE_SESSION = 'cmtfiqi9y0001vilcs0gefpq4';
+// The live session these specs drive. Sessions are per-class rows, so this id
+// goes stale whenever the local seed is rebuilt — override it without editing
+// every spec:  LIVE_SESSION=<id> npx playwright test
+const LIVE_SESSION =
+  process.env.LIVE_SESSION ?? 'cmtu8bru50005vi7gvmrogb4a';
 
 /** Open the Excalidraw board (Chalkboard panel). Authed as instructor via storageState. */
 async function openBoard(page: Page) {
