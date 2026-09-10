@@ -1,6 +1,7 @@
 'use client';
 
 import '@excalidraw/excalidraw/index.css';
+import 'katex/dist/katex.min.css';
 import './board-excalidraw.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -43,6 +44,7 @@ import {
   PiArrowsOutBold,
   PiCrosshairBold,
   PiDownloadSimpleBold,
+  PiFunctionBold,
   PiLockBold,
   PiLockOpenBold,
   PiUploadSimpleBold,
@@ -54,6 +56,12 @@ import type {
   BoardClientToServerEvents,
   BoardServerToClientEvents,
 } from '@/lib/realtime-contract';
+import {
+  mathError,
+  renderMathHtml,
+  renderMathToPng,
+  type MathCustomData,
+} from './board-math';
 import {
   PDF_MAX_PAGES,
   dataURLToFile,
@@ -359,6 +367,9 @@ export function BoardExcalidraw({
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [shapesOpen, setShapesOpen] = useState(false);
+  const [mathOpen, setMathOpen] = useState(false);
+  const [mathSource, setMathSource] = useState('');
+  const [mathBusy, setMathBusy] = useState(false);
   /** Excalidraw's tool-rail container, so the shapes button can live inside it
    *  rather than float alongside and drift out of alignment. */
   const [railNode, setRailNode] = useState<HTMLElement | null>(null);
@@ -1152,6 +1163,62 @@ export function BoardExcalidraw({
     editor.setActiveTool({ type: 'rectangle' });
   }, []);
 
+  /**
+   * Rasterise the formula and place it on the board. The PNG rides the same
+   * asset pipeline as an imported page — uploaded once, shared by URL — and the
+   * LaTeX source is kept on the element so it can be edited later rather than
+   * being frozen into a picture.
+   */
+  const insertMath = useCallback(async () => {
+    const editor = apiRef.current;
+    const map = filesRef.current;
+    const doc = docRef.current;
+    const latex = mathSource.trim();
+    if (!editor || !map || !doc || !latex) return;
+    setMathBusy(true);
+    try {
+      const state = editor.getAppState();
+      const { file, width, height } = await renderMathToPng(
+        latex,
+        state.currentItemStrokeColor,
+      );
+      const fileId = crypto.randomUUID();
+      const { url, file: uploaded } = await uploadBoardAsset(sessionId, file);
+      const dataURL = await fileToDataURL(uploaded);
+      const created = Date.now();
+      editor.addFiles([
+        { id: fileId as FileId, dataURL, mimeType: 'image/png', created } as BinaryFileData,
+      ]);
+      syncedFilesRef.current.add(fileId);
+      doc.transact(() => {
+        map.set(fileId, { id: fileId, url, mimeType: 'image/png', created });
+      }, LOCAL);
+
+      const [x1, y1, x2, y2] = getVisibleSceneBounds(state);
+      const added = convertToExcalidrawElements([
+        {
+          type: 'image',
+          x: (x1 + x2) / 2 - width / 2,
+          y: (y1 + y2) / 2 - height / 2,
+          width,
+          height,
+          fileId: fileId as FileId,
+          customData: { livetichMath: latex } satisfies MathCustomData,
+        },
+      ]);
+      editor.updateScene({
+        elements: [...editor.getSceneElementsIncludingDeleted(), ...added],
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      setMathOpen(false);
+      setMathSource('');
+    } catch {
+      flash('That formula could not be added — check the LaTeX.');
+    } finally {
+      setMathBusy(false);
+    }
+  }, [mathSource, sessionId, flash]);
+
   const resync = useCallback(() => {
     const socket = socketRef.current;
     if (!socket) return;
@@ -1344,6 +1411,9 @@ export function BoardExcalidraw({
 
   const pill =
     'rounded-full px-3 py-1.5 text-xs font-semibold shadow ring-1 ring-neutral-200 transition';
+  const mathIssue = mathSource.trim() === '' ? null : mathError(mathSource);
+  const mathPreview =
+    mathSource.trim() === '' || mathIssue ? '' : renderMathHtml(mathSource);
   const current = SHAPES.find((x) => x.key === activeShape) ?? SHAPES[0];
   const previewEntry = preview
     ? SHAPES.find((x) => x.key === preview.key)
@@ -1415,7 +1485,13 @@ export function BoardExcalidraw({
             >
               {/* The shape currently armed, so the button reads like a tool. */}
               <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden>
-                <path d={current.icon} fill="currentColor" />
+                <path
+                  d={current.icon}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.75}
+                  strokeLinejoin="round"
+                />
               </svg>
               {/* Corner caret: this one opens a menu, the others don't. */}
               <svg
@@ -1440,7 +1516,13 @@ export function BoardExcalidraw({
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-100"
                   >
                     <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" aria-hidden>
-                      <path d={shape.icon} fill="currentColor" />
+                      <path
+                        d={shape.icon}
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={1.75}
+                        strokeLinejoin="round"
+                      />
                     </svg>
                     {shape.label}
                   </button>
@@ -1538,6 +1620,20 @@ export function BoardExcalidraw({
               ))}
             <button
               type="button"
+              onClick={() => setMathOpen((v) => !v)}
+              className={`pointer-events-auto ${pill} ${
+                mathOpen
+                  ? 'bg-neutral-900 text-white ring-neutral-900'
+                  : 'bg-white text-neutral-800'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <PiFunctionBold />
+                Math
+              </span>
+            </button>
+            <button
+              type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={importing}
               className={`pointer-events-auto ${pill} bg-white text-neutral-800 disabled:opacity-50`}
@@ -1579,6 +1675,61 @@ export function BoardExcalidraw({
           </button>
         )}
       </div>
+
+      {/* LaTeX editor. The preview is KaTeX rendering live as you type; the
+          board gets a high-DPI raster of the same output. */}
+      {mathOpen && canDraw && (
+        <div className="pointer-events-auto absolute left-1/2 top-14 z-[403] w-[min(30rem,calc(100%-2rem))] -translate-x-1/2 rounded-xl bg-white p-3 shadow-lg ring-1 ring-neutral-200">
+          <label
+            htmlFor="board-math-input"
+            className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-neutral-400"
+          >
+            LaTeX
+          </label>
+          <textarea
+            id="board-math-input"
+            value={mathSource}
+            onChange={(e) => setMathSource(e.target.value)}
+            rows={2}
+            spellCheck={false}
+            autoFocus
+            placeholder="\frac{-b \pm \sqrt{b^2 - 4ac}}{2a}"
+            className="mt-1 w-full resize-y rounded-lg border border-neutral-300 px-2.5 py-1.5 font-mono text-sm text-neutral-900 outline-none focus:border-neutral-500"
+          />
+          <div className="mt-2 min-h-[3rem] overflow-x-auto rounded-lg bg-neutral-50 px-3 py-2 text-neutral-900">
+            {mathSource.trim() === '' ? (
+              <p className="text-xs text-neutral-400">Preview appears here.</p>
+            ) : mathIssue ? (
+              <p className="text-xs font-semibold text-red-600">{mathIssue}</p>
+            ) : (
+              <div
+                // KaTeX output, from LaTeX this instructor just typed.
+                dangerouslySetInnerHTML={{ __html: mathPreview }}
+              />
+            )}
+          </div>
+          <div className="mt-2 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setMathOpen(false);
+                setMathSource('');
+              }}
+              className={`${pill} bg-white text-neutral-700`}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void insertMath()}
+              disabled={mathBusy || !!mathIssue || mathSource.trim() === ''}
+              className={`${pill} bg-neutral-900 text-white ring-neutral-900 disabled:opacity-50`}
+            >
+              {mathBusy ? 'Adding…' : 'Add to board'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {boardMsg && (
         <div className="pointer-events-none absolute bottom-3 left-1/2 z-[402] -translate-x-1/2 rounded-full bg-neutral-900/90 px-3 py-1.5 text-xs font-semibold text-white shadow">
