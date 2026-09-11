@@ -426,6 +426,10 @@ export function BoardExcalidraw({
   const [mathOpen, setMathOpen] = useState(false);
   const [mathSource, setMathSource] = useState('');
   const [mathBusy, setMathBusy] = useState(false);
+  /** On a phone the classroom controls collapse behind one button: Excalidraw
+   *  gives its own toolbar the full width of the top, and the pills sat on top
+   *  of it. */
+  const [toolsOpen, setToolsOpen] = useState(false);
   const mathInputRef = useRef<HTMLTextAreaElement>(null);
   const [mathQuery, setMathQuery] = useState('');
   const [mathTab, setMathTab] = useState<MathCategory | 'Recent'>('Equations');
@@ -1715,7 +1719,40 @@ export function BoardExcalidraw({
       </button>
 
       {/* Instructor controls / viewer follow, above the editor's top bar. */}
-      <div className="pointer-events-none absolute left-1/2 top-3 z-[401] flex max-w-[calc(100%-6rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5">
+      {/* Phones only: Excalidraw's toolbar owns the full width of the top on a
+          small screen, so the classroom controls move behind one button placed
+          clear of it rather than overlapping it. */}
+      {canDraw && (
+        <button
+          type="button"
+          onClick={() => setToolsOpen((v) => !v)}
+          className={cn(
+            // Left, not right: Excalidraw keeps its own vertical strip down
+            // the right edge on a phone, and this sat on top of it.
+            'pointer-events-auto absolute left-2 top-16 z-[402] min-[730px]:hidden',
+            pill,
+            toolsOpen
+              ? 'bg-neutral-900 text-white ring-neutral-900'
+              : 'bg-white text-neutral-800',
+          )}
+        >
+          {toolsOpen ? 'Close' : 'Tools'}
+        </button>
+      )}
+
+      <div
+        className={cn(
+          'pointer-events-none absolute z-[401] flex flex-wrap items-center gap-1.5',
+          // Desktop: centred across the top, where the tool rail no longer is.
+          'min-[730px]:left-1/2 min-[730px]:top-3 min-[730px]:max-w-[calc(100%-6rem)] min-[730px]:-translate-x-1/2 min-[730px]:justify-center',
+          // Phone: a panel under the toolbar, opened from the Tools button.
+          'max-[729px]:left-2 max-[729px]:w-[min(15rem,calc(100%-4rem))] max-[729px]:justify-start',
+          // A viewer has no Tools button to open — their single follow pill
+          // sits where that button would be, and is never collapsed.
+          canDraw ? 'max-[729px]:top-28' : 'max-[729px]:top-16',
+          canDraw && !toolsOpen && 'max-[729px]:hidden',
+        )}
+      >
         {canDraw ? (
           <>
             <button
