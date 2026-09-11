@@ -150,3 +150,63 @@
     display: none;
   }
 }
+
+/**
+ * The recorder's frame.
+ *
+ * Everything here is chrome for someone who can act on it — menus, zoom
+ * buttons, the follow pill, the help badge. A recording has no such person:
+ * it is watched later, by someone who can only look. So the frame keeps the
+ * lesson and drops the controls, and the board fills the whole picture.
+ *
+ * Scoped under .livetich-recorder, which only the recorder route sets, so the
+ * live classroom is untouched.
+ */
+.livetich-recorder .excalidraw .layer-ui__wrapper__top-right,
+.livetich-recorder .excalidraw .App-menu__left,
+.livetich-recorder .excalidraw .App-toolbar,
+.livetich-recorder .excalidraw .footer-center,
+.livetich-recorder .excalidraw .zoom-actions,
+.livetich-recorder .excalidraw .undo-redo-buttons,
+.livetich-recorder .excalidraw .help-icon,
+.livetich-recorder .excalidraw .scroll-back-to-content,
+.livetich-recorder .excalidraw .dropdown-menu-button,
+.livetich-recorder .excalidraw .Stats,
+.livetich-recorder [data-board-shapes],
+.livetich-recorder [data-board-pills] {
+  display: none !important;
+}
+
+/* Whatever Excalidraw still paints as a floating island, hide it — the list
+   above is version-specific, this is the catch-all. */
+.livetich-recorder .excalidraw .layer-ui__wrapper .Island {
+  display: none !important;
+}
+
+/* The canvas itself must stay, and fill the frame. */
+.livetich-recorder .excalidraw .excalidraw__canvas {
+  display: block !important;
+}
+
+/**
+ * Nothing in a recording can be pressed, so nothing that looks pressable
+ * belongs in one. This catches our own board pills and buttons as well as
+ * Excalidraw's, and survives either of them growing a new control — which the
+ * hand-listed selectors above would not.
+ *
+ * Safe for the mushaf: its ayat are spans, and only its surah picker is a
+ * button.
+ */
+.livetich-recorder button,
+.livetich-recorder [role='button'],
+.livetich-recorder .collab-avatars,
+.livetich-recorder .excalidraw [class*='avatar'] {
+  display: none !important;
+}
+
+/* Next's dev-mode badge sits in the bottom-left corner. It does not exist in a
+   production build, but recording against a dev server would otherwise film
+   it. */
+.livetich-recorder nextjs-portal {
+  display: none !important;
+}

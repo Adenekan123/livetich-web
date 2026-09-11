@@ -26,7 +26,20 @@ let cached: { token: string; expiresAt: number } | null = null;
 // production that slowed the join. Now they await the same promise.
 let inflight: Promise<string | null> | null = null;
 
+/**
+ * The recorder page has no session cookie to exchange — it is a headless
+ * browser holding one token from its URL, and /api/realtime-token would hand
+ * it nothing. Setting it here means the board and the room sockets keep using
+ * getRealtimeToken() unchanged and simply receive that token instead.
+ */
+let recorderToken: string | null = null;
+
+export function setRecorderToken(token: string) {
+  recorderToken = token;
+}
+
 export async function getRealtimeToken(): Promise<string | null> {
+  if (recorderToken) return recorderToken;
   if (cached && cached.expiresAt > Date.now()) return cached.token;
   if (inflight) return inflight;
   inflight = (async () => {
@@ -52,4 +65,6 @@ export async function getRealtimeToken(): Promise<string | null> {
 export function clearRealtimeToken() {
   cached = null;
   inflight = null;
+  // Deliberately leaves recorderToken alone: a recorder has nothing else to
+  // fall back to, and clearing it would strand the recording mid-class.
 }
