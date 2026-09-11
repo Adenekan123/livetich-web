@@ -31,8 +31,9 @@ function elapsed(fromISO: string): string {
  * else in the room. The server enforces the same thing — the endpoints reject a
  * student — so this is presentation, not the access control.
  *
- * Hides itself entirely when recording is not configured, rather than offering
- * a button that can only fail.
+ * When recording is not configured it stays visible but disabled, saying so.
+ * Hiding it was worse: a missing button is indistinguishable from a broken
+ * feature, and the instructor has no way to tell which — or who to ask.
  */
 export function RecordButton({ sessionId }: { sessionId: string }) {
   const [available, setAvailable] = useState(false);
@@ -87,8 +88,24 @@ export function RecordButton({ sessionId }: { sessionId: string }) {
     return () => clearInterval(id);
   }, [startedAt]);
 
-  if (!available) return null;
   const recording = startedAt !== null;
+
+  if (!available) {
+    return (
+      <button
+        type="button"
+        disabled
+        title="Recording needs cloud storage configured for this deployment. An administrator sets R2 credentials on the API."
+        className="inline-flex cursor-not-allowed items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white/40"
+      >
+        <PiRecordFill className="h-4 w-4" aria-hidden />
+        Record
+        <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
+          Setup
+        </span>
+      </button>
+    );
+  }
 
   return (
     <div className="flex items-center gap-2">
