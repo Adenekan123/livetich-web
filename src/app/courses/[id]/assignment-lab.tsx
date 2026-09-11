@@ -20,6 +20,7 @@ import type {
 import { AddAssignmentForm } from './add-assignment-form';
 import { GradeForm } from './grade-form';
 import { GroupsManager } from './groups/groups-manager';
+import { RichText } from '@/components/rich-text';
 
 type SessionOption = { id: string; label: string; scheduledAt: string };
 type View = 'assignments' | 'groups';
@@ -350,9 +351,7 @@ function AssignmentDetail({
         </p>
 
         {a.instructions && (
-          <p className="mt-3 whitespace-pre-wrap rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">
-            {a.instructions}
-          </p>
+          <RichText className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">{a.instructions}</RichText>
         )}
 
         {/* Progress */}
