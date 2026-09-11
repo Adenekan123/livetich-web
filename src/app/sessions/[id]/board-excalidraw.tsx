@@ -22,6 +22,7 @@ import type {
   Collaborator,
   ExcalidrawImperativeAPI,
   SocketId,
+  ToolType,
 } from '@excalidraw/excalidraw/types';
 import type {
   ExcalidrawElement,
@@ -212,13 +213,25 @@ const SHAPE_SIZE = 160;
  * instructor think about mid-lesson.
  */
 /**
- * The shapes Excalidraw has no tool for. Square, diamond and circle are its own
- * tools and stay in the toolbar — listing them here as well just gave the same
- * three shapes two homes.
+ * Every shape, in one menu. Square, diamond and circle are Excalidraw tools, so
+ * picking them arms that tool; the rest have no tool and are drawn by arming a
+ * rectangle for the drag and swapping the polygon in on pointer up. Their three
+ * toolbar buttons are hidden (see board-excalidraw.css) so each shape has
+ * exactly one home.
  */
-type ShapeEntry = { key: string; label: string; points: Point[]; icon: string };
+type ShapeEntry =
+  | { key: string; label: string; tool: ToolType; icon: string }
+  | { key: string; label: string; points: Point[]; icon: string };
 
 const SHAPES: ShapeEntry[] = [
+  { key: 'rectangle', label: 'Square', tool: 'rectangle', icon: 'M4 4h16v16H4z' },
+  { key: 'diamond', label: 'Diamond', tool: 'diamond', icon: 'M12 2l10 10-10 10L2 12z' },
+  {
+    key: 'ellipse',
+    label: 'Circle',
+    tool: 'ellipse',
+    icon: 'M12 2a10 10 0 110 20 10 10 0 010-20z',
+  },
   {
     key: 'triangle',
     label: 'Triangle',
@@ -1061,7 +1074,8 @@ export function BoardExcalidraw({
       // scaled to exactly that box. This rides onChange rather than the pointer
       // callbacks because the scene is guaranteed to be committed here.
       if (armedKey && !state.newElement) {
-        const shape = SHAPES.find((x) => x.key === armedKey);
+        const entry = SHAPES.find((x) => x.key === armedKey);
+        const shape = entry && !('tool' in entry) ? entry : undefined;
         const box = shape
           ? scene.find(
               (el) =>
@@ -1211,9 +1225,10 @@ export function BoardExcalidraw({
   }, []);
 
   /**
-   * Pick a shape: arm it, then drag on the board to draw it. Excalidraw has no
-   * tool for any of these, so the rectangle tool is armed to capture the drag
-   * and what it draws is swapped for the polygon on pointer up (see above).
+   * Pick a shape: arm it, then drag on the board to draw it. Square, diamond
+   * and circle arm Excalidraw's own tool; the rest arm the rectangle tool to
+   * capture the drag, and what it draws is swapped for the polygon on pointer
+   * up (see above).
    */
   const addShape = useCallback((key: string) => {
     const editor = apiRef.current;
@@ -1221,6 +1236,12 @@ export function BoardExcalidraw({
     if (!editor || !shape) return;
     setShapesOpen(false);
     setActiveShape(key);
+    if ('tool' in shape) {
+      // A real Excalidraw tool — no placeholder, no conversion.
+      armedShapeRef.current = null;
+      editor.setActiveTool({ type: shape.tool });
+      return;
+    }
     armedShapeRef.current = key;
     armedBaselineRef.current = new Set(
       editor.getSceneElementsIncludingDeleted().map((el) => el.id),

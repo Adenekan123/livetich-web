@@ -106,6 +106,17 @@
    phones too. Leaving the natives visible there cost three slots in a row that
    only fits about eight, which pushed our button off the edge entirely. */
 
+/* Square, diamond and circle live in the shapes menu, which also carries the
+   six shapes Excalidraw has no tool for. Their toolbar buttons are hidden so
+   each shape has exactly one home instead of two. The tools themselves are
+   untouched — they are still armed from the menu, and their number keys
+   (2, 3, 4) still work. */
+.livetich-board label:has(> input[data-testid='toolbar-rectangle']),
+.livetich-board label:has(> input[data-testid='toolbar-diamond']),
+.livetich-board label:has(> input[data-testid='toolbar-ellipse']) {
+  display: none;
+}
+
 /* Place the shapes control immediately after the selection tool. The row is a
    grid, and our button is appended last in the DOM, so `order` does the
    positioning: everything that should follow it is pushed to order 2. */
