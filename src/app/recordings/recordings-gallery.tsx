@@ -3,12 +3,14 @@
 import { useState, useTransition } from 'react';
 import {
   PiCheckBold,
+  PiCopyBold,
   PiDownloadSimpleBold,
   PiLinkSimpleBold,
   PiLinkBreakBold,
   PiPlayBold,
   PiTrashBold,
   PiWarningBold,
+  PiXBold,
 } from 'react-icons/pi';
 import {
   deleteRecording,
@@ -113,6 +115,104 @@ export function RecordingsGallery({
   );
 }
 
+/**
+ * The share link, in a dialog rather than printed into the card.
+ *
+ * A link is long, and sat in the card it pushed every other recording down
+ * the page and still truncated. It also gave the instructor nowhere to read
+ * the whole thing, and no way to copy it again once the "copied" message had
+ * gone. Here it is selectable, copyable, and withdrawable in one place.
+ */
+function ShareDialog({
+  url,
+  pending,
+  onWithdraw,
+  onClose,
+}: {
+  url: string;
+  pending: boolean;
+  onWithdraw: () => void;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access can be refused; the link is on screen to select.
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[600] grid place-items-center bg-black/60 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Share this recording"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-neutral-900">
+              Share this recording
+            </h2>
+            <p className="mt-1 text-sm text-neutral-500">
+              Anyone with this link can watch it. No account needed.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className={cn(btn('ghost', 'sm'))}
+            aria-label="Close"
+          >
+            <PiXBold aria-hidden />
+          </button>
+        </div>
+
+        <div className="mt-4 flex items-center gap-2">
+          <input
+            readOnly
+            value={url}
+            onFocus={(e) => e.currentTarget.select()}
+            className="min-w-0 flex-1 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 font-mono text-[12px] text-neutral-700"
+          />
+          <button type="button" onClick={copy} className={cn(btn('primary', 'sm'))}>
+            <span className="flex items-center gap-1.5">
+              {copied ? <PiCheckBold aria-hidden /> : <PiCopyBold aria-hidden />}
+              {copied ? 'Copied' : 'Copy'}
+            </span>
+          </button>
+        </div>
+
+        <div className="mt-5 flex items-center justify-between gap-3 border-t border-neutral-100 pt-4">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={onWithdraw}
+            className={cn(btn('ghost', 'sm'), 'text-neutral-500 hover:text-red-600')}
+          >
+            <span className="flex items-center gap-1.5">
+              <PiLinkBreakBold aria-hidden />
+              Withdraw this link
+            </span>
+          </button>
+          <button type="button" onClick={onClose} className={cn(btn('ghost', 'sm'))}>
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StorageBar({ usage }: { usage: StorageUsage }) {
   const quota = usage.quotaBytes ?? 0;
   const pct = quota > 0 ? Math.min(100, (usage.usedBytes / quota) * 100) : 0;
@@ -168,6 +268,7 @@ function RecordingRow({
   const [pending, start] = useTransition();
   const [confirming, setConfirming] = useState(false);
   const [shareToken, setShareToken] = useState(recording.shareToken);
+  const [shareOpen, setShareOpen] = useState(false);
   const ready = recording.status === 'READY';
 
   const shareUrl = shareToken
@@ -238,36 +339,32 @@ function RecordingRow({
           <button
             type="button"
             disabled={!ready || pending}
-            onClick={() =>
+            onClick={() => {
+              // An existing link just opens; only a first share mints one.
+              // Withdrawing lives inside the dialog now, so a stray click on
+              // this button can no longer revoke a link someone is using.
+              if (shareToken) {
+                setShareOpen(true);
+                return;
+              }
               start(async () => {
-                if (shareToken) {
-                  const res = await unshareRecording(recording.id);
-                  if (res.error) onMessage(res.error);
-                  else {
-                    setShareToken(null);
-                    onMessage('Share link withdrawn.');
-                  }
-                  return;
-                }
                 const res = await shareRecording(recording.id, null);
                 if (res.error) onMessage(res.error);
                 else {
                   setShareToken(res.shareToken);
-                  const url = `${window.location.origin}/watch/${res.shareToken}`;
-                  await navigator.clipboard?.writeText(url).catch(() => {});
-                  onMessage(`Share link copied — ${url}`);
+                  setShareOpen(true);
                 }
-              })
-            }
+              });
+            }}
             className={cn(
               btn('ghost', 'sm'),
               !ready && 'cursor-not-allowed opacity-40',
               shareToken && 'text-signal-700',
             )}
-            title={shareToken ? 'Withdraw share link' : 'Create a share link'}
-            aria-label={shareToken ? 'Withdraw share link' : 'Create a share link'}
+            title={shareToken ? 'Show share link' : 'Create a share link'}
+            aria-label={shareToken ? 'Show share link' : 'Create a share link'}
           >
-            {shareToken ? <PiLinkBreakBold aria-hidden /> : <PiLinkSimpleBold aria-hidden />}
+            <PiLinkSimpleBold aria-hidden />
           </button>
 
           {confirming ? (
@@ -312,10 +409,23 @@ function RecordingRow({
         </div>
       </div>
 
-      {shareUrl && (
-        <p className="mt-2 truncate rounded-lg bg-neutral-50 px-2.5 py-1.5 font-mono text-[11px] text-neutral-600">
-          {shareUrl}
-        </p>
+      {shareOpen && shareUrl && (
+        <ShareDialog
+          url={shareUrl}
+          pending={pending}
+          onClose={() => setShareOpen(false)}
+          onWithdraw={() =>
+            start(async () => {
+              const res = await unshareRecording(recording.id);
+              if (res.error) onMessage(res.error);
+              else {
+                setShareToken(null);
+                setShareOpen(false);
+                onMessage('Share link withdrawn.');
+              }
+            })
+          }
+        />
       )}
     </li>
   );
