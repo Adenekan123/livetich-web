@@ -65,6 +65,7 @@ import {
   type LiveCodingTask,
 } from './live-coding-panel';
 import { QuranReader } from './quran-reader';
+import { RecordButton } from './record-button';
 
 // Excalidraw touches browser-only APIs, so it must not render on the server.
 const BoardExcalidraw = dynamic(
@@ -1811,6 +1812,9 @@ export function ClassRoom({
               {myHandRaised ? 'Lower hand' : 'Raise hand'}
             </button>
           )}
+          {/* Instructor only, by request: nobody else in the room is shown that
+              the class is being recorded. The API enforces the same rule. */}
+          {isInstructor && <RecordButton sessionId={sessionId} />}
           {isInstructor && (
             <button
               onClick={startBuzzer}

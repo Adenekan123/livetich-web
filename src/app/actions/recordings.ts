@@ -133,3 +133,48 @@ export async function deleteRecording(id: string): Promise<RecordingActionState>
     };
   }
 }
+
+export interface SessionRecordingState {
+  /** False when LiveKit or the bucket is not configured — the button hides. */
+  available: boolean;
+  /** Non-null only while a recording is actually running. */
+  recording: { id: string; status: string; createdAt: string } | null;
+  last: { id: string; status: string; error: string | null } | null;
+}
+
+/** What the classroom's Record control should show. */
+export async function sessionRecordingState(
+  sessionId: string,
+): Promise<SessionRecordingState> {
+  const token = await tokenOrLogin();
+  return api<SessionRecordingState>(`/sessions/${sessionId}/recording`, { token });
+}
+
+export async function startSessionRecording(
+  sessionId: string,
+): Promise<RecordingActionState> {
+  const token = await tokenOrLogin();
+  try {
+    await api(`/sessions/${sessionId}/recording/start`, { method: 'POST', token });
+    return { error: null, ok: true };
+  } catch (e) {
+    return {
+      error: e instanceof ApiError ? e.message : 'Could not start recording',
+    };
+  }
+}
+
+export async function stopSessionRecording(
+  sessionId: string,
+): Promise<RecordingActionState> {
+  const token = await tokenOrLogin();
+  try {
+    await api(`/sessions/${sessionId}/recording/stop`, { method: 'POST', token });
+    revalidatePath('/recordings');
+    return { error: null, ok: true };
+  } catch (e) {
+    return {
+      error: e instanceof ApiError ? e.message : 'Could not stop recording',
+    };
+  }
+}
