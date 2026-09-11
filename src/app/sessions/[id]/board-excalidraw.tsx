@@ -59,6 +59,8 @@ import type {
   BoardClientToServerEvents,
   BoardServerToClientEvents,
 } from '@/lib/realtime-contract';
+import { BoardVideoEmbed } from './board-video-embed';
+import { youTubeIdOf, type VideoState } from './board-video';
 import {
   MATH_CATEGORIES,
   MATH_ENTRIES,
@@ -444,6 +446,9 @@ export function BoardExcalidraw({
    *  gives its own toolbar the full width of the top, and the pills sat on top
    *  of it. */
   const [toolsOpen, setToolsOpen] = useState(false);
+  /** The instructor's playback position for a shared video. Ephemeral, so it
+   *  rides awareness alongside the cursors rather than the persisted doc. */
+  const [videoState, setVideoState] = useState<VideoState | null>(null);
   const mathInputRef = useRef<HTMLTextAreaElement>(null);
   const [mathQuery, setMathQuery] = useState('');
   const [mathTab, setMathTab] = useState<MathCategory | 'Recent'>('Equations');
@@ -743,11 +748,17 @@ export function BoardExcalidraw({
       const editor = apiRef.current;
       if (!editor) return;
       const next = new Map<SocketId, Collaborator>();
+      let video: VideoState | null = null;
       awareness.getStates().forEach((state, clientId) => {
+        // A viewer takes the video clock from whoever is presenting, which is
+        // never themselves.
+        const shared = (state as { video?: VideoState }).video;
+        if (shared && clientId !== awareness.clientID) video = shared;
         if (clientId === awareness.clientID) return;
         const collab = (state as { collab?: Collaborator }).collab;
         if (collab?.pointer) next.set(String(clientId) as SocketId, collab);
       });
+      setVideoState(video);
       // The presenter's laser rides the presenter channel, not awareness.
       const laser = collaboratorsRef.current.get(PRESENTER_ID);
       if (laser) next.set(PRESENTER_ID, laser);
@@ -1197,6 +1208,11 @@ export function BoardExcalidraw({
    * On a viewer, this is the "did they take over the view" test: a scroll that
    * matches the camera we just applied is our own follow move, not a gesture.
    */
+  /** Put the instructor's playhead on the wire for every follower. */
+  const broadcastVideo = useCallback((next: VideoState) => {
+    awarenessRef.current?.setLocalStateField('video', next);
+  }, []);
+
   const onScrollChange = useCallback(
     (scrollX: number, scrollY: number, zoom: { value: number }) => {
       if (canDraw) {
@@ -1608,6 +1624,24 @@ export function BoardExcalidraw({
         // The library panel is an excalidraw.com feature (and its own brand
         // surface); a classroom board has no use for it.
         renderTopRightUI={() => null}
+        // Excalidraw's own iframe cannot be controlled from outside it, so a
+        // YouTube embed gets a player we own and can hold in step across the
+        // room. Anything else keeps Excalidraw's rendering.
+        renderEmbeddable={(element) => {
+          const videoId = youTubeIdOf(element.link);
+          if (!videoId) return null;
+          return (
+            <BoardVideoEmbed
+              elementId={element.id}
+              videoId={videoId}
+              canControl={canDraw}
+              state={videoState}
+              onBroadcast={broadcastVideo}
+            />
+          );
+        }}
+        // Excalidraw does not recognise youtu.be short links on its own.
+        validateEmbeddable={(link) => (youTubeIdOf(link) ? true : undefined)}
         UIOptions={{
           canvasActions: {
             loadScene: false,
