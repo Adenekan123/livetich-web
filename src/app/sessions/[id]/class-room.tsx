@@ -985,8 +985,11 @@ export function ClassRoom({
           </h1>
         </div>
 
-        {/* Right: instructor colour-scheme picker + participant count. */}
+        {/* Right: record, colour scheme, participant count. */}
         <div className="flex shrink-0 items-center gap-2">
+          {/* Instructor only, by request: nobody else in the room is shown that
+              the class is being recorded. The API enforces the same rule. */}
+          {isInstructor && <RecordButton sessionId={sessionId} />}
           {isInstructor && (
             <div>
               <button
@@ -1812,9 +1815,6 @@ export function ClassRoom({
               {myHandRaised ? 'Lower hand' : 'Raise hand'}
             </button>
           )}
-          {/* Instructor only, by request: nobody else in the room is shown that
-              the class is being recorded. The API enforces the same rule. */}
-          {isInstructor && <RecordButton sessionId={sessionId} />}
           {isInstructor && (
             <button
               onClick={startBuzzer}

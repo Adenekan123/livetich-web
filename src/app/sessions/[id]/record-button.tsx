@@ -95,14 +95,12 @@ export function RecordButton({ sessionId }: { sessionId: string }) {
       <button
         type="button"
         disabled
+        aria-label="Recording unavailable — needs setup"
         title="Recording needs cloud storage configured for this deployment. An administrator sets R2 credentials on the API."
-        className="inline-flex cursor-not-allowed items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white/40"
+        className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-full bg-white/5 px-2.5 py-1 text-xs font-medium text-white/35"
       >
-        <PiRecordFill className="h-4 w-4" aria-hidden />
-        Record
-        <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
-          Setup
-        </span>
+        <PiRecordFill className="h-3.5 w-3.5" aria-hidden />
+        <span className="hidden sm:inline">Setup</span>
       </button>
     );
   }
@@ -126,29 +124,34 @@ export function RecordButton({ sessionId }: { sessionId: string }) {
             else setStartedAt(new Date().toISOString());
           })
         }
+        aria-label={recording ? 'Stop recording' : 'Record this class'}
         title={recording ? 'Stop recording' : 'Record this class'}
         className={cn(
-          'inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition disabled:opacity-50',
+          'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition disabled:opacity-50',
           recording
             ? 'bg-red-600 text-white hover:bg-red-500'
-            : 'bg-white/10 text-white hover:bg-white/20',
+            : 'bg-white/10 text-neutral-200 hover:bg-white/15',
         )}
       >
         {recording ? (
           <>
-            <PiStopFill className="h-4 w-4" aria-hidden />
+            {/* A steady square reads as "stop"; the pulse says it is live. */}
+            <PiStopFill className="h-3.5 w-3.5 animate-pulse" aria-hidden />
             <span className="tabular-nums">{elapsed(startedAt)}</span>
           </>
         ) : (
           <>
-            <PiRecordFill className="h-4 w-4 text-red-500" aria-hidden />
-            Record
+            <PiRecordFill className="h-3.5 w-3.5 text-red-500" aria-hidden />
+            <span className="hidden sm:inline">Record</span>
           </>
         )}
       </button>
 
       {error && (
-        <span className="max-w-[16rem] truncate text-xs font-semibold text-red-400">
+        <span
+          title={error}
+          className="max-w-[10rem] truncate text-[11px] font-semibold text-red-400"
+        >
           {error}
         </span>
       )}
