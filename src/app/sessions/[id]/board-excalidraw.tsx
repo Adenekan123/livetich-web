@@ -45,6 +45,7 @@ import {
   PiCrosshairBold,
   PiDownloadSimpleBold,
   PiFunctionBold,
+  PiXBold,
   PiLockBold,
   PiLockOpenBold,
   PiUploadSimpleBold,
@@ -427,7 +428,7 @@ export function BoardExcalidraw({
   const [mathBusy, setMathBusy] = useState(false);
   const mathInputRef = useRef<HTMLTextAreaElement>(null);
   const [mathQuery, setMathQuery] = useState('');
-  const [mathTab, setMathTab] = useState<MathCategory>('Structures');
+  const [mathTab, setMathTab] = useState<MathCategory | 'Recent'>('Equations');
   /** What this instructor actually reaches for, which after a lesson or two
    *  covers most of what they need. Per-browser; losing it costs nothing. */
   const [mathRecent, setMathRecent] = useState<string[]>([]);
@@ -1522,14 +1523,20 @@ export function BoardExcalidraw({
 
   const pill =
     'rounded-full px-3 py-1.5 text-xs font-semibold shadow ring-1 ring-neutral-200 transition';
-  const visibleMath =
-    mathQuery.trim() === ''
-      ? MATH_ENTRIES.filter((e) => e.category === mathTab)
-      : searchMath(MATH_ENTRIES, mathQuery);
   const recentEntries = mathRecent
     .map((latex) => MATH_ENTRIES.find((e) => e.latex === latex))
     .filter((e): e is MathEntry => !!e)
-    .slice(0, 12);
+    .slice(0, 18);
+  // Recent only earns a place once there is something in it.
+  const mathTabs: (MathCategory | 'Recent')[] = recentEntries.length
+    ? ['Recent', ...MATH_CATEGORIES]
+    : MATH_CATEGORIES;
+  const visibleMath =
+    mathQuery.trim() !== ''
+      ? searchMath(MATH_ENTRIES, mathQuery)
+      : mathTab === 'Recent'
+        ? recentEntries
+        : MATH_ENTRIES.filter((e) => e.category === mathTab);
   const mathIssue = mathSource.trim() === '' ? null : mathError(mathSource);
   const mathPreview =
     mathSource.trim() === '' || mathIssue ? '' : renderMathHtml(mathSource);
@@ -1795,124 +1802,146 @@ export function BoardExcalidraw({
         )}
       </div>
 
-      {/* LaTeX editor. The preview is KaTeX rendering live as you type; the
-          board gets a high-DPI raster of the same output. */}
+      {/* The formula being built comes first and stays visible: what it will
+          look like, then what it is made of, then the tools. The palette used
+          to sit above both, so the thing you were making was buried in the
+          middle of the thing you were making it with. */}
       {mathOpen && canDraw && (
-        <div className="pointer-events-auto absolute left-1/2 top-14 z-[403] w-[min(30rem,calc(100%-2rem))] -translate-x-1/2 rounded-xl bg-white p-3 shadow-lg ring-1 ring-neutral-200">
-          <p className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">
-            Formula
-          </p>
-          <p className="mt-0.5 text-xs text-neutral-500">
-            Pick a shape, then type over the highlighted blanks.
-          </p>
-          {/* Search first: with 150-odd entries, typing "integral" beats
-              hunting through a grid. Categories are for when you don't yet
-              know the word. */}
-          <input
-            type="search"
-            value={mathQuery}
-            onChange={(e) => setMathQuery(e.target.value)}
-            placeholder="Search symbols — integral, subset, theta…"
-            aria-label="Search math symbols"
-            className="mt-1.5 w-full rounded-lg border border-neutral-300 px-2.5 py-1.5 text-sm text-neutral-900 outline-none focus:border-neutral-500"
-          />
-
-          {mathQuery.trim() === '' && (
-            <div className="mt-1.5 flex flex-wrap gap-1">
-              {MATH_CATEGORIES.map((cat) => (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setMathTab(cat)}
-                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
-                    mathTab === cat
-                      ? 'bg-neutral-900 text-white'
-                      : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {mathQuery.trim() === '' && recentEntries.length > 0 && (
-            <>
-              <p className="mt-2 font-mono text-[10px] font-bold uppercase tracking-wider text-neutral-400">
-                Recent
-              </p>
-              <div className="mt-1 flex flex-wrap gap-1">
-                {recentEntries.map((e) => (
-                  <MathButton key={`recent-${e.latex}`} entry={e} onPick={pickMath} />
-                ))}
-              </div>
-            </>
-          )}
-
-          <div
-            className={cn(
-              'mt-1.5 flex max-h-40 gap-1 overflow-y-auto',
-              mathQuery.trim() === '' && mathTab === 'Equations'
-                ? 'flex-col'
-                : 'flex-wrap',
-            )}
-          >
-            {visibleMath.length === 0 ? (
-              <p className="px-1 py-2 text-xs text-neutral-400">
-                Nothing matches “{mathQuery.trim()}”.
-              </p>
-            ) : (
-              visibleMath.map((e) => (
-                <MathButton key={e.latex} entry={e} onPick={pickMath} />
-              ))
-            )}
-          </div>
-
-          <label htmlFor="board-math-input" className="sr-only">
-            Formula source
-          </label>
-          <textarea
-            id="board-math-input"
-            ref={mathInputRef}
-            value={mathSource}
-            onChange={(e) => setMathSource(e.target.value)}
-            rows={2}
-            spellCheck={false}
-            autoFocus
-            placeholder="Pick a template above, or type LaTeX directly"
-            className="mt-1 w-full resize-y rounded-lg border border-neutral-300 px-2.5 py-1.5 font-mono text-sm text-neutral-900 outline-none focus:border-neutral-500"
-          />
-          <div className="mt-2 min-h-[3rem] overflow-x-auto rounded-lg bg-neutral-50 px-3 py-2 text-neutral-900">
-            {mathSource.trim() === '' ? (
-              <p className="text-xs text-neutral-400">Preview appears here.</p>
-            ) : mathIssue ? (
-              <p className="text-xs font-semibold text-red-600">{mathIssue}</p>
-            ) : (
-              <div
-                // KaTeX output, from LaTeX this instructor just typed.
-                dangerouslySetInnerHTML={{ __html: mathPreview }}
-              />
-            )}
-          </div>
-          <div className="mt-2 flex justify-end gap-2">
+        <div className="pointer-events-auto absolute left-1/2 top-14 z-[403] flex max-h-[calc(100%-5rem)] w-[min(41rem,calc(100%-2rem))] -translate-x-1/2 flex-col rounded-xl bg-white shadow-xl ring-1 ring-neutral-200">
+          <div className="flex items-center justify-between border-b border-neutral-200 px-3 py-2">
+            <p className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">
+              Formula
+            </p>
             <button
               type="button"
               onClick={() => {
                 setMathOpen(false);
                 setMathSource('');
               }}
-              className={`${pill} bg-white text-neutral-700`}
+              aria-label="Close"
+              className="grid h-6 w-6 place-items-center rounded-lg text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700"
             >
-              Cancel
+              <PiXBold className="h-3 w-3" />
             </button>
-            <button
-              type="button"
-              onClick={() => void addMathToBoard()}
-              disabled={mathBusy || !!mathIssue || mathSource.trim() === ''}
-              className={`${pill} bg-neutral-900 text-white ring-neutral-900 disabled:opacity-50`}
-            >
-              {mathBusy ? 'Adding…' : 'Add to board'}
-            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+            {/* Live preview — the answer to "what am I making", full width and
+                first, so clicking a palette entry has a visible result. */}
+            <div className="mt-3 grid min-h-[4.5rem] place-items-center overflow-x-auto rounded-lg bg-neutral-50 px-3 py-3 text-neutral-900">
+              {mathSource.trim() === '' ? (
+                <p className="text-xs text-neutral-400">
+                  Pick an equation or a symbol below — it appears here as you build it.
+                </p>
+              ) : mathIssue ? (
+                <p className="text-center text-xs font-semibold text-red-600">
+                  {mathIssue}
+                </p>
+              ) : (
+                <div dangerouslySetInnerHTML={{ __html: mathPreview }} />
+              )}
+            </div>
+
+            <label htmlFor="board-math-input" className="sr-only">
+              Formula source
+            </label>
+            <textarea
+              id="board-math-input"
+              ref={mathInputRef}
+              value={mathSource}
+              onChange={(e) => setMathSource(e.target.value)}
+              rows={2}
+              spellCheck={false}
+              placeholder="Pick from below, or type LaTeX directly"
+              className="mt-2 w-full resize-y rounded-lg border border-neutral-300 px-2.5 py-1.5 font-mono text-sm text-neutral-900 outline-none focus:border-neutral-500"
+            />
+
+            <input
+              type="search"
+              value={mathQuery}
+              onChange={(e) => setMathQuery(e.target.value)}
+              placeholder="Search — integral, orthogonal, quadratic…"
+              aria-label="Search math symbols"
+              className="mt-2 w-full rounded-lg border border-neutral-300 px-2.5 py-1.5 text-sm text-neutral-900 outline-none focus:border-neutral-500"
+            />
+
+            {/* Categories run down the side rather than wrapping across the
+                top: eleven of them wrapped to two cramped rows, and the grid
+                they controlled was clipped mid-glyph. */}
+            <div className="mt-2 flex min-h-[13rem] gap-2">
+              {/* The category column sizes to its contents and scrolls with
+                  the panel body. An independent scroller here cut the last
+                  category in half, which reads as broken rather than
+                  scrollable. */}
+              {mathQuery.trim() === '' && (
+                <div className="w-28 shrink-0 space-y-0.5">
+                  {mathTabs.map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setMathTab(cat)}
+                      className={cn(
+                        'block w-full rounded-lg px-2 py-1 text-left text-[11px] font-semibold transition',
+                        mathTab === cat
+                          ? 'bg-neutral-900 text-white'
+                          : 'text-neutral-600 hover:bg-neutral-100',
+                      )}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div
+                className={cn(
+                  'flex min-w-0 flex-1 gap-1 overflow-y-auto rounded-lg bg-neutral-50/60 p-1.5',
+                  mathTab === 'Equations' && mathQuery.trim() === ''
+                    ? 'flex-col'
+                    : 'flex-wrap content-start',
+                )}
+              >
+                {visibleMath.length === 0 ? (
+                  <p className="px-1 py-2 text-xs text-neutral-400">
+                    Nothing matches “{mathQuery.trim()}”.
+                  </p>
+                ) : (
+                  visibleMath.map((e) => (
+                    <MathButton key={e.latex} entry={e} onPick={pickMath} />
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-2 border-t border-neutral-200 px-3 py-2">
+            <p className="truncate text-[11px] text-neutral-400">
+              {mathSource.trim() === ''
+                ? 'Nothing to add yet'
+                : mathIssue
+                  ? 'Fix the formula to add it'
+                  : 'Lands in the middle of your view'}
+            </p>
+            <div className="flex shrink-0 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setMathOpen(false);
+                  setMathSource('');
+                }}
+                className={`${pill} bg-white text-neutral-700`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void addMathToBoard()}
+                disabled={mathBusy || !!mathIssue || mathSource.trim() === ''}
+                className={`${pill} bg-neutral-900 text-white ring-neutral-900 disabled:opacity-40`}
+              >
+                {mathBusy ? 'Adding…' : 'Add to board'}
+              </button>
+            </div>
           </div>
         </div>
       )}
