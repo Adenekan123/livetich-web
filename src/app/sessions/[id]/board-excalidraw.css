@@ -105,15 +105,6 @@
    The shapes control replaces Excalidraw's separate square/diamond/circle on
    phones too. Leaving the natives visible there cost three slots in a row that
    only fits about eight, which pushed our button off the edge entirely. */
-/* Square, diamond and circle are folded into our own shapes control, which
-   also carries the shapes Excalidraw has no tool for (triangle, star...).
-   The tools themselves still exist and are still armed by setActiveTool and
-   by their number keys — only the three rail buttons are hidden. */
-.livetich-board label:has(> input[data-testid='toolbar-rectangle']),
-.livetich-board label:has(> input[data-testid='toolbar-diamond']),
-.livetich-board label:has(> input[data-testid='toolbar-ellipse']) {
-  display: none;
-}
 
 /* Place the shapes control immediately after the selection tool. The row is a
    grid, and our button is appended last in the DOM, so `order` does the
@@ -130,4 +121,21 @@
 .livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-eraser']),
 .livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-frame']) {
   order: 2;
+}
+
+/* ---- Phones -------------------------------------------------------------
+   Excalidraw lays its mobile toolbar out as a single row and lets it overflow
+   when there are more tools than fit. With the shape tools back it runs about
+   405px into a 382px island, so the last tools were simply unreachable. Let it
+   scroll instead of clipping. */
+@media (max-width: 729px) {
+  .livetich-board .App-toolbar .Stack_horizontal {
+    overflow-x: auto;
+    scrollbar-width: none;
+    max-width: 100%;
+  }
+
+  .livetich-board .App-toolbar .Stack_horizontal::-webkit-scrollbar {
+    display: none;
+  }
 }

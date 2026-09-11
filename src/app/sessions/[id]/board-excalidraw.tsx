@@ -450,6 +450,13 @@ export function BoardExcalidraw({
   /** Excalidraw's tool-rail container, so the shapes button can live inside it
    *  rather than float alongside and drift out of alignment. */
   const [railNode, setRailNode] = useState<HTMLElement | null>(null);
+  const shapesTriggerRef = useRef<HTMLButtonElement>(null);
+  /** Where to draw the shapes menu, in board coordinates. It cannot live inside
+   *  the toolbar: that row scrolls on a phone, and a dropdown inside a
+   *  scrolling container gets clipped by it. */
+  const [shapesMenuAt, setShapesMenuAt] = useState<{ top: number; left: number } | null>(
+    null,
+  );
   /** The shape the rail button displays — the last one picked, so the control
    *  reads like Excalidraw's own tools rather than a fixed icon. */
   /** null until the instructor picks one — the button then shows a group of
@@ -1611,7 +1618,28 @@ export function BoardExcalidraw({
               title={current ? `${current.label} — click to change` : 'Shapes'}
               aria-haspopup="menu"
               aria-expanded={shapesOpen}
-              onClick={() => setShapesOpen((v) => !v)}
+              ref={shapesTriggerRef}
+              onClick={() => {
+                const next = !shapesOpen;
+                setShapesOpen(next);
+                if (!next) return;
+                const btn = shapesTriggerRef.current?.getBoundingClientRect();
+                const board = wrapperRef.current?.getBoundingClientRect();
+                if (!btn || !board) return;
+                const W = 160;
+                const H = 272;
+                const GAP = 8;
+                // Beside the rail when it fits, otherwise below — and never
+                // past the edge of the board.
+                const besideFits = btn.right + GAP + W <= board.right;
+                const left = besideFits
+                  ? btn.right + GAP - board.left
+                  : Math.min(btn.left - board.left, board.width - W - GAP);
+                const top = besideFits
+                  ? Math.min(btn.top - board.top, board.height - H - GAP)
+                  : btn.bottom + GAP - board.top;
+                setShapesMenuAt({ top: Math.max(GAP, top), left: Math.max(GAP, left) });
+              }}
               className={`relative grid h-9 w-9 place-items-center rounded-lg transition ${
                 shapesOpen
                   ? 'bg-neutral-900 text-white'
@@ -1661,33 +1689,6 @@ export function BoardExcalidraw({
                 />
               </svg>
             </button>
-            {shapesOpen && (
-              <div
-                role="menu"
-                className="absolute left-[calc(100%+0.5rem)] top-0 z-[403] w-40 overflow-hidden rounded-xl bg-white py-1 shadow-lg ring-1 ring-neutral-200"
-              >
-                {SHAPES.map((shape) => (
-                  <button
-                    key={shape.key}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => addShape(shape.key)}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-100"
-                  >
-                    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" aria-hidden>
-                      <path
-                        d={shape.icon}
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={1.75}
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                    {shape.label}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>,
           railNode,
         )}
@@ -1717,6 +1718,38 @@ export function BoardExcalidraw({
             className="text-neutral-500"
           />
         </svg>
+      )}
+
+      {/* Rendered against the board, not the toolbar, so neither the phone's
+          scrolling tool row nor Excalidraw's own clipping can cut it off. */}
+      {shapesOpen && shapesMenuAt && railNode && (
+        <div
+          data-board-shapes
+          role="menu"
+          style={{ top: shapesMenuAt.top, left: shapesMenuAt.left }}
+          className="pointer-events-auto absolute z-[404] w-40 overflow-hidden rounded-xl bg-white py-1 shadow-lg ring-1 ring-neutral-200"
+        >
+          {SHAPES.map((shape) => (
+            <button
+              key={shape.key}
+              type="button"
+              role="menuitem"
+              onClick={() => addShape(shape.key)}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs font-semibold text-neutral-800 hover:bg-neutral-100"
+            >
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" aria-hidden>
+                <path
+                  d={shape.icon}
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.75}
+                  strokeLinejoin="round"
+                />
+              </svg>
+              {shape.label}
+            </button>
+          ))}
+        </div>
       )}
 
       {!ready && (
