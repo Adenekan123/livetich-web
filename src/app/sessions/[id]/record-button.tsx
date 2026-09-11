@@ -45,6 +45,11 @@ export function RecordButton({ sessionId }: { sessionId: string }) {
   // The poll loop reschedules itself outside React's cycle, so it reads the
   // current state through a ref rather than a captured value.
   const startedAtRef = useRef<string | null>(null);
+  // The failure the instructor has already acknowledged, so it does not come
+  // back on the next poll.
+  const dismissedRef = useRef<string | null>(null);
+  /** Which failure the visible message belongs to. */
+  const lastFailureIdRef = useRef<string | null>(null);
   useEffect(() => {
     startedAtRef.current = startedAt;
   }, [startedAt]);
@@ -61,8 +66,19 @@ export function RecordButton({ sessionId }: { sessionId: string }) {
         if (cancelled) return;
         setAvailable(state.available);
         setStartedAt(state.recording?.createdAt ?? null);
-        if (state.last?.status === 'FAILED' && !state.recording) {
-          setError(state.last.error ?? 'The last recording failed');
+        // Surface a failure only while it is still the latest thing that
+        // happened. Left unconditional, a single old failure sat behind the
+        // button forever — including after a later recording succeeded, which
+        // says the opposite of the truth.
+        if (state.recording) {
+          setError(null);
+        } else if (state.last?.status === 'FAILED') {
+          lastFailureIdRef.current = state.last.id;
+          if (state.last.id !== dismissedRef.current) {
+            setError(state.last.error ?? 'The last recording failed');
+          }
+        } else {
+          setError(null);
         }
       } catch {
         // A failed check is not worth interrupting a class over; the next one
@@ -157,12 +173,17 @@ export function RecordButton({ sessionId }: { sessionId: string }) {
       </button>
 
       {error && (
-        <span
-          title={error}
-          className="max-w-[10rem] truncate text-[11px] font-semibold text-red-400"
+        <button
+          type="button"
+          title={`${error} — click to dismiss`}
+          onClick={() => {
+            dismissedRef.current = lastFailureIdRef.current;
+            setError(null);
+          }}
+          className="max-w-[10rem] truncate text-left text-[11px] font-semibold text-red-400 hover:text-red-300"
         >
           {error}
-        </span>
+        </button>
       )}
     </div>
   );
