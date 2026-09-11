@@ -8,6 +8,7 @@ import {
   stopSessionRecording,
 } from '@/app/actions/recordings';
 import { cn } from '@/lib/ui';
+import { playRecordingTone } from './recording-sound';
 
 /** How often to re-ask while idle, to notice a recording another admin started. */
 const IDLE_POLL_MS = 30_000;
@@ -116,12 +117,20 @@ export function RecordButton({ sessionId }: { sessionId: string }) {
             if (recording) {
               const res = await stopSessionRecording(sessionId);
               if (res.error) setError(res.error);
-              else setStartedAt(null);
+              else {
+                setStartedAt(null);
+                // Only on success: a chime after a failed stop would say the
+                // opposite of what happened.
+                playRecordingTone('stop');
+              }
               return;
             }
             const res = await startSessionRecording(sessionId);
             if (res.error) setError(res.error);
-            else setStartedAt(new Date().toISOString());
+            else {
+              setStartedAt(new Date().toISOString());
+              playRecordingTone('start');
+            }
           })
         }
         aria-label={recording ? 'Stop recording' : 'Record this class'}
