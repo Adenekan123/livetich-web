@@ -22,7 +22,6 @@ import type {
   Collaborator,
   ExcalidrawImperativeAPI,
   SocketId,
-  ToolType,
 } from '@excalidraw/excalidraw/types';
 import type {
   ExcalidrawElement,
@@ -212,14 +211,14 @@ const SHAPE_SIZE = 160;
  * both; the distinction is an implementation detail, not something to make the
  * instructor think about mid-lesson.
  */
-type ShapeEntry =
-  | { key: string; label: string; tool: ToolType; icon: string }
-  | { key: string; label: string; points: Point[]; icon: string };
+/**
+ * The shapes Excalidraw has no tool for. Square, diamond and circle are its own
+ * tools and stay in the toolbar — listing them here as well just gave the same
+ * three shapes two homes.
+ */
+type ShapeEntry = { key: string; label: string; points: Point[]; icon: string };
 
 const SHAPES: ShapeEntry[] = [
-  { key: 'rectangle', label: 'Square', tool: 'rectangle', icon: 'M4 4h16v16H4z' },
-  { key: 'diamond', label: 'Diamond', tool: 'diamond', icon: 'M12 2l10 10-10 10L2 12z' },
-  { key: 'ellipse', label: 'Circle', tool: 'ellipse', icon: 'M12 2a10 10 0 110 20 10 10 0 010-20z' },
   {
     key: 'triangle',
     label: 'Triangle',
@@ -1063,16 +1062,15 @@ export function BoardExcalidraw({
       // callbacks because the scene is guaranteed to be committed here.
       if (armedKey && !state.newElement) {
         const shape = SHAPES.find((x) => x.key === armedKey);
-        const box =
-          shape && !('tool' in shape)
-            ? scene.find(
-                (el) =>
-                  el.type === 'rectangle' &&
-                  !el.isDeleted &&
-                  !armedBaselineRef.current.has(el.id),
-              )
-            : undefined;
-        if (shape && !('tool' in shape) && box) {
+        const box = shape
+          ? scene.find(
+              (el) =>
+                el.type === 'rectangle' &&
+                !el.isDeleted &&
+                !armedBaselineRef.current.has(el.id),
+            )
+          : undefined;
+        if (shape && box) {
           const w = Math.max(8, box.width);
           const h = Math.max(8, box.height);
           const polygon = convertToExcalidrawElements([
@@ -1130,15 +1128,9 @@ export function BoardExcalidraw({
         }
       }
 
-      // Keep the shapes button showing whatever is armed, including when a tool
-      // is picked with its number key.
-      if (tool === 'rectangle' || tool === 'diamond' || tool === 'ellipse') {
-        if (!armedKey && activeShape !== tool) setActiveShape(tool);
-      }
-
       emitPresenter(null);
     },
-    [canEdit, activeShape, flushLocal, shareNewFiles, emitPresenter],
+    [canEdit, flushLocal, shareNewFiles, emitPresenter],
   );
 
   /** Broadcast this user's pointer; the instructor's also drives the laser. */
@@ -1219,10 +1211,9 @@ export function BoardExcalidraw({
   }, []);
 
   /**
-   * Pick a shape. Every entry behaves the same way from the instructor's side:
-   * arm it, then drag on the board to draw it. Excalidraw's own shapes arm
-   * their real tool; the rest arm the rectangle tool for the drag and are
-   * swapped in on pointer up (see the effect above).
+   * Pick a shape: arm it, then drag on the board to draw it. Excalidraw has no
+   * tool for any of these, so the rectangle tool is armed to capture the drag
+   * and what it draws is swapped for the polygon on pointer up (see above).
    */
   const addShape = useCallback((key: string) => {
     const editor = apiRef.current;
@@ -1230,11 +1221,6 @@ export function BoardExcalidraw({
     if (!editor || !shape) return;
     setShapesOpen(false);
     setActiveShape(key);
-    if ('tool' in shape) {
-      armedShapeRef.current = null;
-      editor.setActiveTool({ type: shape.tool });
-      return;
-    }
     armedShapeRef.current = key;
     armedBaselineRef.current = new Set(
       editor.getSceneElementsIncludingDeleted().map((el) => el.id),
