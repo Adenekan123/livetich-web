@@ -17,7 +17,9 @@
  */
 
 export type MathCategory =
+  | 'Basics'
   | 'Structures'
+  | 'Equations'
   | 'Greek'
   | 'Operators'
   | 'Relations'
@@ -28,7 +30,9 @@ export type MathCategory =
   | 'Accents';
 
 export const MATH_CATEGORIES: MathCategory[] = [
+  'Basics',
   'Structures',
+  'Equations',
   'Greek',
   'Operators',
   'Relations',
@@ -66,7 +70,39 @@ const s = (
   keywords?: string,
 ): MathEntry => ({ char, latex, label, category, keywords });
 
+
+/** A worked formula, shown rendered so it is recognised rather than read. */
+const eq = (label: string, latex: string, keywords?: string): MathEntry => ({
+  latex,
+  preview: latex,
+  label,
+  category: 'Equations',
+  keywords,
+});
+
 export const MATH_ENTRIES: MathEntry[] = [
+  // ---- Basics --------------------------------------------------------------
+  // Typeable, but a maths palette without a plus sign reads as broken — and on
+  // a tablet the keyboard is not always in reach.
+  s('+', '+', 'plus', 'Basics', 'add sum'),
+  s('−', '-', 'minus', 'Basics', 'subtract take away'),
+  s('=', '=', 'equals', 'Basics', 'is equal'),
+  s('<', '<', 'less than', 'Basics'),
+  s('>', '>', 'greater than', 'Basics'),
+  s('(', '(', 'open bracket', 'Basics', 'parenthesis'),
+  s(')', ')', 'close bracket', 'Basics', 'parenthesis'),
+  s('%', '\\%', 'percent', 'Basics', 'percentage'),
+  s('!', '!', 'factorial', 'Basics', 'not'),
+  s('sin', '\\sin ', 'sine', 'Basics', 'trig trigonometry'),
+  s('cos', '\\cos ', 'cosine', 'Basics', 'trig trigonometry'),
+  s('tan', '\\tan ', 'tangent', 'Basics', 'trig trigonometry'),
+  s('log', '\\log ', 'logarithm', 'Basics', 'log base'),
+  s('ln', '\\ln ', 'natural log', 'Basics', 'logarithm'),
+  s('exp', '\\exp ', 'exponential', 'Basics', 'e power'),
+  s('max', '\\max ', 'maximum', 'Basics', 'largest'),
+  s('min', '\\min ', 'minimum', 'Basics', 'smallest'),
+  s('mod', '\\bmod ', 'modulo', 'Basics', 'remainder'),
+
   // ---- Structures ----------------------------------------------------------
   { latex: '\\frac{a}{b}', preview: '\\frac{a}{b}', label: 'Fraction', category: 'Structures', keywords: 'divide over quotient', select: [6, 1] },
   { latex: '\\tfrac{a}{b}', preview: '\\tfrac{a}{b}', label: 'Small fraction', category: 'Structures', keywords: 'inline divide', select: [7, 1] },
@@ -82,6 +118,46 @@ export const MATH_ENTRIES: MathEntry[] = [
   { latex: '\\overset{a}{b}', preview: '\\overset{a}{b}', label: 'Text above', category: 'Structures', keywords: 'over stacked', select: [9, 1] },
   { latex: '\\underset{a}{b}', preview: '\\underset{a}{b}', label: 'Text below', category: 'Structures', keywords: 'under stacked', select: [10, 1] },
   { latex: '\\text{word}', preview: '\\text{word}', label: 'Plain text', category: 'Structures', keywords: 'words label roman', select: [6, 4] },
+
+  // ---- Equations -----------------------------------------------------------
+  // Starting points, not answers: drop one on the board and edit it in place.
+  // These are the formulas a class needs written out often enough that typing
+  // the LaTeX by hand becomes the slow part of the lesson.
+  eq('Quadratic formula', 'x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}', 'roots solve'),
+  eq('Pythagorean theorem', 'a^2 + b^2 = c^2', 'triangle hypotenuse right'),
+  eq('Slope', 'm = \\frac{y_2 - y_1}{x_2 - x_1}', 'gradient rise run line'),
+  eq('Distance formula', 'd = \\sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2}', 'length between points'),
+  eq('Midpoint', 'M = \\left( \\frac{x_1 + x_2}{2}, \\frac{y_1 + y_2}{2} \\right)', 'centre between points'),
+  eq('Area of a circle', 'A = \\pi r^2', 'circle area radius'),
+  eq('Circumference', 'C = 2\\pi r', 'circle perimeter radius'),
+  eq('Law of cosines', 'c^2 = a^2 + b^2 - 2ab\\cos C', 'triangle trig'),
+  eq('Law of sines', '\\frac{a}{\\sin A} = \\frac{b}{\\sin B} = \\frac{c}{\\sin C}', 'triangle trig'),
+  eq('Trig identity', '\\sin^2\\theta + \\cos^2\\theta = 1', 'pythagorean identity'),
+  eq('Definition of a derivative', "f'(x) = \\lim_{h \\to 0} \\frac{f(x + h) - f(x)}{h}", 'first principles limit'),
+  eq('Power rule', '\\frac{d}{dx} x^n = n x^{n - 1}', 'differentiate derivative'),
+  eq('Chain rule', "\\frac{d}{dx} f(g(x)) = f'(g(x)) \\, g'(x)", 'differentiate composite'),
+  eq('Product rule', "(fg)' = f'g + fg'", 'differentiate'),
+  eq('Integration by parts', '\\int u \\, dv = uv - \\int v \\, du', 'integral'),
+  eq('Fundamental theorem', '\\int_a^b f(x) \\, dx = F(b) - F(a)', 'calculus integral definite'),
+  eq('Taylor series', 'f(x) = \\sum_{n=0}^{\\infty} \\frac{f^{(n)}(a)}{n!} (x - a)^n', 'expansion maclaurin'),
+  eq("Euler's identity", 'e^{i\\pi} + 1 = 0', 'complex famous'),
+  eq('Binomial theorem', '(x + y)^n = \\sum_{k=0}^{n} \\binom{n}{k} x^{n-k} y^k', 'expansion choose'),
+  eq('Mean', '\\bar{x} = \\frac{1}{n} \\sum_{i=1}^{n} x_i', 'average statistics'),
+  eq('Standard deviation', '\\sigma = \\sqrt{\\frac{1}{n} \\sum_{i=1}^{n} (x_i - \\mu)^2}', 'statistics spread variance'),
+  eq('Normal distribution', 'f(x) = \\frac{1}{\\sigma \\sqrt{2\\pi}} e^{-\\frac{(x - \\mu)^2}{2\\sigma^2}}', 'gaussian bell curve statistics'),
+  eq("Bayes' theorem", 'P(A \\mid B) = \\frac{P(B \\mid A) \\, P(A)}{P(B)}', 'conditional probability'),
+  eq('Combinations', '\\binom{n}{k} = \\frac{n!}{k!(n - k)!}', 'choose ncr probability'),
+  eq('Permutations', 'P(n, k) = \\frac{n!}{(n - k)!}', 'arrange npr probability'),
+  eq('Compound interest', 'A = P \\left( 1 + \\frac{r}{n} \\right)^{nt}', 'finance growth'),
+  eq('Arithmetic series', 'S_n = \\frac{n}{2} (a_1 + a_n)', 'sum sequence'),
+  eq('Geometric series', 'S_n = a \\frac{1 - r^n}{1 - r}', 'sum sequence'),
+  eq('Logarithm product rule', '\\log_b(xy) = \\log_b x + \\log_b y', 'log rules'),
+  eq('Change of base', '\\log_b x = \\frac{\\log_c x}{\\log_c b}', 'log rules'),
+  eq("Newton's second law", 'F = ma', 'physics force mass acceleration'),
+  eq('Kinetic energy', 'E_k = \\frac{1}{2} m v^2', 'physics energy'),
+  eq('Mass-energy equivalence', 'E = mc^2', 'physics einstein relativity'),
+  eq("Ohm's law", 'V = IR', 'physics electricity voltage current'),
+  eq('Ideal gas law', 'PV = nRT', 'chemistry physics gas'),
 
   // ---- Greek ---------------------------------------------------------------
   s('α', '\\alpha ', 'alpha', 'Greek'),

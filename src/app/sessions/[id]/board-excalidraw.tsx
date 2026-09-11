@@ -297,22 +297,37 @@ function MathButton({
   entry: MathEntry;
   onPick: (entry: MathEntry) => void;
 }) {
+  const wide = entry.category === 'Equations';
   return (
     <button
       type="button"
       title={`${entry.label}${entry.keywords ? ` — ${entry.keywords}` : ''}`}
       aria-label={entry.label}
       onClick={() => onPick(entry)}
-      className="grid h-8 min-w-[2rem] place-items-center rounded-lg bg-neutral-50 px-1.5 text-sm text-neutral-800 ring-1 ring-neutral-200 transition hover:bg-neutral-100"
+      className={
+        // A whole equation needs a row of its own; a glyph does not.
+        wide
+          ? 'flex w-full items-center gap-3 rounded-lg bg-neutral-50 px-2.5 py-1.5 text-left ring-1 ring-neutral-200 transition hover:bg-neutral-100'
+          : 'grid h-8 min-w-[2rem] place-items-center rounded-lg bg-neutral-50 px-1.5 text-sm text-neutral-800 ring-1 ring-neutral-200 transition hover:bg-neutral-100'
+      }
     >
       {entry.char ? (
         <span className="pointer-events-none leading-none">{entry.char}</span>
       ) : (
         <span
-          className="pointer-events-none text-[13px] leading-none"
+          className={
+            wide
+              ? 'pointer-events-none min-w-0 flex-1 overflow-x-auto text-[13px] leading-none text-neutral-900'
+              : 'pointer-events-none text-[13px] leading-none'
+          }
           // KaTeX rendering of a fixed palette entry, not user input.
           dangerouslySetInnerHTML={{ __html: renderMathHtml(entry.preview ?? entry.latex, false) }}
         />
+      )}
+      {wide && (
+        <span className="pointer-events-none shrink-0 text-[10.5px] font-semibold uppercase tracking-wide text-neutral-400">
+          {entry.label}
+        </span>
       )}
     </button>
   );
@@ -1834,7 +1849,14 @@ export function BoardExcalidraw({
             </>
           )}
 
-          <div className="mt-1.5 flex max-h-40 flex-wrap gap-1 overflow-y-auto">
+          <div
+            className={cn(
+              'mt-1.5 flex max-h-40 gap-1 overflow-y-auto',
+              mathQuery.trim() === '' && mathTab === 'Equations'
+                ? 'flex-col'
+                : 'flex-wrap',
+            )}
+          >
             {visibleMath.length === 0 ? (
               <p className="px-1 py-2 text-xs text-neutral-400">
                 Nothing matches “{mathQuery.trim()}”.
