@@ -44,10 +44,12 @@ import {
   PiArrowsOutBold,
   PiCrosshairBold,
   PiDownloadSimpleBold,
+  PiCaretDownBold,
   PiFunctionBold,
   PiXBold,
   PiLockBold,
   PiLockOpenBold,
+  PiSlidersHorizontalBold,
   PiUploadSimpleBold,
 } from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
@@ -1726,30 +1728,46 @@ export function BoardExcalidraw({
         <button
           type="button"
           onClick={() => setToolsOpen((v) => !v)}
+          aria-expanded={toolsOpen}
+          aria-controls="board-classroom-tools"
           className={cn(
-            // Left, not right: Excalidraw keeps its own vertical strip down
-            // the right edge on a phone, and this sat on top of it.
-            'pointer-events-auto absolute left-2 top-16 z-[402] min-[730px]:hidden',
-            pill,
+            // Left, not right: Excalidraw keeps its own vertical strip down the
+            // right edge on a phone, and this sat on top of it. The inset lines
+            // its left edge up with the toolbar island above it rather than
+            // hugging the board's rounded corner, and the top leaves real space
+            // under that toolbar instead of the 4px it had.
+            'pointer-events-auto absolute left-6 top-20 z-[402] min-[730px]:hidden',
+            'flex items-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-semibold shadow-md ring-1 transition',
             toolsOpen
               ? 'bg-neutral-900 text-white ring-neutral-900'
-              : 'bg-white text-neutral-800',
+              : 'bg-white text-neutral-800 ring-neutral-200',
           )}
         >
-          {toolsOpen ? 'Close' : 'Tools'}
+          <PiSlidersHorizontalBold className="h-3.5 w-3.5" aria-hidden />
+          Tools
+          {/* The label alone gave no sign this opens anything. A caret that
+              turns is the plainest way to say "there is more under here". */}
+          <PiCaretDownBold
+            className={cn(
+              'h-3 w-3 transition-transform duration-200',
+              toolsOpen && 'rotate-180',
+            )}
+            aria-hidden
+          />
         </button>
       )}
 
       <div
+        id="board-classroom-tools"
         className={cn(
           'pointer-events-none absolute z-[401] flex flex-wrap items-center gap-1.5',
           // Desktop: centred across the top, where the tool rail no longer is.
           'min-[730px]:left-1/2 min-[730px]:top-3 min-[730px]:max-w-[calc(100%-6rem)] min-[730px]:-translate-x-1/2 min-[730px]:justify-center',
           // Phone: a panel under the toolbar, opened from the Tools button.
-          'max-[729px]:left-2 max-[729px]:w-[min(15rem,calc(100%-4rem))] max-[729px]:justify-start',
+          'max-[729px]:left-6 max-[729px]:w-[min(15rem,calc(100%-4.5rem))] max-[729px]:justify-start',
           // A viewer has no Tools button to open — their single follow pill
           // sits where that button would be, and is never collapsed.
-          canDraw ? 'max-[729px]:top-28' : 'max-[729px]:top-16',
+          canDraw ? 'max-[729px]:top-32' : 'max-[729px]:top-20',
           canDraw && !toolsOpen && 'max-[729px]:hidden',
         )}
       >
