@@ -901,7 +901,18 @@ export function BoardExcalidraw({
     pendingRef.current = null;
     if (!scene || !map || !doc) return;
     const seen = syncedVersionsRef.current;
-    const changed = scene.filter((el) => seen.get(el.id) !== el.version);
+    const changed = scene.filter((el) => {
+      if (seen.get(el.id) === el.version) return false;
+      // Hold an embed back until it has its URL. Excalidraw decides whether an
+      // embeddable is valid the first time it sees one and caches that per
+      // instance, never rechecking — so a student who receives the element
+      // while the instructor is still typing the link caches it as invalid and
+      // is left with a dead box showing the URL as text, even once the link
+      // arrives. Publishing it only when complete means their first sight of it
+      // is the finished embed.
+      if (el.type === 'embeddable' && !el.link) return false;
+      return true;
+    });
     if (changed.length === 0) return;
     doc.transact(() => {
       for (const el of changed) {
