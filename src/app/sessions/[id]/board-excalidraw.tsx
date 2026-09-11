@@ -452,7 +452,10 @@ export function BoardExcalidraw({
   const [railNode, setRailNode] = useState<HTMLElement | null>(null);
   /** The shape the rail button displays — the last one picked, so the control
    *  reads like Excalidraw's own tools rather than a fixed icon. */
-  const [activeShape, setActiveShape] = useState('rectangle');
+  /** null until the instructor picks one — the button then shows a group of
+   *  shapes rather than a lone square, which is what made three tools
+   *  collapsing into one read as "the shapes are gone". */
+  const [activeShape, setActiveShape] = useState<string | null>(null);
   /** A polygon waiting for a drag. Excalidraw cannot register new tools, so the
    *  rectangle tool is armed for the drag (giving a live rubber-band preview
    *  and exact bounds) and whatever it draws is swapped for the polygon on
@@ -1123,12 +1126,12 @@ export function BoardExcalidraw({
       // Keep the shapes button showing whatever is armed, including when a tool
       // is picked with its number key.
       if (tool === 'rectangle' || tool === 'diamond' || tool === 'ellipse') {
-        if (!armedKey) setActiveShape(tool);
+        if (!armedKey && activeShape !== tool) setActiveShape(tool);
       }
 
       emitPresenter(null);
     },
-    [canEdit, flushLocal, shareNewFiles, emitPresenter],
+    [canEdit, activeShape, flushLocal, shareNewFiles, emitPresenter],
   );
 
   /** Broadcast this user's pointer; the instructor's also drives the laser. */
@@ -1546,7 +1549,9 @@ export function BoardExcalidraw({
   const mathIssue = mathSource.trim() === '' ? null : mathError(mathSource);
   const mathPreview =
     mathSource.trim() === '' || mathIssue ? '' : renderMathHtml(mathSource);
-  const current = SHAPES.find((x) => x.key === activeShape) ?? SHAPES[0];
+  const current = activeShape
+    ? (SHAPES.find((x) => x.key === activeShape) ?? null)
+    : null;
   const previewEntry = preview
     ? SHAPES.find((x) => x.key === preview.key)
     : undefined;
@@ -1603,7 +1608,7 @@ export function BoardExcalidraw({
           <div data-board-shapes className="relative">
             <button
               type="button"
-              title={`${current.label} — click for more shapes`}
+              title={current ? `${current.label} — click to change` : 'Shapes'}
               aria-haspopup="menu"
               aria-expanded={shapesOpen}
               onClick={() => setShapesOpen((v) => !v)}
@@ -1615,23 +1620,45 @@ export function BoardExcalidraw({
                     : 'text-neutral-700 hover:bg-neutral-100'
               }`}
             >
-              {/* The shape currently armed, so the button reads like a tool. */}
-              <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden>
-                <path
-                  d={current.icon}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={1.75}
-                  strokeLinejoin="round"
-                />
-              </svg>
-              {/* Corner caret: this one opens a menu, the others don't. */}
+              {/* Before a choice: a group of shapes, so the button says what
+                  is inside it. After one: that shape, at the same weight as
+                  the tools either side — drawn lighter it read as a disabled
+                  slot. */}
               <svg
-                viewBox="0 0 6 6"
-                className="absolute bottom-[3px] right-[3px] h-1.5 w-1.5 opacity-70"
+                viewBox="0 0 24 24"
+                className="h-[18px] w-[18px]"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinejoin="round"
                 aria-hidden
               >
-                <path d="M0 0h6L3 5z" fill="currentColor" />
+                {current ? (
+                  <path d={current.icon} />
+                ) : (
+                  <>
+                    <path d="M8 2.5 L12.5 9.5 L3.5 9.5 Z" />
+                    <circle cx="17.5" cy="6" r="3.75" />
+                    <rect x="4" y="13" width="11" height="8" rx="1" />
+                  </>
+                )}
+              </svg>
+              {/* This replaced three separate buttons, so it has to say out
+                  loud that the other shapes are still in here. A 6px hairline
+                  caret did not: it read as "the shapes are gone". */}
+              <svg
+                viewBox="0 0 10 10"
+                className="absolute bottom-0 right-0 h-2.5 w-2.5"
+                aria-hidden
+              >
+                <path d="M0 10 L10 10 L10 0 Z" className="fill-current opacity-30" />
+                <path
+                  d="M3.5 7.5 L8 7.5 L8 3"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.6}
+                  strokeLinecap="round"
+                />
               </svg>
             </button>
             {shapesOpen && (
