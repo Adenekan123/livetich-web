@@ -6,6 +6,7 @@ import { Room, RoomEvent, Track, type RemoteTrack } from 'livekit-client';
 import { io, type Socket } from 'socket.io-client';
 import { API_URL } from '@/lib/api';
 import { setRecorderToken } from '@/lib/client-token';
+import { RECORDER_COOKIE } from '@/lib/recorder-cookie';
 import { QuranReader } from '@/app/sessions/[id]/quran-reader';
 import type { StageView } from '@/lib/realtime-contract';
 
@@ -44,6 +45,12 @@ export function RecorderView({
   // during the first render rather than in an effect. Idempotent module state.
   useState(() => {
     setRecorderToken(token);
+    // Board images and PDFs are loaded by the browser itself, which cannot add
+    // a header — the /api/files proxy reads this instead. Session-scoped and
+    // SameSite=Lax, on a throwaway browser that lives for one recording.
+    if (typeof document !== 'undefined') {
+      document.cookie = `${RECORDER_COOKIE}=${encodeURIComponent(token)}; path=/; SameSite=Lax`;
+    }
     return null;
   });
 
@@ -172,10 +179,14 @@ export function RecorderView({
         )}
       </div>
 
-      {/* The instructor, small and out of the way. */}
+      {/* The instructor, small and out of the way.
+          Bottom-right rather than top: the mushaf puts the surah name and the
+          current ayah along the top, and a tile there sat on top of them. The
+          board's own controls used to live down here and are hidden in a
+          recording, so this corner is free in both views. */}
       <div
         ref={cameraRef}
-        className="absolute right-6 top-6 z-10 h-[180px] w-[320px] overflow-hidden rounded-xl bg-neutral-800 shadow-lg [&>video]:h-full [&>video]:w-full [&>video]:object-cover"
+        className="absolute bottom-6 right-6 z-10 h-[180px] w-[320px] overflow-hidden rounded-xl bg-neutral-800 shadow-lg [&>video]:h-full [&>video]:w-full [&>video]:object-cover"
       />
     </div>
   );

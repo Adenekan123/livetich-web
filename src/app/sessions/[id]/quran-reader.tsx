@@ -220,10 +220,24 @@ export function QuranReader({
   }, [surah]);
 
   // Follow the instructor: scroll the anchored ayah into view when it changes.
+  //
+  // Twice, on purpose. The Uthmani face is a large webfont, and every line it
+  // reflows when it swaps in moves the page under whatever we just scrolled to
+  // — so the first scroll lands on roughly the right ayah and then drifts off
+  // by several. The second one, once the fonts have settled, is the one that
+  // actually holds.
   useEffect(() => {
     if (!text || text.number !== surah) return;
-    const el = ayahRefs.current.get(ayah);
-    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    let live = true;
+    const anchor = (behavior: ScrollBehavior) => {
+      if (!live) return;
+      ayahRefs.current.get(ayah)?.scrollIntoView({ behavior, block: 'center' });
+    };
+    anchor('smooth');
+    void document.fonts?.ready.then(() => anchor('auto'));
+    return () => {
+      live = false;
+    };
   }, [surah, ayah, text]);
 
   const ayahCount = text?.ayahs.length ?? 0;
