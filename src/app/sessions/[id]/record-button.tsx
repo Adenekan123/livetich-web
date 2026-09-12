@@ -7,7 +7,7 @@ import {
   startSessionRecording,
   stopSessionRecording,
 } from '@/app/actions/recordings';
-import { cn } from '@/lib/ui';
+import { btn, cn } from '@/lib/ui';
 import { playRecordingTone } from './recording-sound';
 
 /** How often to re-ask while idle, to notice a recording another admin started. */
@@ -40,6 +40,7 @@ export function RecordButton({ sessionId }: { sessionId: string }) {
   const [available, setAvailable] = useState(false);
   const [startedAt, setStartedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmSilent, setConfirmSilent] = useState(false);
   const [, setTick] = useState(0);
   const [pending, start] = useTransition();
   // The poll loop reschedules itself outside React's cycle, so it reads the
@@ -107,6 +108,15 @@ export function RecordButton({ sessionId }: { sessionId: string }) {
 
   const recording = startedAt !== null;
 
+  const begin = async () => {
+    const res = await startSessionRecording(sessionId);
+    if (res.error) setError(res.error);
+    else {
+      setStartedAt(new Date().toISOString());
+      playRecordingTone('start');
+    }
+  };
+
   if (!available) {
     return (
       <button
@@ -141,12 +151,19 @@ export function RecordButton({ sessionId }: { sessionId: string }) {
               }
               return;
             }
-            const res = await startSessionRecording(sessionId);
-            if (res.error) setError(res.error);
-            else {
-              setStartedAt(new Date().toISOString());
-              playRecordingTone('start');
+            // Asked again here rather than trusting the poll: the microphone
+            // can be switched off in the half minute between two of them, and
+            // this is the moment the answer has to be right.
+            try {
+              const fresh = await sessionRecordingState(sessionId);
+              if (!fresh.micLive) {
+                setConfirmSilent(true);
+                return;
+              }
+            } catch {
+              // If we cannot tell, do not stand in the way of recording.
             }
+            await begin();
           })
         }
         aria-label={recording ? 'Stop recording' : 'Record this class'}
@@ -171,6 +188,52 @@ export function RecordButton({ sessionId }: { sessionId: string }) {
           </>
         )}
       </button>
+
+      {confirmSilent && (
+        <div
+          className="fixed inset-0 z-[700] grid place-items-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Your microphone is off"
+          onClick={() => setConfirmSilent(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-base font-semibold text-neutral-900">
+              Your microphone is off
+            </h2>
+            <p className="mt-2 text-sm text-neutral-600">
+              This recording will have no sound — the board and the screen will
+              be captured, but nothing you say. Turn your microphone on first if
+              the lesson needs your voice.
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmSilent(false)}
+                className={cn(btn('primary', 'sm'))}
+              >
+                Turn on my mic first
+              </button>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() =>
+                  start(async () => {
+                    setConfirmSilent(false);
+                    await begin();
+                  })
+                }
+                className={cn(btn('ghost', 'sm'), 'text-neutral-500')}
+              >
+                Record without sound
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && (
         <button

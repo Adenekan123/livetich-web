@@ -137,6 +137,8 @@ export async function deleteRecording(id: string): Promise<RecordingActionState>
 export interface SessionRecordingState {
   /** False when LiveKit or the bucket is not configured — the button hides. */
   available: boolean;
+  /** False when this instructor has no live microphone in the room. */
+  micLive: boolean;
   /** Non-null only while a recording is actually running. */
   recording: { id: string; status: string; createdAt: string } | null;
   last: { id: string; status: string; error: string | null } | null;
