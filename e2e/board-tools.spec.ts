@@ -54,9 +54,14 @@ test('instructor can draw with the pen and add a shape tool', async ({ page }) =
     .poll(() => shapeCount(page), { timeout: 10_000 })
     .toBeGreaterThan(before);
 
-  // --- Another native tool: rectangle ---
+  // --- A shape, from the app's shapes menu ---
+  // Square, diamond and circle are `display: none` in the native toolbar
+  // (board-excalidraw.css): they were moved into one menu so each shape has a
+  // single home. Clicking the hidden native button can never work — it has no
+  // box — so this drives the menu the instructor actually uses.
   const afterDraw = await shapeCount(page);
-  await tool(page, 'rectangle').click();
+  await page.locator('[data-board-shapes] button').click();
+  await page.getByRole('menuitem', { name: 'Square' }).click();
   await page.mouse.move(cx + 160, cy - 120);
   await page.mouse.down();
   await page.mouse.move(cx + 280, cy - 30, { steps: 8 });
