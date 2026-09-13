@@ -53,8 +53,8 @@ export default async function HifzPage(props: {
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-neutral-500">
             {canManage
-              ? "Set each student a surah/ayah target, log their recitations (new memorization or muraja'ah revision), and track progress across the Qur'an."
-              : "Your memorization targets and recitation log for this class."}
+              ? 'Hear each student recite, record how it went, and set what they memorize next.'
+              : 'What you have been set to memorize, and how your recitations have gone.'}
           </p>
         </div>
 

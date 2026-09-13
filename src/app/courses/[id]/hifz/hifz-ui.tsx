@@ -1,43 +1,8 @@
 'use client';
 
 import { HIFZ_KIND_LABEL } from '@/lib/quran';
-import type { HifzKind, HifzProgress } from '@/lib/types';
+import type { HifzKind } from '@/lib/types';
 import { cn } from '@/lib/ui';
-
-/** Distinct ayahs memorized vs the whole Qur'an, with a thin progress bar. */
-export function ProgressMeter({
-  progress,
-  totalAyahs,
-}: {
-  progress: HifzProgress;
-  totalAyahs: number;
-}) {
-  const pct = totalAyahs
-    ? Math.min(100, (progress.ayahsMemorized / totalAyahs) * 100)
-    : 0;
-  return (
-    <div>
-      <div className="flex items-baseline justify-between gap-2 text-sm">
-        <span className="font-semibold text-neutral-950">
-          {progress.ayahsMemorized.toLocaleString()}
-          <span className="font-normal text-neutral-400">
-            {' '}
-            / {totalAyahs.toLocaleString()} ayahs
-          </span>
-        </span>
-        <span className="text-xs text-neutral-400">
-          {progress.surahsTouched} surah{progress.surahsTouched === 1 ? '' : 's'}
-        </span>
-      </div>
-      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-neutral-100">
-        <div
-          className="h-full rounded-full bg-signal-600 transition-[width]"
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
-  );
-}
 
 export function KindBadge({ kind }: { kind: HifzKind }) {
   return (
