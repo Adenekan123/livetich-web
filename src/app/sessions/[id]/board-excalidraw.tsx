@@ -1970,7 +1970,7 @@ export function BoardExcalidraw({
         // Excalidraw's own iframe cannot be controlled from outside it, so a
         // YouTube embed gets a player we own and can hold in step across the
         // room. Anything else keeps Excalidraw's rendering.
-        renderEmbeddable={(element) => {
+        renderEmbeddable={(element, appState) => {
           const videoId = youTubeIdOf(element.link);
           if (videoId) {
             return (
@@ -1987,7 +1987,15 @@ export function BoardExcalidraw({
           // will frame at all, and it is rendered here rather than handed back
           // to Excalidraw so the element keeps the URL the instructor pasted.
           const doc = googleEmbed(element.link);
-          if (doc) return <BoardDocEmbed embed={doc} link={element.link!} />;
+          if (doc) {
+            return (
+              <BoardDocEmbed
+                embed={doc}
+                link={element.link!}
+                zoom={appState.zoom.value}
+              />
+            );
+          }
           return null;
         }}
         // Excalidraw does not recognise youtu.be short links on its own, and

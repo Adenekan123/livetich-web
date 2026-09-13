@@ -75,7 +75,7 @@ test('pasting a Google Docs link puts the doc on the board', async ({ page, cont
   const frame = page.locator(`iframe[src="${EXPECTED_SRC}"]`);
   await expect(frame).toHaveCount(1, { timeout: 20_000 });
   // Scoped to this run's own embed: the board may already carry others.
-  const shell = page.locator(`div:has(> iframe[src="${EXPECTED_SRC}"])`).last();
+  const shell = page.locator(`[data-doc-embed]:has(iframe[src="${EXPECTED_SRC}"])`);
   await expect(shell.getByText('Google Doc', { exact: true })).toBeVisible();
   await expect(shell.getByText('read-only', { exact: true })).toBeVisible();
 
