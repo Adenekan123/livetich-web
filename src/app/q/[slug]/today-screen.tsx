@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
+import { PiClockBold, PiDotsThreeBold } from 'react-icons/pi';
 import { joinLiveSession } from '@/app/actions/courses';
-import { btn, cn } from '@/lib/ui';
+import { cn } from '@/lib/ui';
 
 export interface TodayClass {
   courseId: string;
@@ -14,7 +15,8 @@ export interface TodayClass {
   instructor: string | null;
   /** Set when the class is running now. */
   live: boolean;
-  /** Human time from today's timetable, e.g. "6:00 PM". */
+  /** Start time from today's timetable, e.g. "6:00 PM". Start only: the model
+   *  has no class length, so an end time would be invented. */
   at: string | null;
 }
 
@@ -39,85 +41,88 @@ function useJoin(courseId: string) {
 }
 
 /**
- * The class that is on right now.
+ * One class, one card.
  *
- * Given its own block rather than a row, because when something is live it is
- * the whole answer to the question this screen exists to ask. The target runs
- * the full width of the phone: a student walking into class late should not
- * have to aim.
+ * Title, when it starts, and the single thing you came to do — sitting bottom
+ * right where a thumb reaches it. The overflow affordance carries the secondary
+ * route to the program page, so the card keeps exactly one primary action.
+ *
+ * Live is marked three ways, never colour alone: the word, a pulsing dot, and a
+ * stronger fill on the action.
  */
-function LiveClass({ item }: { item: TodayClass }) {
+function ClassCard({ item }: { item: TodayClass }) {
   const { pending, error, join } = useJoin(item.courseId);
-  return (
-    <section className="animate-fade-up mt-5">
-      <p className="flex items-center gap-2 text-[13px] font-bold uppercase tracking-[0.08em] text-rose-600">
-        <span className="animate-live h-2 w-2 rounded-full bg-rose-600" aria-hidden />
-        Live now
-      </p>
-      <h2 className="mt-2 font-display text-[26px] font-extrabold leading-tight tracking-[-0.02em] text-neutral-950">
-        {item.title}
-      </h2>
-      {item.instructor && (
-        <p className="mt-1 text-[15px] text-neutral-500">{item.instructor}</p>
-      )}
-      <button
-        type="button"
-        onClick={join}
-        disabled={pending}
-        className={cn(
-          btn('primary', 'lg'),
-          'mt-4 w-full justify-center py-4 text-base',
-          pending && 'opacity-70',
-        )}
-      >
-        {pending ? 'Joining…' : 'Join class'}
-      </button>
-      {error && (
-        <p role="alert" className="mt-2 text-sm text-rose-600">
-          {error}
-        </p>
-      )}
-    </section>
-  );
-}
 
-/**
- * One line of the day's timetable.
- *
- * A hairline row rather than a card: a timetable is a list of times, and the
- * time is what a student scans for. Boxing each one would give the container
- * the same weight as the class inside it.
- */
-function ScheduledClass({ item }: { item: TodayClass }) {
-  const { pending, error, join } = useJoin(item.courseId);
   return (
-    <li className="border-t border-neutral-200 first:border-t-0">
-      <div className="flex items-center gap-3 py-3.5">
-        <span className="w-[68px] shrink-0 font-mono text-[13px] font-semibold tabular-nums text-neutral-500">
-          {item.at}
-        </span>
+    <li className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-5">
+      <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <p className="truncate font-semibold text-neutral-950">{item.title}</p>
+          <h3 className="text-[15px] font-semibold leading-snug text-neutral-950">
+            {item.title}
+          </h3>
+          <p className="mt-1.5 flex items-center gap-1.5 text-sm text-neutral-500">
+            {item.live ? (
+              <>
+                <span
+                  className="animate-live h-2 w-2 rounded-full bg-rose-600"
+                  aria-hidden
+                />
+                <span className="font-semibold text-rose-600">Live now</span>
+              </>
+            ) : (
+              <>
+                <PiClockBold className="h-4 w-4 shrink-0" aria-hidden />
+                {item.at}
+              </>
+            )}
+          </p>
           {item.instructor && (
-            <p className="mt-0.5 truncate text-sm text-neutral-500">
+            <p className="mt-1 truncate text-sm text-neutral-500">
               {item.instructor}
             </p>
           )}
         </div>
+        <Link
+          href={`/courses/${item.courseId}`}
+          aria-label={`View ${item.title}`}
+          title="View program"
+          className="-mr-1 -mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700"
+        >
+          <PiDotsThreeBold className="h-5 w-5" />
+        </Link>
+      </div>
+
+      <div className="mt-3 flex items-center justify-end gap-3">
+        {error && (
+          <p role="alert" className="min-w-0 flex-1 text-sm text-rose-600">
+            {error}
+          </p>
+        )}
         <button
           type="button"
           onClick={join}
           disabled={pending}
-          className={cn(btn('secondary', 'md'), 'shrink-0', pending && 'opacity-70')}
+          className={cn(
+            // Soft-filled pill: the template's shape, in the product's own
+            // teal. 44px tall so it is a real target on a phone, and outlined
+            // so the button reads as a button on a white card rather than as a
+            // tinted label.
+            'inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-full border px-6 text-sm font-semibold transition',
+            'focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-signal-600/20',
+            item.live
+              ? 'border-signal-900 bg-signal-700 text-white hover:bg-signal-800'
+              : 'border-signal-200 bg-signal-50 text-signal-700 hover:border-signal-300 hover:bg-signal-100',
+            pending && 'opacity-60',
+          )}
         >
           {pending ? 'Joining…' : 'Join'}
+          {!pending && (
+            <span aria-hidden className="text-[15px] leading-none">
+              →
+            </span>
+          )}
         </button>
       </div>
-      {error && (
-        <p role="alert" className="pb-3 text-sm text-rose-600">
-          {error}
-        </p>
-      )}
     </li>
   );
 }
@@ -147,24 +152,19 @@ export function TodayScreen({
   /** When today is empty: when the next class actually is. */
   nextUp: string | null;
 }) {
-  const live = classes.filter((c) => c.live);
-  const scheduled = classes.filter((c) => !c.live);
-  const today = new Date().toLocaleDateString(undefined, {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
+  // Live first; the rest in timetable order, as the page computed them.
+  const ordered = [...classes].sort((a, b) => Number(b.live) - Number(a.live));
 
   return (
     <div
-      className="min-h-screen bg-white"
+      className="min-h-screen bg-neutral-50"
       style={{
         paddingTop: 'env(safe-area-inset-top)',
         paddingBottom: 'env(safe-area-inset-bottom)',
       }}
     >
-      <main className="mx-auto flex min-h-screen w-full max-w-md flex-col px-5 pb-6 pt-5">
-        <header className="flex items-center gap-3 border-b border-neutral-200 pb-4">
+      <main className="mx-auto flex min-h-screen w-full max-w-md flex-col px-4 pb-6 pt-5">
+        <header className="flex items-center gap-3 px-1">
           {logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={logoUrl} alt="" className="h-9 w-9 rounded-xl object-cover" />
@@ -183,42 +183,25 @@ export function TodayScreen({
           <p className="shrink-0 text-sm text-neutral-500">Hi {firstName}</p>
         </header>
 
-        {/* neutral-500, not 400: the date is content, and 400 on white is
-            about 2.5:1 — under the 4.5:1 floor for text this size. */}
-        <p className="mt-5 text-[13px] font-semibold uppercase tracking-[0.08em] text-neutral-500">
-          {today}
-        </p>
+        <h1 className="mt-7 px-1 text-[15px] font-semibold text-neutral-500">
+          Today
+        </h1>
 
-        {live.map((c) => (
-          <LiveClass key={c.courseId} item={c} />
-        ))}
-
-        {scheduled.length > 0 && (
-          <section className="mt-7">
-            {live.length > 0 && (
-              <h3 className="mb-1 text-sm font-semibold text-neutral-500">
-                Also today
-              </h3>
-            )}
-            <ul>
-              {scheduled.map((c) => (
-                <ScheduledClass key={c.courseId} item={c} />
-              ))}
-            </ul>
-          </section>
-        )}
-
-        {classes.length === 0 && (
-          <section className="mt-7">
-            <h2 className="font-display text-[22px] font-extrabold tracking-[-0.02em] text-neutral-950">
-              Nothing on today
-            </h2>
-            <p className="mt-2 text-[15px] leading-relaxed text-neutral-500">
+        {ordered.length > 0 ? (
+          <ul className="mt-2.5 space-y-3">
+            {ordered.map((c) => (
+              <ClassCard key={c.courseId} item={c} />
+            ))}
+          </ul>
+        ) : (
+          <div className="mt-2.5 rounded-2xl border border-neutral-200 bg-white p-6">
+            <p className="font-semibold text-neutral-950">Nothing on today</p>
+            <p className="mt-1.5 text-sm leading-relaxed text-neutral-500">
               {nextUp
                 ? `Your next class is ${nextUp}. It will appear here on the day, ready to join.`
                 : 'When a class is scheduled it will appear here, ready to join.'}
             </p>
-          </section>
+          </div>
         )}
 
         <div className="mt-auto pt-10 text-center">
