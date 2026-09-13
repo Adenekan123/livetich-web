@@ -66,6 +66,12 @@ import {
 } from './live-coding-panel';
 import { QuranReader } from './quran-reader';
 import { RecordButton } from './record-button';
+import {
+  primeTones,
+  startToneLoop,
+  stopAllToneLoops,
+  stopToneLoop,
+} from './tone-player';
 
 // Excalidraw touches browser-only APIs, so it must not render on the server.
 const BoardExcalidraw = dynamic(
@@ -213,6 +219,8 @@ export function ClassRoom({
   islamicEducation = false,
   codeInstruction = false,
   testPrep = false,
+  initialView,
+  dataSaverDefault,
 }: {
   sessionId: string;
   courseId: string;
@@ -228,6 +236,13 @@ export function ClassRoom({
   codeInstruction?: boolean;
   /** Test Prep pack on — adds exam-style chalkboard templates (axes). */
   testPrep?: boolean;
+  /** The surface the class is already on, when the caller knows it up front. */
+  initialView?: StageView;
+  /** Override the automatic data-saver decision. The recorder pins this off:
+   *  its connection hints are whatever LiveKit's container reports, and a
+   *  recording that quietly drops every camera to save someone's bandwidth is
+   *  not a saving, it is a broken recording. */
+  dataSaverDefault?: boolean;
 }) {
   const router = useRouter();
   const [ending, startEnding] = useTransition();
@@ -267,7 +282,11 @@ export function ClassRoom({
   const [notice, setNotice] = useState<string | null>(null);
   // Counter bumped on every `submission:new`; drives the grading panel reload.
   const [submissionPing, setSubmissionPing] = useState(0);
-  const [view, setView] = useState<StageView>('video');
+  // Defaults to the room, but a caller that already knows better says so. The
+  // recorder does: it is handed the class's current surface with its context,
+  // so a recording never opens on the wrong one while waiting for the socket to
+  // replay the real value.
+  const [view, setView] = useState<StageView>(initialView ?? 'video');
   // Instructor-driven room colour scheme, synced to everyone via the gateway.
   const [scheme, setScheme] = useState<RoomScheme>('teal');
   const [schemePicker, setSchemePicker] = useState(false);
@@ -281,6 +300,7 @@ export function ClassRoom({
   const [hifzDraft, setHifzDraft] = useState<HifzDraft | null>(null);
   // Default data-saver on when the browser/OS signals a metered or slow network.
   const [dataSaver, setDataSaver] = useState(() => {
+    if (dataSaverDefault !== undefined) return dataSaverDefault;
     if (typeof navigator === 'undefined') return false;
     const c = (
       navigator as Navigator & {
@@ -324,6 +344,10 @@ export function ClassRoom({
   const buzzerDismissRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cue = (kind: 'open' | 'timeout' | 'win') =>
     playBuzzerCue(audioCtxRef, kind);
+  // The question tone runs for as long as the question does, so every path out
+  // of an open round has to switch it off — answered, timed out, dismissed,
+  // or the room closing under it. Centralised here so none of them can forget.
+  const stopBuzzerTone = () => stopToneLoop('buzzerQuestion');
   // Voice-note recording (chat).
   const [recording, setRecording] = useState(false);
   const [uploadingVoice, setUploadingVoice] = useState(false);
@@ -495,16 +519,27 @@ export function ClassRoom({
           setBuzzerDeadline(
             Date.now() + (p.state.question?.timeLimitSec ?? 0) * 1000,
           );
-          cue('open'); // buzz on a new round
+          // A round is a countdown, so the cue is a countdown too: the tone
+          // repeats under the question and stops the moment it is resolved,
+          // rather than a single buzz at the top that says nothing about the
+          // time draining away.
+          void startToneLoop('buzzerQuestion');
         }
       } else if (p.state.phase === 'WINNER' || p.state.phase === 'TIMEOUT') {
         setBuzzerDeadline(null);
+        // Silence the question before the verdict, so the two never overlap.
+        // 'timeout' is the descending "dying" tone that closes a round nobody
+        // won — deliberately untouched.
+        stopBuzzerTone();
         cue(p.state.phase === 'WINNER' ? 'win' : 'timeout');
         // Show the outcome briefly, then close the card for everyone.
         buzzerDismissRef.current = setTimeout(() => {
           setBuzzer(null);
           buzzerDismissRef.current = null;
         }, 3500);
+      } else {
+        // Any other phase — idle, or a round cleared out from under us.
+        stopBuzzerTone();
       }
     });
     socket.on('quiz:answer-result', (p) => setAnswerResult(p.isCorrect));
@@ -642,6 +677,10 @@ export function ClassRoom({
       } catch {
         /* audio unavailable — ignore */
       }
+      // The recorded tones need the same gesture, and the buzzer one is 300KB:
+      // fetching and decoding it now means the first round of the lesson starts
+      // on the beat instead of after a download.
+      primeTones();
       window.removeEventListener('pointerdown', unlock);
       window.removeEventListener('touchstart', unlock);
       window.removeEventListener('keydown', unlock);
@@ -655,6 +694,11 @@ export function ClassRoom({
       window.removeEventListener('keydown', unlock);
     };
   }, []);
+
+  // Last line of defence for the question tone: leaving the room, or the class
+  // ending, while a round is still open. Without this the loop would outlive
+  // the classroom it belongs to and keep playing over whatever came next.
+  useEffect(() => stopAllToneLoops, []);
 
   // Tear down the audio context + any pending auto-close on unmount.
   useEffect(
@@ -939,6 +983,7 @@ export function ClassRoom({
 
   return (
     <div
+      data-stage-view={view}
       className="room-shell fixed inset-0 z-40 flex flex-col bg-[var(--room-bg)] text-neutral-100"
       data-room-scheme={scheme}
     >
@@ -976,7 +1021,10 @@ export function ClassRoom({
             </span>
           </span>
           {isShadow && (
-            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-accent-500/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-accent-300">
+            <span
+              data-shadow-badge
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-accent-500/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-accent-300"
+            >
               Shadowing · hidden
             </span>
           )}
@@ -1323,7 +1371,10 @@ export function ClassRoom({
           />
         )}
         {panel && (
-          <aside className="absolute inset-y-0 right-0 z-30 flex w-[86%] max-w-[22rem] flex-col border-l border-white/10 bg-[var(--room-panel)] shadow-2xl md:static md:z-auto md:w-full md:max-w-[360px] md:shrink-0 md:shadow-none">
+          <aside
+            data-chat-panel
+            className="absolute inset-y-0 right-0 z-30 flex w-[86%] max-w-[22rem] flex-col border-l border-white/10 bg-[var(--room-panel)] shadow-2xl md:static md:z-auto md:w-full md:max-w-[360px] md:shrink-0 md:shadow-none"
+          >
             <div className="flex items-center gap-1 border-b border-white/10 p-2">
               {(['chat', 'people', 'points'] as const).map((t) => (
                 <button

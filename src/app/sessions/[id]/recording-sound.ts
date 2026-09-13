@@ -5,8 +5,11 @@
  * nobody else is told the class is being recorded, so a tone that reached the
  * LiveKit audio track would undo that.
  *
- * Synthesised rather than shipped as files: a few short notes need no binary
- * assets, no network round trip at the moment they matter, and no decode.
+ * "Started" is a recorded tone now (public/sounds/recording-start.mp3); the
+ * synthesised flourish below stays as its fallback, for the case where the
+ * file has not finished downloading or cannot be decoded. "Stopped" is still
+ * synthesised — there is no recorded counterpart, and a stop that answered a
+ * start with silence would read as a failure.
  *
  * Deliberately unlike the classroom's own notification beeps in
  * `class-room.tsx` — those are two flat square or triangle notes, and the old
@@ -15,22 +18,10 @@
  * the instructor is not looking at the button.
  */
 
-let context: AudioContext | null = null;
+import { playTone, toneContext } from './tone-player';
 
-function audioContext(): AudioContext | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const Ctor =
-      window.AudioContext ??
-      (window as unknown as { webkitAudioContext?: typeof AudioContext })
-        .webkitAudioContext;
-    if (!Ctor) return null;
-    context ??= new Ctor();
-    return context;
-  } catch {
-    return null;
-  }
-}
+// One AudioContext for every sound the room makes, rather than one per module.
+const audioContext = toneContext;
 
 interface Note {
   /** Seconds from the start of the flourish. */
@@ -90,7 +81,9 @@ const FLOURISH: Record<'start' | 'stop', Note[]> = {
   ],
 };
 
-export function playRecordingTone(kind: 'start' | 'stop'): void {
+/** The synthesised flourish — the fallback for 'start', and all there is for
+ *  'stop'. */
+function playFlourish(kind: 'start' | 'stop'): void {
   const ctx = audioContext();
   if (!ctx) return;
   try {
@@ -102,4 +95,18 @@ export function playRecordingTone(kind: 'start' | 'stop'): void {
   } catch {
     // A missing or blocked audio device must never stop a recording.
   }
+}
+
+export function playRecordingTone(kind: 'start' | 'stop'): void {
+  if (kind === 'stop') {
+    playFlourish('stop');
+    return;
+  }
+  // Fire and forget: the click that triggered this has already unlocked audio,
+  // and the file is normally decoded and cached by now (see primeTones). If it
+  // is not there, the flourish covers for it rather than leaving the
+  // instructor wondering whether the button did anything.
+  void playTone('recordingStart').then((played) => {
+    if (!played) playFlourish('start');
+  });
 }

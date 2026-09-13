@@ -15,11 +15,15 @@ export default async function RecordPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ t?: string }>;
+  searchParams: Promise<{ t?: string; api?: string }>;
 }) {
   const { id } = await params;
-  const { t } = await searchParams;
+  const { t, api } = await searchParams;
   // Without a recorder token there is nothing to authorise this view at all.
   if (!t) notFound();
-  return <RecorderView sessionId={id} token={t} />;
+  // Which packs are on comes back with the recorder context, not from
+  // /organizations/plugins: that endpoint refuses recorder tokens outright, and
+  // the client helper turns the refusal into "no packs" — which unmounts the
+  // mushaf and the shared editor without a word.
+  return <RecorderView sessionId={id} token={t} apiBase={api} />;
 }

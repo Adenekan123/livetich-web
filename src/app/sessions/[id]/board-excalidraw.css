@@ -172,6 +172,26 @@
 .livetich-recorder .excalidraw .scroll-back-to-content,
 .livetich-recorder .excalidraw .dropdown-menu-button,
 .livetich-recorder .excalidraw .Stats,
+/* The recorder joins as a hidden observer, so the classroom quite correctly
+   badges it "Shadowing · hidden". That is a fact about the recorder, not about
+   the lesson, and it has no business sitting in the top bar of every frame of
+   the recording. */
+.livetich-recorder [data-shadow-badge] {
+  display: none !important;
+}
+
+/* Chat belongs to the room, not to the work.
+   On the board and the mushaf the lesson is the whole point of the frame, and a
+   chat column down the side steals a fifth of the width from the handwriting
+   and the ayah — the two things the recording exists to preserve. So it is kept
+   on the room view, where faces are already the subject, and dropped on every
+   other surface. Live classes are untouched: this is scoped to the recorder. */
+.livetich-recorder
+  [data-stage-view]:not([data-stage-view='video'])
+  [data-chat-panel] {
+  display: none !important;
+}
+
 .livetich-recorder [data-board-shapes],
 .livetich-recorder [data-board-pills] {
   display: none !important;
