@@ -102,13 +102,20 @@ const LOCAL = 'local';
  *  image import never rewrites the drawing map. */
 const ELEMENTS_KEY = 'excalidraw-elements';
 const FILES_KEY = 'excalidraw-files';
-/** One selected equation: the element to change, and the LaTeX behind it. */
+/**
+ * One selected equation: the element to change, the LaTeX behind it, and where
+ * it currently sits on screen so the Edit chip can follow it through pans and
+ * zooms.
+ */
 interface SelectedMath {
   id: string;
   latex: string;
   x: number;
   y: number;
   height: number;
+  /** Viewport pixels, relative to the board wrapper. */
+  left: number;
+  top: number;
 }
 
 /**
@@ -121,6 +128,7 @@ interface SelectedMath {
 function soleMathElement(
   elements: readonly ExcalidrawElement[],
   selectedIds: Readonly<Record<string, boolean>>,
+  view: { scrollX: number; scrollY: number; zoom: number },
 ): SelectedMath | null {
   let found: SelectedMath | null = null;
   for (const el of elements) {
@@ -128,9 +136,36 @@ function soleMathElement(
     const latex = (el.customData as MathCustomData | undefined)?.livetichMath;
     if (typeof latex !== 'string') return null; // a non-equation is in the selection
     if (found) return null; // more than one
-    found = { id: el.id, latex, x: el.x, y: el.y, height: el.height };
+    found = {
+      id: el.id,
+      latex,
+      x: el.x,
+      y: el.y,
+      height: el.height,
+      left: Math.round((el.x + view.scrollX) * view.zoom),
+      top: Math.round((el.y + view.scrollY) * view.zoom),
+    };
   }
   return found;
+}
+
+/** The topmost equation under a point given in scene coordinates. */
+function mathElementAt(
+  elements: readonly ExcalidrawElement[],
+  sx: number,
+  sy: number,
+): ExcalidrawElement | null {
+  for (let i = elements.length - 1; i >= 0; i--) {
+    const el = elements[i];
+    if (el.isDeleted) continue;
+    if (typeof (el.customData as MathCustomData | undefined)?.livetichMath !== 'string') {
+      continue;
+    }
+    if (sx >= el.x && sx <= el.x + el.width && sy >= el.y && sy <= el.y + el.height) {
+      return el;
+    }
+  }
+  return null;
 }
 
 /** Freehand drawing changes elements many times per second. Coalescing those
@@ -1207,9 +1242,18 @@ export function BoardExcalidraw({
       // Which equation is selected, if any. Compared against a ref so this
       // only ever sets state on a real change — the handler runs on every
       // pointer move over the canvas.
-      const picked = soleMathElement(scene, state.selectedElementIds);
+      const picked = soleMathElement(scene, state.selectedElementIds, {
+        scrollX: state.scrollX,
+        scrollY: state.scrollY,
+        zoom: state.zoom.value,
+      });
       const held = selectedMathRef.current;
-      if (picked?.id !== held?.id || picked?.latex !== held?.latex) {
+      if (
+        picked?.id !== held?.id ||
+        picked?.latex !== held?.latex ||
+        picked?.left !== held?.left ||
+        picked?.top !== held?.top
+      ) {
         selectedMathRef.current = picked;
         setSelectedMath(picked);
       }
@@ -1414,6 +1458,13 @@ export function BoardExcalidraw({
    * LaTeX source is kept on the element so it can be edited later rather than
    * being frozen into a picture.
    */
+  /** Open the formula panel on an equation that is already on the board. */
+  const openMathEditor = useCallback((target: SelectedMath) => {
+    setEditingMath(target);
+    setMathSource(target.latex);
+    setMathOpen(true);
+  }, []);
+
   /** Close the formula panel and forget what it was working on. */
   const closeMath = useCallback(() => {
     setMathOpen(false);
@@ -1725,6 +1776,44 @@ export function BoardExcalidraw({
     };
   }, [shapesOpen]);
 
+  /**
+   * Double-click an equation to edit it.
+   *
+   * The quick path: an equation is a picture, so Excalidraw has nothing to open
+   * on it and the gesture is otherwise wasted. Captured before Excalidraw sees
+   * it, and only when the point is actually inside an equation — every other
+   * double-click on the canvas is left alone.
+   */
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper || !canDraw) return;
+    const onDoubleClick = (e: MouseEvent) => {
+      const editor = apiRef.current;
+      if (!editor) return;
+      const rect = wrapper.getBoundingClientRect();
+      const state = editor.getAppState();
+      const z = state.zoom.value;
+      const sx = (e.clientX - rect.left) / z - state.scrollX;
+      const sy = (e.clientY - rect.top) / z - state.scrollY;
+      const hit = mathElementAt(editor.getSceneElements(), sx, sy);
+      if (!hit) return;
+      const latex = (hit.customData as MathCustomData).livetichMath;
+      e.preventDefault();
+      e.stopPropagation();
+      openMathEditor({
+        id: hit.id,
+        latex,
+        x: hit.x,
+        y: hit.y,
+        height: hit.height,
+        left: Math.round((hit.x + state.scrollX) * z),
+        top: Math.round((hit.y + state.scrollY) * z),
+      });
+    };
+    wrapper.addEventListener('dblclick', onDoubleClick, true);
+    return () => wrapper.removeEventListener('dblclick', onDoubleClick, true);
+  }, [canDraw, openMathEditor]);
+
   // Test hook. Excalidraw draws to a canvas rather than to DOM nodes, so the
   // end-to-end specs have nothing to query for "what is on the board"; they
   // read the scene through this instead.
@@ -1919,6 +2008,27 @@ export function BoardExcalidraw({
       {/* Live preview of the armed polygon. Excalidraw is drawing a rectangle
           underneath at zero opacity — this is what the instructor actually
           sees follow the drag. */}
+      {/* Edit, on the equation itself.
+          Double-click does the same thing and is faster, but nothing on a
+          board advertises a double-click — this is what tells the teacher the
+          equation is still editable, and it rides along on pans and zooms
+          because its position is recomputed with the selection. */}
+      {selectedMath && canDraw && !mathOpen && (
+        <button
+          type="button"
+          data-math-edit
+          onClick={() => openMathEditor(selectedMath)}
+          style={{
+            left: selectedMath.left,
+            top: Math.max(4, selectedMath.top - 34),
+          }}
+          className="pointer-events-auto absolute z-[401] inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-2.5 py-1.5 text-xs font-semibold text-white shadow-lg transition hover:bg-neutral-800"
+        >
+          <PiPencilSimpleBold className="h-3.5 w-3.5" />
+          Edit
+        </button>
+      )}
+
       {preview && previewShape && (
         <svg
           data-shape-preview
@@ -2082,24 +2192,6 @@ export function BoardExcalidraw({
                   {TEMPLATES[key].label}
                 </button>
               ))}
-            {/* Only with exactly one equation selected: its LaTeX is otherwise
-                unreachable, because the equation on the board is a picture. */}
-            {selectedMath && !mathOpen && (
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingMath(selectedMath);
-                  setMathSource(selectedMath.latex);
-                  setMathOpen(true);
-                }}
-                className={`pointer-events-auto ${pill} bg-white text-neutral-800`}
-              >
-                <span className="flex items-center gap-1.5">
-                  <PiPencilSimpleBold />
-                  Edit equation
-                </span>
-              </button>
-            )}
             <button
               type="button"
               onClick={() => {

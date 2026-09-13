@@ -59,6 +59,25 @@ async function select(page: Page, id: string) {
   }, id);
 }
 
+/** Double-click the middle of an equation, in page coordinates. */
+async function dblClickMath(page: Page, el: MathEl) {
+  const box = await page.locator('.excalidraw-container').first().boundingBox();
+  const view = await page.evaluate(() => {
+    const s = window.__livetichBoard!.getAppState();
+    return { scrollX: s.scrollX, scrollY: s.scrollY, zoom: s.zoom.value };
+  });
+  const size = await page.evaluate(
+    (id) => {
+      const e = window.__livetichBoard!.getSceneElements().find((x) => x.id === id)!;
+      return { w: e.width, h: e.height };
+    },
+    el.id,
+  );
+  const px = box!.x + (el.x + view.scrollX) * view.zoom + (size.w * view.zoom) / 2;
+  const py = box!.y + (el.y + view.scrollY) * view.zoom + (size.h * view.zoom) / 2;
+  await page.mouse.dblclick(px, py);
+}
+
 test('an imported equation can be edited and re-added', async ({ page }) => {
   await openBoard(page);
 
@@ -68,11 +87,11 @@ test('an imported equation can be edited and re-added', async ({ page }) => {
   await page.getByRole('button', { name: 'Add to board' }).click();
   const first = await waitForMath(page, ORIGINAL);
 
-  // --- selecting it reveals Edit, loaded with its own source ---
+  // --- selecting it puts an Edit chip on the equation itself ---
   await select(page, first.id);
-  const edit = page.getByRole('button', { name: 'Edit equation' });
-  await expect(edit).toBeVisible({ timeout: 10_000 });
-  await edit.click();
+  const chip = page.locator('[data-math-edit]');
+  await expect(chip).toBeVisible({ timeout: 10_000 });
+  await chip.click();
   await expect(page.locator('#board-math-input')).toHaveValue(ORIGINAL);
 
   // --- change a value, add it as the next line: original kept, new one below ---
@@ -85,9 +104,11 @@ test('an imported equation can be edited and re-added', async ({ page }) => {
   expect(added.x).toBeCloseTo(first.x, 1);
   await waitForMath(page, ORIGINAL); // the original survives
 
+  // --- double-clicking the equation opens the same editor, loaded ---
+  await dblClickMath(page, added);
+  await expect(page.locator('#board-math-input')).toHaveValue(EDITED);
+
   // --- replace rewrites in place: same element, same spot, new source ---
-  await select(page, added.id);
-  await page.getByRole('button', { name: 'Edit equation' }).click();
   await page.locator('#board-math-input').fill(REPLACED);
   await page.getByRole('button', { name: 'Replace', exact: true }).click();
   const replaced = await waitForMath(page, REPLACED);
