@@ -48,6 +48,7 @@ import {
   PiFunctionBold,
   PiXBold,
   PiLockBold,
+  PiLinkSimpleBold,
   PiLockOpenBold,
   PiPencilSimpleBold,
   PiSlidersHorizontalBold,
@@ -508,6 +509,10 @@ export function BoardExcalidraw({
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [shapesOpen, setShapesOpen] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkSource, setLinkSource] = useState('');
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const linkInputRef = useRef<HTMLInputElement>(null);
   const [mathOpen, setMathOpen] = useState(false);
   const [mathSource, setMathSource] = useState('');
   const [mathBusy, setMathBusy] = useState(false);
@@ -1604,6 +1609,82 @@ export function BoardExcalidraw({
     window.setTimeout(() => setResyncing(false), 900);
   }, [sessionId, teaching]);
 
+  /**
+   * Put a link on the board.
+   *
+   * Pasting one onto the canvas has always worked, but nothing said so — a
+   * gesture with no affordance is a feature only its author knows about. This
+   * is the same path with a door on it.
+   */
+  const addLinkToBoard = useCallback((raw: string) => {
+    const editor = apiRef.current;
+    const url = raw.trim();
+    if (!editor || !url) return;
+
+    const doc = googleEmbed(url);
+    const video = youTubeIdOf(url);
+    if (!doc && !video) {
+      setLinkError(
+        'That link cannot be opened on the board. Use a Google Doc, Sheet, Slides, Form or Drive file, or a YouTube video.',
+      );
+      return;
+    }
+
+    // A document is read down, a video and a deck across — so they do not get
+    // the same box.
+    const [w, h] = video
+      ? [560, 315]
+      : doc!.kind === 'presentation'
+        ? [640, 400]
+        : doc!.kind === 'spreadsheet'
+          ? [700, 440]
+          : [560, 720];
+
+    const state = editor.getAppState();
+    const [x1, y1, x2, y2] = getVisibleSceneBounds(state);
+    // convertToExcalidrawElements has no skeleton for embeddables, so the
+    // element is built outright — the same shape pasting a link produces.
+    const seed = () => Math.floor(Math.random() * 2 ** 31);
+    const element = {
+      id: crypto.randomUUID(),
+      type: 'embeddable',
+      x: (x1 + x2) / 2 - w / 2,
+      y: (y1 + y2) / 2 - h / 2,
+      width: w,
+      height: h,
+      angle: 0,
+      strokeColor: 'transparent',
+      backgroundColor: 'transparent',
+      fillStyle: 'solid',
+      strokeWidth: 1,
+      strokeStyle: 'solid',
+      roughness: 1,
+      opacity: 100,
+      groupIds: [],
+      frameId: null,
+      roundness: null,
+      seed: seed(),
+      version: 1,
+      versionNonce: seed(),
+      isDeleted: false,
+      boundElements: null,
+      updated: Date.now(),
+      link: url,
+      locked: false,
+      customData: undefined,
+      index: null,
+    } as unknown as ExcalidrawElement;
+
+    editor.updateScene({
+      elements: [...editor.getSceneElementsIncludingDeleted(), element],
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
+    editor.scrollToContent(element, { fitToContent: true, animate: false });
+    setLinkOpen(false);
+    setLinkSource('');
+    setLinkError(null);
+  }, []);
+
   const importFiles = useCallback(
     async (list: FileList | null) => {
       const editor = apiRef.current;
@@ -2224,6 +2305,24 @@ export function BoardExcalidraw({
             </button>
             <button
               type="button"
+              onClick={() => {
+                setLinkError(null);
+                setLinkOpen((v) => !v);
+                setTimeout(() => linkInputRef.current?.focus(), 0);
+              }}
+              className={`pointer-events-auto ${pill} ${
+                linkOpen
+                  ? 'bg-neutral-900 text-white ring-neutral-900'
+                  : 'bg-white text-neutral-800'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <PiLinkSimpleBold />
+                Link
+              </span>
+            </button>
+            <button
+              type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={importing}
               className={`pointer-events-auto ${pill} bg-white text-neutral-800 disabled:opacity-50`}
@@ -2270,6 +2369,64 @@ export function BoardExcalidraw({
           look like, then what it is made of, then the tools. The palette used
           to sit above both, so the thing you were making was buried in the
           middle of the thing you were making it with. */}
+      {linkOpen && canDraw && (
+        <div className="pointer-events-auto absolute left-1/2 top-14 z-[403] w-[min(32rem,calc(100%-2rem))] -translate-x-1/2 rounded-xl bg-white p-3 shadow-xl ring-1 ring-neutral-200">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              addLinkToBoard(linkSource);
+            }}
+          >
+            <label
+              htmlFor="board-link-input"
+              className="block text-xs font-semibold text-neutral-700"
+            >
+              Paste a link
+            </label>
+            <div className="mt-1.5 flex gap-2">
+              <input
+                id="board-link-input"
+                ref={linkInputRef}
+                value={linkSource}
+                onChange={(e) => {
+                  setLinkSource(e.target.value);
+                  setLinkError(null);
+                }}
+                placeholder="https://docs.google.com/document/d/…"
+                className="min-w-0 flex-1 rounded-lg border border-neutral-300 px-2.5 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-900 focus:outline-none focus:ring-4 focus:ring-neutral-900/10"
+              />
+              <button
+                type="submit"
+                disabled={linkSource.trim() === ''}
+                className={`${pill} shrink-0 bg-neutral-900 text-white ring-neutral-900 disabled:opacity-40`}
+              >
+                Add
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLinkOpen(false);
+                  setLinkSource('');
+                  setLinkError(null);
+                }}
+                className={`${pill} shrink-0 bg-white text-neutral-700`}
+              >
+                Cancel
+              </button>
+            </div>
+            {linkError ? (
+              <p className="mt-2 text-xs font-medium text-red-600">{linkError}</p>
+            ) : (
+              <p className="mt-2 text-xs text-neutral-500">
+                Google Docs, Sheets, Slides, Forms and Drive files, or a YouTube
+                video. Google files open read-only, and must be shared with
+                &ldquo;anyone with the link&rdquo; for the class to see them.
+              </p>
+            )}
+          </form>
+        </div>
+      )}
+
       {mathOpen && canDraw && (
         <div className="pointer-events-auto absolute left-1/2 top-14 z-[403] flex max-h-[calc(100%-5rem)] w-[min(41rem,calc(100%-2rem))] -translate-x-1/2 flex-col rounded-xl bg-white shadow-xl ring-1 ring-neutral-200">
           <div className="flex items-center justify-between border-b border-neutral-200 px-3 py-2">

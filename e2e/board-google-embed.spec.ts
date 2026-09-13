@@ -31,9 +31,13 @@ async function settle(page: Page) {
   const count = () =>
     page.evaluate(() => window.__livetichBoard?.getSceneElements().length ?? -1);
   let last = -2;
-  for (let i = 0; i < 40; i++) {
+  let steady = 0;
+  for (let i = 0; i < 60; i++) {
     const now = await count();
-    if (now >= 0 && now === last) return;
+    // Three readings, not one: the shared document streams in, and a single
+    // plateau between batches looks exactly like the end of the load.
+    steady = now >= 0 && now === last ? steady + 1 : 0;
+    if (steady >= 3) return;
     last = now;
     await page.waitForTimeout(500);
   }
@@ -85,5 +89,52 @@ test('pasting a Google Docs link puts the doc on the board', async ({ page, cont
         .map((el) => (el.id === id ? { ...el, isDeleted: true } : el)),
     });
   }, created.id);
+  await page.waitForTimeout(2000);
+});
+
+test('the Link control adds a Google file, and rejects what it cannot open', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await settle(page);
+
+  await page.getByRole('button', { name: 'Link' }).click();
+  const field = page.locator('#board-link-input');
+  await expect(field).toBeFocused();
+
+  // Something the board cannot open is refused, and says what it takes.
+  await field.fill('https://example.com/notes.pdf');
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(page.getByText(/cannot be opened on the board/i)).toBeVisible();
+  await expect(page.locator('#board-link-input')).toBeVisible(); // panel stays open
+
+  // A real Google link lands on the board.
+  const url = `https://docs.google.com/presentation/d/CTRL${Date.now() % 1000000}/edit`;
+  await field.fill(url);
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect
+    .poll(() => embeds(page).then((e) => e.filter((x) => x.link === url).length), {
+      timeout: 20_000,
+    })
+    .toBe(1);
+  await expect(page.locator('#board-link-input')).toHaveCount(0); // panel closed
+
+  const made = (await embeds(page)).find((e) => e.link === url)!;
+  // Slides embeds at /embed, not /preview. Scoped to this run's own id, since
+  // the board is shared and may already carry other decks.
+  const src = url.replace('/edit', '/embed');
+  await expect(page.locator(`iframe[src="${src}"]`)).toHaveCount(1, {
+    timeout: 20_000,
+  });
+
+  await page.evaluate((id) => {
+    const api = window.__livetichBoard;
+    if (!api) return;
+    api.updateScene({
+      elements: api
+        .getSceneElements()
+        .map((el) => (el.id === id ? { ...el, isDeleted: true } : el)),
+    });
+  }, made.id);
   await page.waitForTimeout(2000);
 });
