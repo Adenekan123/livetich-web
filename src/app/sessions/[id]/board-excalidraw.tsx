@@ -1275,9 +1275,38 @@ export function BoardExcalidraw({
     if (!editor || !shape) return;
     setShapesOpen(false);
     setActiveShape(key);
+
+    // Is a polygon already armed — that is, is currentItemOpacity currently the
+    // borrowed 0 rather than the instructor's real setting?
+    //
+    // Both branches below used to get this wrong, and both left the board
+    // drawing in fully transparent ink for the rest of the lesson:
+    //
+    //   - picking a second polygon re-captured the baseline, so the borrowed 0
+    //     became the "real" opacity to hand back, and
+    //   - picking a square, diamond or circle returned early without handing
+    //     anything back at all.
+    //
+    // Either way every later shape, and every line of text, was created at
+    // opacity 0: drawn, synced, selectable, and completely invisible. Nothing
+    // errors, so it reads as the chalkboard having simply stopped working, and
+    // it never recovers on its own.
+    const armed = armedShapeRef.current !== null;
+    const restoreOpacity = () => {
+      if (!armed) return;
+      editor.updateScene({
+        appState: { currentItemOpacity: armedOpacityRef.current },
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+    };
+
     if ('tool' in shape) {
       // A real Excalidraw tool — no placeholder, no conversion.
       armedShapeRef.current = null;
+      armedActiveRef.current = false;
+      previewRef.current = null;
+      setPreview(null);
+      restoreOpacity();
       editor.setActiveTool({ type: shape.tool });
       return;
     }
@@ -1287,7 +1316,11 @@ export function BoardExcalidraw({
     );
     // Draw the placeholder invisibly — the overlay shows the real shape while
     // the drag is in flight, so the instructor never sees a box.
-    armedOpacityRef.current = editor.getAppState().currentItemOpacity;
+    // Only read the opacity when it is actually the instructor's; re-reading it
+    // while borrowed is what poisoned the baseline.
+    if (!armed) {
+      armedOpacityRef.current = editor.getAppState().currentItemOpacity;
+    }
     armedActiveRef.current = false;
     editor.updateScene({
       appState: { currentItemOpacity: 0 },
@@ -1537,18 +1570,32 @@ export function BoardExcalidraw({
       setRailNode(null);
       return;
     }
-    let raf = 0;
-    const find = () => {
-      // The row holding the shape tools — CSS `order` puts our button right
-      // after the selection tool (see board-excalidraw.css).
-      const node = wrapperRef.current?.querySelector<HTMLElement>(
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+
+    // The row holding the shape tools — CSS `order` puts our button right
+    // after the selection tool (see board-excalidraw.css).
+    const sync = () => {
+      const node = wrapper.querySelector<HTMLElement>(
         '.App-toolbar .Stack_horizontal',
       );
-      if (node) setRailNode(node);
-      else raf = requestAnimationFrame(find);
+      // Re-point at the live node whenever the one we hold has been taken out
+      // of the document. Excalidraw swaps the whole toolbar when it crosses its
+      // mobile breakpoint, and the board is resized by anything that changes
+      // the top bar — starting a recording, for one. The old code looked once,
+      // stopped at the first hit, and kept portalling into whatever node it
+      // found; when Excalidraw replaced that node the shapes button rendered
+      // into a detached element and simply vanished, with no error and no way
+      // back short of reloading the page.
+      setRailNode((held) => (held?.isConnected ? held : (node ?? null)));
     };
-    raf = requestAnimationFrame(find);
-    return () => cancelAnimationFrame(raf);
+
+    sync();
+    // Cheaper and more reliable than polling every frame: react to the toolbar
+    // actually changing.
+    const mo = new MutationObserver(sync);
+    mo.observe(wrapper, { childList: true, subtree: true });
+    return () => mo.disconnect();
   }, [api, canEdit]);
 
   // Close the shapes flyout on a click anywhere else, or on Escape.
