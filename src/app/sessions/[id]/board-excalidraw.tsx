@@ -49,6 +49,7 @@ import {
   PiXBold,
   PiLockBold,
   PiLockOpenBold,
+  PiPencilSimpleBold,
   PiSlidersHorizontalBold,
   PiUploadSimpleBold,
 } from 'react-icons/pi';
@@ -101,6 +102,37 @@ const LOCAL = 'local';
  *  image import never rewrites the drawing map. */
 const ELEMENTS_KEY = 'excalidraw-elements';
 const FILES_KEY = 'excalidraw-files';
+/** One selected equation: the element to change, and the LaTeX behind it. */
+interface SelectedMath {
+  id: string;
+  latex: string;
+  x: number;
+  y: number;
+  height: number;
+}
+
+/**
+ * The one selected equation, or null.
+ *
+ * Only when exactly one is selected: "edit this" has no meaning over a
+ * multi-select, and silently picking the first of several would change
+ * something the teacher did not point at.
+ */
+function soleMathElement(
+  elements: readonly ExcalidrawElement[],
+  selectedIds: Readonly<Record<string, boolean>>,
+): SelectedMath | null {
+  let found: SelectedMath | null = null;
+  for (const el of elements) {
+    if (el.isDeleted || !selectedIds[el.id]) continue;
+    const latex = (el.customData as MathCustomData | undefined)?.livetichMath;
+    if (typeof latex !== 'string') return null; // a non-equation is in the selection
+    if (found) return null; // more than one
+    found = { id: el.id, latex, x: el.x, y: el.y, height: el.height };
+  }
+  return found;
+}
+
 /** Freehand drawing changes elements many times per second. Coalescing those
  *  mutations keeps the shared-board transport responsive on modest devices. */
 const SYNC_INTERVAL_MS = 50;
@@ -449,6 +481,14 @@ export function BoardExcalidraw({
   /** The instructor's playback position for a shared video. Ephemeral, so it
    *  rides awareness alongside the cursors rather than the persisted doc. */
   const [videoState, setVideoState] = useState<VideoState | null>(null);
+  /** The single selected equation, when exactly one is selected. An equation
+   *  is a picture of its LaTeX, so without this its source is unreachable and
+   *  the only way to change a value is to retype the whole formula. */
+  const [selectedMath, setSelectedMath] = useState<SelectedMath | null>(null);
+  const selectedMathRef = useRef<SelectedMath | null>(null);
+  /** Set while the panel is editing an existing equation rather than composing
+   *  a new one. */
+  const [editingMath, setEditingMath] = useState<SelectedMath | null>(null);
   const mathInputRef = useRef<HTMLTextAreaElement>(null);
   const [mathQuery, setMathQuery] = useState('');
   const [mathTab, setMathTab] = useState<MathCategory | 'Recent'>('Equations');
@@ -1164,6 +1204,16 @@ export function BoardExcalidraw({
         }
       }
 
+      // Which equation is selected, if any. Compared against a ref so this
+      // only ever sets state on a real change — the handler runs on every
+      // pointer move over the canvas.
+      const picked = soleMathElement(scene, state.selectedElementIds);
+      const held = selectedMathRef.current;
+      if (picked?.id !== held?.id || picked?.latex !== held?.latex) {
+        selectedMathRef.current = picked;
+        setSelectedMath(picked);
+      }
+
       emitPresenter(null);
     },
     [canEdit, flushLocal, shareNewFiles, emitPresenter],
@@ -1364,18 +1414,30 @@ export function BoardExcalidraw({
    * LaTeX source is kept on the element so it can be edited later rather than
    * being frozen into a picture.
    */
-  const addMathToBoard = useCallback(async () => {
-    const editor = apiRef.current;
-    const map = filesRef.current;
-    const doc = docRef.current;
-    const latex = mathSource.trim();
-    if (!editor || !map || !doc || !latex) return;
-    setMathBusy(true);
-    try {
-      const state = editor.getAppState();
+  /** Close the formula panel and forget what it was working on. */
+  const closeMath = useCallback(() => {
+    setMathOpen(false);
+    setMathSource('');
+    setEditingMath(null);
+  }, []);
+
+  /**
+   * Render LaTeX to a PNG, upload it, and register it with the board.
+   *
+   * Shared by adding and replacing: an equation is stored as a picture plus the
+   * source that made it, so both paths need exactly this and differ only in
+   * where the result lands.
+   */
+  const renderMathFile = useCallback(
+    async (
+      latex: string,
+      editor: ExcalidrawImperativeAPI,
+      map: Y.Map<SharedBoardFile>,
+      doc: Y.Doc,
+    ) => {
       const { file, width, height } = await renderMathToPng(
         latex,
-        state.currentItemStrokeColor,
+        editor.getAppState().currentItemStrokeColor,
       );
       const fileId = crypto.randomUUID();
       const { url, file: uploaded } = await uploadBoardAsset(sessionId, file);
@@ -1388,13 +1450,31 @@ export function BoardExcalidraw({
       doc.transact(() => {
         map.set(fileId, { id: fileId, url, mimeType: 'image/png', created });
       }, LOCAL);
+      return { fileId, width, height };
+    },
+    [sessionId],
+  );
 
+  const addMathToBoard = useCallback(async () => {
+    const editor = apiRef.current;
+    const map = filesRef.current;
+    const doc = docRef.current;
+    const latex = mathSource.trim();
+    if (!editor || !map || !doc || !latex) return;
+    setMathBusy(true);
+    try {
+      const state = editor.getAppState();
+      const { fileId, width, height } = await renderMathFile(latex, editor, map, doc);
+
+      // Editing? Stack the new step directly under the one it came from, which
+      // is how the working reads down the board. Otherwise centre it in view.
+      const from = editingMath;
       const [x1, y1, x2, y2] = getVisibleSceneBounds(state);
       const added = convertToExcalidrawElements([
         {
           type: 'image',
-          x: (x1 + x2) / 2 - width / 2,
-          y: (y1 + y2) / 2 - height / 2,
+          x: from ? from.x : (x1 + x2) / 2 - width / 2,
+          y: from ? from.y + from.height + 24 : (y1 + y2) / 2 - height / 2,
           width,
           height,
           fileId: fileId as FileId,
@@ -1405,14 +1485,55 @@ export function BoardExcalidraw({
         elements: [...editor.getSceneElementsIncludingDeleted(), ...added],
         captureUpdate: CaptureUpdateAction.IMMEDIATELY,
       });
-      setMathOpen(false);
-      setMathSource('');
+      closeMath();
     } catch {
       flash('That formula could not be added — check the LaTeX.');
     } finally {
       setMathBusy(false);
     }
-  }, [mathSource, sessionId, flash]);
+  }, [mathSource, editingMath, renderMathFile, closeMath, flash]);
+
+  /**
+   * Rewrite the selected equation in place.
+   *
+   * The element keeps its position and identity, so anything drawn around it
+   * stays where the teacher put it — only the picture and the LaTeX behind it
+   * change. Use this for a correction; "Add as a new line" is for working
+   * through the steps.
+   */
+  const replaceMathOnBoard = useCallback(async () => {
+    const editor = apiRef.current;
+    const map = filesRef.current;
+    const doc = docRef.current;
+    const latex = mathSource.trim();
+    const target = editingMath;
+    if (!editor || !map || !doc || !latex || !target) return;
+    setMathBusy(true);
+    try {
+      const { fileId, width, height } = await renderMathFile(latex, editor, map, doc);
+      editor.updateScene({
+        elements: editor.getSceneElementsIncludingDeleted().map((el) =>
+          el.id === target.id
+            ? {
+                ...el,
+                fileId: fileId as FileId,
+                width,
+                height,
+                customData: { livetichMath: latex } satisfies MathCustomData,
+                version: el.version + 1,
+                versionNonce: Math.floor(Math.random() * 2 ** 31),
+              }
+            : el,
+        ),
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      closeMath();
+    } catch {
+      flash('That formula could not be added — check the LaTeX.');
+    } finally {
+      setMathBusy(false);
+    }
+  }, [mathSource, editingMath, renderMathFile, closeMath, flash]);
 
   const resync = useCallback(() => {
     const socket = socketRef.current;
@@ -1961,9 +2082,31 @@ export function BoardExcalidraw({
                   {TEMPLATES[key].label}
                 </button>
               ))}
+            {/* Only with exactly one equation selected: its LaTeX is otherwise
+                unreachable, because the equation on the board is a picture. */}
+            {selectedMath && !mathOpen && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingMath(selectedMath);
+                  setMathSource(selectedMath.latex);
+                  setMathOpen(true);
+                }}
+                className={`pointer-events-auto ${pill} bg-white text-neutral-800`}
+              >
+                <span className="flex items-center gap-1.5">
+                  <PiPencilSimpleBold />
+                  Edit equation
+                </span>
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => setMathOpen((v) => !v)}
+              onClick={() => {
+                setEditingMath(null);
+                setMathSource('');
+                setMathOpen((v) => !v);
+              }}
               className={`pointer-events-auto ${pill} ${
                 mathOpen
                   ? 'bg-neutral-900 text-white ring-neutral-900'
@@ -2027,14 +2170,11 @@ export function BoardExcalidraw({
         <div className="pointer-events-auto absolute left-1/2 top-14 z-[403] flex max-h-[calc(100%-5rem)] w-[min(41rem,calc(100%-2rem))] -translate-x-1/2 flex-col rounded-xl bg-white shadow-xl ring-1 ring-neutral-200">
           <div className="flex items-center justify-between border-b border-neutral-200 px-3 py-2">
             <p className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">
-              Formula
+              {editingMath ? 'Edit formula' : 'Formula'}
             </p>
             <button
               type="button"
-              onClick={() => {
-                setMathOpen(false);
-                setMathSource('');
-              }}
+              onClick={closeMath}
               aria-label="Close"
               className="grid h-6 w-6 place-items-center rounded-lg text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700"
             >
@@ -2137,26 +2277,39 @@ export function BoardExcalidraw({
                 ? 'Nothing to add yet'
                 : mathIssue
                   ? 'Fix the formula to add it'
-                  : 'Lands in the middle of your view'}
+                  : editingMath
+                    ? 'Replace it, or add the next line underneath'
+                    : 'Lands in the middle of your view'}
             </p>
             <div className="flex shrink-0 gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setMathOpen(false);
-                  setMathSource('');
-                }}
+                onClick={closeMath}
                 className={`${pill} bg-white text-neutral-700`}
               >
                 Cancel
               </button>
+              {editingMath && (
+                <button
+                  type="button"
+                  onClick={() => void replaceMathOnBoard()}
+                  disabled={mathBusy || !!mathIssue || mathSource.trim() === ''}
+                  className={`${pill} bg-white text-neutral-800 disabled:opacity-40`}
+                >
+                  {mathBusy ? 'Working…' : 'Replace'}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => void addMathToBoard()}
                 disabled={mathBusy || !!mathIssue || mathSource.trim() === ''}
                 className={`${pill} bg-neutral-900 text-white ring-neutral-900 disabled:opacity-40`}
               >
-                {mathBusy ? 'Adding…' : 'Add to board'}
+                {mathBusy
+                  ? 'Adding…'
+                  : editingMath
+                    ? 'Add as a new line'
+                    : 'Add to board'}
               </button>
             </div>
           </div>
