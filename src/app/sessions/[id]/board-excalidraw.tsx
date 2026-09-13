@@ -60,6 +60,8 @@ import type {
   BoardClientToServerEvents,
   BoardServerToClientEvents,
 } from '@/lib/realtime-contract';
+import { BoardDocEmbed } from './board-doc-embed';
+import { googleEmbed } from './board-docs';
 import { BoardVideoEmbed } from './board-video-embed';
 import { youTubeIdOf, type VideoState } from './board-video';
 import {
@@ -1889,19 +1891,29 @@ export function BoardExcalidraw({
         // room. Anything else keeps Excalidraw's rendering.
         renderEmbeddable={(element) => {
           const videoId = youTubeIdOf(element.link);
-          if (!videoId) return null;
-          return (
-            <BoardVideoEmbed
-              elementId={element.id}
-              videoId={videoId}
-              canControl={canDraw}
-              state={videoState}
-              onBroadcast={broadcastVideo}
-            />
-          );
+          if (videoId) {
+            return (
+              <BoardVideoEmbed
+                elementId={element.id}
+                videoId={videoId}
+                canControl={canDraw}
+                state={videoState}
+                onBroadcast={broadcastVideo}
+              />
+            );
+          }
+          // A Google link has to be rewritten to its read-only viewer before it
+          // will frame at all, and it is rendered here rather than handed back
+          // to Excalidraw so the element keeps the URL the instructor pasted.
+          const doc = googleEmbed(element.link);
+          if (doc) return <BoardDocEmbed embed={doc} link={element.link!} />;
+          return null;
         }}
-        // Excalidraw does not recognise youtu.be short links on its own.
-        validateEmbeddable={(link) => (youTubeIdOf(link) ? true : undefined)}
+        // Excalidraw does not recognise youtu.be short links on its own, and
+        // has no idea about Google files at all.
+        validateEmbeddable={(link) =>
+          youTubeIdOf(link) || googleEmbed(link) ? true : undefined
+        }
         UIOptions={{
           canvasActions: {
             loadScene: false,
