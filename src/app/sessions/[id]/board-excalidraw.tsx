@@ -49,7 +49,6 @@ import {
   PiXBold,
   PiLockBold,
   PiLockOpenBold,
-  PiPenNibBold,
   PiSlidersHorizontalBold,
   PiUploadSimpleBold,
 } from 'react-icons/pi';
@@ -102,10 +101,6 @@ const LOCAL = 'local';
  *  image import never rewrites the drawing map. */
 const ELEMENTS_KEY = 'excalidraw-elements';
 const FILES_KEY = 'excalidraw-files';
-/** Finer than Excalidraw's thinnest (its "thin" is 1), for small handwriting
- *  and annotating over a shared page. */
-const FINE_STROKE_WIDTH = 0.5;
-
 /** Freehand drawing changes elements many times per second. Coalescing those
  *  mutations keeps the shared-board transport responsive on modest devices. */
 const SYNC_INTERVAL_MS = 50;
@@ -454,9 +449,6 @@ export function BoardExcalidraw({
   /** The instructor's playback position for a shared video. Ephemeral, so it
    *  rides awareness alongside the cursors rather than the persisted doc. */
   const [videoState, setVideoState] = useState<VideoState | null>(null);
-  /** Mirrors Excalidraw's current stroke width so the Fine pill can show
-   *  whether it is the one in use. */
-  const [strokeWidth, setStrokeWidth] = useState<number>(1);
   const mathInputRef = useRef<HTMLTextAreaElement>(null);
   const [mathQuery, setMathQuery] = useState('');
   const [mathTab, setMathTab] = useState<MathCategory | 'Recent'>('Equations');
@@ -1172,13 +1164,9 @@ export function BoardExcalidraw({
         }
       }
 
-      if (state.currentItemStrokeWidth !== strokeWidth) {
-        setStrokeWidth(state.currentItemStrokeWidth);
-      }
-
       emitPresenter(null);
     },
-    [canEdit, strokeWidth, flushLocal, shareNewFiles, emitPresenter],
+    [canEdit, flushLocal, shareNewFiles, emitPresenter],
   );
 
   /** Broadcast this user's pointer; the instructor's also drives the laser. */
@@ -1973,47 +1961,6 @@ export function BoardExcalidraw({
                   {TEMPLATES[key].label}
                 </button>
               ))}
-            {/* Excalidraw's thinnest stroke is 1, which is still heavy for
-                small handwriting or annotating over a page. This sets a finer
-                one, and applies it to anything selected, the way its own width
-                buttons do. */}
-            <button
-              type="button"
-              onClick={() => {
-                const editor = apiRef.current;
-                if (!editor) return;
-                const fine = strokeWidth !== FINE_STROKE_WIDTH;
-                const width = fine ? FINE_STROKE_WIDTH : 1;
-                const selected = editor.getAppState().selectedElementIds;
-                editor.updateScene({
-                  elements: editor
-                    .getSceneElementsIncludingDeleted()
-                    .map((el) =>
-                      selected[el.id]
-                        ? {
-                            ...el,
-                            strokeWidth: width,
-                            version: el.version + 1,
-                            versionNonce: Math.floor(Math.random() * 2 ** 31),
-                          }
-                        : el,
-                    ),
-                  appState: { currentItemStrokeWidth: width },
-                  captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-                });
-                setStrokeWidth(width);
-              }}
-              className={`pointer-events-auto ${pill} ${
-                strokeWidth === FINE_STROKE_WIDTH
-                  ? 'bg-neutral-900 text-white ring-neutral-900'
-                  : 'bg-white text-neutral-800'
-              }`}
-            >
-              <span className="flex items-center gap-1.5">
-                <PiPenNibBold />
-                Fine pen
-              </span>
-            </button>
             <button
               type="button"
               onClick={() => setMathOpen((v) => !v)}
