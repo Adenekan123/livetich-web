@@ -13,6 +13,7 @@ import {
 import { api } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
 import { avatarColor, btn, cn } from '@/lib/ui';
+import { QuickAccessNudge } from './quick-access-nudge';
 import type {
   CatalogCourse,
   Certificate,
@@ -392,6 +393,16 @@ export default async function DashboardPage() {
   if (!user) redirect('/login');
   const token = (await getToken())!;
 
+  // Only for the students' quick-access prompt, which names the workspace it is
+  // offering to put on their home screen. Best-effort: a missing name softens
+  // the copy rather than failing the dashboard.
+  const workspaceName =
+    user.role === 'STUDENT'
+      ? await api<{ name: string } | null>('/organizations/me', { token })
+          .then((o) => o?.name ?? null)
+          .catch(() => null)
+      : null;
+
   return (
     <main className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       {user.role === 'ORG_ADMIN' ? (
@@ -399,7 +410,11 @@ export default async function DashboardPage() {
       ) : user.role === 'INSTRUCTOR' ? (
         <InstructorDashboard token={token} name={user.name} />
       ) : (
-        <StudentDashboard token={token} name={user.name} />
+        <StudentDashboard
+          token={token}
+          name={user.name}
+          workspaceName={workspaceName}
+        />
       )}
     </main>
   );
@@ -720,10 +735,21 @@ function nextClassFromCadence(enrollments: Enrollment[]): NextClass | null {
   return { title: best.title, when: `${dayLabel} · ${formatTime12(best.time)}` };
 }
 
-async function StudentDashboard({ token, name }: { token: string; name: string }) {
-  const [enrollments, certificates] = await Promise.all([
+async function StudentDashboard({
+  token,
+  name,
+  workspaceName,
+}: {
+  token: string;
+  name: string;
+  workspaceName: string | null;
+}) {
+  const [enrollments, certificates, quickAccess] = await Promise.all([
     api<Enrollment[]>('/courses/enrolled', { token }),
     api<Certificate[]>('/certificates/mine', { token }),
+    // Null when they have never set one up — the only case worth prompting.
+    // Never let this fail the dashboard: it decides a nudge, nothing more.
+    api<{ slug: string } | null>('/auth/quick-access', { token }).catch(() => null),
   ]);
   const next = nextClassFromCadence(enrollments);
 
@@ -741,6 +767,7 @@ async function StudentDashboard({ token, name }: { token: string; name: string }
         }
       />
       <div className="space-y-6">
+        {!quickAccess && <QuickAccessNudge workspaceName={workspaceName} />}
         {next && (
           <div className="flex flex-col gap-3 rounded-2xl border border-accent-100 bg-gradient-to-r from-accent-50 to-white p-4 sm:flex-row sm:items-center sm:gap-4">
             <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-accent-600" />

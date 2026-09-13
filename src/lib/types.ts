@@ -410,6 +410,10 @@ export interface Enrollment {
     description: string | null;
     createdAt: string;
     instructor: { id: string; name: string };
+    /** Set while a class of this program is actually running. */
+    liveSessionId?: string | null;
+    /** Start of the next scheduled class, if there is one. */
+    nextSessionAt?: string | null;
   } & Partial<CohortFields>;
 }
 
