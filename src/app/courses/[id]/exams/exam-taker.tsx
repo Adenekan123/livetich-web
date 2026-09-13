@@ -134,19 +134,21 @@ function ExamCard({
         <h3 className="font-semibold text-neutral-950">{exam.title}</h3>
         <p className="mt-0.5 text-xs text-neutral-400">
           {exam.questionCount} questions · {exam.durationMinutes} min
-          {done && ` · last scored ${exam.myAttempt!.score}%`}
+          {done && ` · scored ${exam.myAttempt!.score}%`}
         </p>
         {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
       </div>
       {done ? (
-        <div className="flex items-center gap-2">
-          <button onClick={onReview} disabled={reviewing} className={btn('ghost', 'sm')}>
-            Review
-          </button>
-          <button onClick={begin} disabled={pending} className={btn('secondary', 'sm')}>
-            {pending ? 'Starting…' : 'Retake'}
-          </button>
-        </div>
+        // One sitting each, so there is nothing to offer here but the answers.
+        // Retake sat beside this; the server now refuses a second attempt, and
+        // a button that always errors is worse than no button at all.
+        <button
+          onClick={onReview}
+          disabled={reviewing}
+          className={btn('secondary', 'sm')}
+        >
+          Review
+        </button>
       ) : (
         <button onClick={begin} disabled={pending} className={btn('primary', 'sm')}>
           {pending ? 'Starting…' : 'Start'}
