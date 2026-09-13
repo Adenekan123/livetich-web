@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from 'react';
 import {
   PiCaretDown,
   PiCheck,
-  PiMicrophoneStage,
+  PiNotePencil,
   PiPlus,
   PiTrash,
 } from 'react-icons/pi';
@@ -153,7 +153,9 @@ export function HifzManager({
 
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
         <h2 className="text-[15px] font-semibold text-neutral-950">
-          {waiting > 0 ? `${waiting} to hear` : 'Everyone has been heard today'}
+          {waiting > 0
+            ? `${waiting} not heard yet today`
+            : 'Everyone has been heard today'}
           <span className="ml-2 font-normal text-neutral-500">
             of {rows.length} student{rows.length === 1 ? '' : 's'}
           </span>
@@ -325,8 +327,8 @@ function StudentCard({
             </>
           ) : (
             <>
-              <PiMicrophoneStage className="h-4 w-4" aria-hidden />
-              Hear {student.name.split(' ')[0]}
+              <PiNotePencil className="h-4 w-4" aria-hidden />
+              Log recitation
             </>
           )}
         </button>
@@ -569,7 +571,7 @@ function RecitationForm({
         setRating(null);
       }}
     >
-      <h4 className="font-semibold text-neutral-950">Record a recitation</h4>
+      <h4 className="font-semibold text-neutral-950">Log a recitation</h4>
       <p className="mt-0.5 text-sm text-neutral-600">
         {target
           ? 'Filled in from their target — change it if they recited something else.'

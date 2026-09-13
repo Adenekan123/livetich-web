@@ -53,7 +53,7 @@ export default async function HifzPage(props: {
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-neutral-500">
             {canManage
-              ? 'Hear each student recite, record how it went, and set what they memorize next.'
+              ? 'You hear each student recite in class or in the live session — this is where you write down how it went, and set what they memorize next.'
               : 'What you have been set to memorize, and how your recitations have gone.'}
           </p>
         </div>
