@@ -104,14 +104,14 @@ test('the Link control adds a Google file, and rejects what it cannot open', asy
 
   // Something the board cannot open is refused, and says what it takes.
   await field.fill('https://example.com/notes.pdf');
-  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByRole('button', { name: /Add live view/ }).click();
   await expect(page.getByText(/cannot be opened on the board/i)).toBeVisible();
   await expect(page.locator('#board-link-input')).toBeVisible(); // panel stays open
 
   // A real Google link lands on the board.
   const url = `https://docs.google.com/presentation/d/CTRL${Date.now() % 1000000}/edit`;
   await field.fill(url);
-  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByRole('button', { name: /Add live view/ }).click();
   await expect
     .poll(() => embeds(page).then((e) => e.filter((x) => x.link === url).length), {
       timeout: 20_000,

@@ -513,6 +513,9 @@ export function BoardExcalidraw({
   const [linkSource, setLinkSource] = useState('');
   const [linkError, setLinkError] = useState<string | null>(null);
   const linkInputRef = useRef<HTMLInputElement>(null);
+  const importFilesRef = useRef<
+    ((list: readonly File[]) => Promise<void>) | null
+  >(null);
   const [mathOpen, setMathOpen] = useState(false);
   const [mathSource, setMathSource] = useState('');
   const [mathBusy, setMathBusy] = useState(false);
@@ -1685,8 +1688,61 @@ export function BoardExcalidraw({
     setLinkError(null);
   }, []);
 
+  /**
+   * Put a Google file on the board as pages.
+   *
+   * The embed is live but sealed: it cannot be scrolled in step for the class,
+   * and cannot be drawn on. Pages can — they are ordinary board content, so the
+   * follow mechanism already carries them and the instructor can write over
+   * them. The trade is that they are a snapshot: later edits in Google do not
+   * appear until it is imported again.
+   *
+   * The PDF is fetched by the API, because Google sends no CORS headers and the
+   * browser is refused before it starts.
+   */
+  const importGoogleAsPages = useCallback(
+    async (raw: string) => {
+      const url = raw.trim();
+      if (!url) return;
+      setImporting(true);
+      try {
+        const token = await getRealtimeToken();
+        const res = await fetch(
+          `${API_URL}/sessions/${sessionId}/board-google-import`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token ?? ''}`,
+            },
+            body: JSON.stringify({ url }),
+          },
+        );
+        if (!res.ok) {
+          const detail = await res
+            .json()
+            .then((b: { message?: string }) => b?.message)
+            .catch(() => null);
+          setLinkError(detail ?? 'That file could not be imported.');
+          return;
+        }
+        const blob = await res.blob();
+        const file = new File([blob], 'google.pdf', { type: 'application/pdf' });
+        setLinkOpen(false);
+        setLinkSource('');
+        setLinkError(null);
+        await importFilesRef.current?.([file]);
+      } catch {
+        setLinkError('That file could not be imported.');
+      } finally {
+        setImporting(false);
+      }
+    },
+    [sessionId],
+  );
+
   const importFiles = useCallback(
-    async (list: FileList | null) => {
+    async (list: readonly File[] | FileList | null) => {
       const editor = apiRef.current;
       const map = filesRef.current;
       const doc = docRef.current;
@@ -1694,7 +1750,7 @@ export function BoardExcalidraw({
       setImporting(true);
       try {
         const images: File[] = [];
-        for (const file of Array.from(list)) {
+        for (const file of Array.from(list as ArrayLike<File>)) {
           if (file.type === 'application/pdf') {
             const pages = await pdfToImageFiles(file);
             if (pages.length === PDF_MAX_PAGES) {
@@ -1762,6 +1818,10 @@ export function BoardExcalidraw({
     },
     [sessionId, flash],
   );
+
+  // importGoogleAsPages is declared above importFiles, so it reaches the
+  // importer through a ref rather than forcing a reorder of the file.
+  importFilesRef.current = importFiles;
 
   const exportPng = useCallback(async () => {
     const editor = apiRef.current;
@@ -2404,13 +2464,6 @@ export function BoardExcalidraw({
                 className="min-w-0 flex-1 rounded-lg border border-neutral-300 px-2.5 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-900 focus:outline-none focus:ring-4 focus:ring-neutral-900/10"
               />
               <button
-                type="submit"
-                disabled={linkSource.trim() === ''}
-                className={`${pill} shrink-0 bg-neutral-900 text-white ring-neutral-900 disabled:opacity-40`}
-              >
-                Add
-              </button>
-              <button
                 type="button"
                 onClick={() => {
                   setLinkOpen(false);
@@ -2422,13 +2475,45 @@ export function BoardExcalidraw({
                 Cancel
               </button>
             </div>
+
+            {/* Two different things, so two buttons rather than one Add and a
+                setting. Pages is first because it is what teaching from a
+                document needs; the live view is for showing, not working. */}
+            <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => void importGoogleAsPages(linkSource)}
+                disabled={importing || linkSource.trim() === ''}
+                className="rounded-lg border border-neutral-900 bg-neutral-900 px-3 py-2 text-left text-white transition hover:bg-neutral-800 disabled:opacity-40"
+              >
+                <span className="block text-xs font-semibold">
+                  {importing ? 'Importing…' : 'Add as pages'}
+                </span>
+                <span className="mt-0.5 block text-[11px] leading-snug text-neutral-300">
+                  Everyone scrolls together, and you can write on it. A
+                  snapshot — later edits will not appear.
+                </span>
+              </button>
+              <button
+                type="submit"
+                disabled={linkSource.trim() === ''}
+                className="rounded-lg border border-neutral-300 px-3 py-2 text-left text-neutral-900 transition hover:border-neutral-400 hover:bg-neutral-50 disabled:opacity-40"
+              >
+                <span className="block text-xs font-semibold">Add live view</span>
+                <span className="mt-0.5 block text-[11px] leading-snug text-neutral-500">
+                  Always current, but read-only, and each person scrolls it
+                  themselves.
+                </span>
+              </button>
+            </div>
+
             {linkError ? (
               <p className="mt-2 text-xs font-medium text-red-600">{linkError}</p>
             ) : (
               <p className="mt-2 text-xs text-neutral-500">
-                Google Docs, Sheets, Slides, Forms and Drive files, or a YouTube
-                video. Google files open read-only, and must be shared with
-                &ldquo;anyone with the link&rdquo; for the class to see them.
+                Google Docs, Sheets, Slides and Drive files, or a YouTube video
+                (live view only). Google files must be shared with &ldquo;anyone
+                with the link&rdquo;.
               </p>
             )}
           </form>
