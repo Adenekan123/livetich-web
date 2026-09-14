@@ -180,6 +180,15 @@ const PRESENTER_INTERVAL_MS = 100;
 /** Hydration retries per file, and the base of their exponential backoff. */
 const MAX_FILE_RETRIES = 3;
 const FILE_RETRY_BASE_MS = 500;
+/**
+ * How long a viewer keeps their own view after moving it.
+ *
+ * Long enough to read the thing they went to look at; short enough that the
+ * instructor's next move brings them back. Only a viewer who is still moving
+ * the board is treated as navigating — stillness means they are done.
+ */
+const REFOLLOW_GRACE_MS = 6000;
+
 /** Identifier for the presenter's laser in the collaborator overlay. It rides
  *  the presenter channel rather than awareness, so it needs a reserved slot. */
 const PRESENTER_ID = 'presenter' as SocketId;
@@ -493,6 +502,9 @@ export function BoardExcalidraw({
     zoom: number;
   } | null>(null);
   const followingRef = useRef(true);
+  /** When this viewer last moved the board themselves. A student who nudged the
+   *  wheel is not navigating; a student still moving is. */
+  const lastSelfMoveRef = useRef(0);
   /** Whether we have framed the board once for this mount. */
   const didInitialFitRef = useRef(false);
   const lastBoundsRef = useRef<{ x: number; y: number; w: number; h: number } | null>(
@@ -899,7 +911,17 @@ export function BoardExcalidraw({
         collaboratorsRef.current.delete(PRESENTER_ID);
       }
       editor.updateScene({ collaborators: new Map(collaboratorsRef.current) });
-      if (followingRef.current) applyPresenterView();
+      if (followingRef.current) {
+        applyPresenterView();
+      } else if (Date.now() - lastSelfMoveRef.current > REFOLLOW_GRACE_MS) {
+        // Rejoin the lesson. Scrolling used to detach a viewer for good, so one
+        // nudge of a wheel left a student stranded while the class moved on —
+        // and the only way back was noticing a small pill. The instructor
+        // moving is the signal that the lesson has gone somewhere new, so
+        // anyone who has stopped navigating comes along.
+        setFollowing(true);
+        applyPresenterView();
+      }
     });
     socket.on('error', (error) => {
       if (error.code !== 'UNAUTHORIZED' || authRetries >= 2) return;
@@ -1324,16 +1346,24 @@ export function BoardExcalidraw({
         return;
       }
       if (!followingRef.current) return;
+      const applied = lastAppliedViewRef.current;
+      // Nothing to have drifted from yet. Until the instructor's first camera
+      // arrives, every scroll here is Excalidraw moving itself — mounting the
+      // canvas, fitting the scene, a container resize — and counting that as
+      // the viewer opting out unfollowed every student a second after they
+      // opened the board, before the instructor had done anything at all.
+      if (applied === null) return;
       // Excalidraw normalises the zoom it actually applies, so compare with a
       // tolerance — still an order of magnitude tighter than any real gesture,
       // where one wheel step is ~10%.
-      const applied = lastAppliedViewRef.current;
       const isOurs =
-        applied !== null &&
         Math.abs(applied.scrollX - scrollX) < 0.5 &&
         Math.abs(applied.scrollY - scrollY) < 0.5 &&
         Math.abs(applied.zoom - zoom.value) < 0.01;
-      if (!isOurs) setFollowing(false);
+      if (!isOurs) {
+        lastSelfMoveRef.current = Date.now();
+        setFollowing(false);
+      }
     },
     [canDraw, emitPresenter],
   );
