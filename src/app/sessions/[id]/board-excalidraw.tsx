@@ -743,15 +743,25 @@ export function BoardExcalidraw({
       minZoom: 0.1,
       maxZoom: 4,
     });
-    lastAppliedViewRef.current = {
-      scrollX: fitted.scrollX,
-      scrollY: fitted.scrollY,
-      zoom: fitted.zoom.value,
-    };
+    // Zoom from the fitted region, but centre on the presenter's own view.
+    //
+    // Letting the fit choose the position too is what made following drift:
+    // the region is the presenter's viewport clipped to the content, so
+    // scrolling towards an edge shrinks it, and a follower centred on a
+    // shrinking rectangle travels at a fraction of the presenter's speed —
+    // measured at half, with the gap widening on every scroll. The zoom still
+    // comes from the region, which is what keeps a lone page filling a phone.
+    const z = fitted.zoom.value;
+    const centreX = bounds.x + bounds.w / 2;
+    const centreY = bounds.y + bounds.h / 2;
+    const scrollX = appState.width / (2 * z) - centreX;
+    const scrollY = appState.height / (2 * z) - centreY;
+
+    lastAppliedViewRef.current = { scrollX, scrollY, zoom: z };
     editor.updateScene({
       appState: {
-        scrollX: fitted.scrollX,
-        scrollY: fitted.scrollY,
+        scrollX,
+        scrollY,
         zoom: fitted.zoom,
       },
       captureUpdate: CaptureUpdateAction.NEVER,

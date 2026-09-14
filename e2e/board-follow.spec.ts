@@ -63,11 +63,38 @@ test("a student follows the instructor's camera", async ({ browser }) => {
 
   expect(await followLabel(student)).toBe('Following instructor');
 
-  const start = await cam(student);
-  await scroll(teacher, 6);
-  await expect
-    .poll(async () => moved(start, await cam(student)), { timeout: 30_000 })
-    .toBeGreaterThan(20);
+  // Frame the whole board first. This is the state the drift needed: zoomed
+  // out far enough that the viewport runs past the content, so the follower's
+  // region gets clipped and starts shrinking as the instructor scrolls.
+  await teacher.evaluate(() =>
+    window.__livetichBoard!.scrollToContent(undefined, { fitToContent: true }),
+  );
+  await teacher.waitForTimeout(2500);
+
+  // Step by step, because the defect was a *rate*: the follower moved at half
+  // the instructor's speed and fell further behind on every scroll. Totals hide
+  // that — the student does move, just never as far — so each step is compared
+  // on its own, with time to settle between them.
+  const box = (await teacher.locator('.excalidraw-container').first().boundingBox())!;
+  await teacher.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+
+  let tPrev = await cam(teacher);
+  let sPrev = await cam(student);
+  for (let step = 0; step < 3; step++) {
+    await teacher.mouse.wheel(0, 120);
+    await teacher.waitForTimeout(1800);
+    const tNow = await cam(teacher);
+    const sNow = await cam(student);
+    const tStep = moved(tPrev, tNow);
+    const sStep = moved(sPrev, sNow);
+    expect(tStep, 'the instructor should have moved').toBeGreaterThan(20);
+    expect(
+      Math.abs(tStep - sStep),
+      `step ${step}: instructor moved ${tStep}, student ${sStep}`,
+    ).toBeLessThan(Math.max(40, tStep * 0.15));
+    tPrev = tNow;
+    sPrev = sNow;
+  }
 
   // --- the case that was broken ---
   // A student nudges the board themselves. That detaches them, which is the
