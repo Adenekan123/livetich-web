@@ -65,6 +65,7 @@ import {
   type LiveCodingTask,
 } from './live-coding-panel';
 import { QuranReader } from './quran-reader';
+import { useTajweed } from './use-tajweed';
 import { RecordButton } from './record-button';
 import {
   primeTones,
@@ -356,6 +357,21 @@ export function ClassRoom({
 
   // A teach-mode admin acts as the instructor (host UI, publishes, controls).
   const isInstructor = me.role === 'INSTRUCTOR' || teaching;
+  // Tajweed annotations on the shared mushaf. Always created (it is a hook),
+  // inert unless the Islamic Education pack is on.
+  const tajweed = useTajweed({
+    courseId,
+    sessionId,
+    canEdit: isInstructor,
+    enabled: islamicEducation,
+    socketRef,
+  });
+  // Socket handlers are bound once per connection; they reach the latest hook
+  // through this ref rather than re-binding every time an annotation changes.
+  const tajweedRef = useRef(tajweed);
+  useEffect(() => {
+    tajweedRef.current = tajweed;
+  });
   // Admins otherwise shadow-join: hidden from everyone, read-only. They watch
   // and listen but never publish, raise a hand, or post — presence stays unseen.
   const isShadow = me.role === 'ORG_ADMIN' && !teaching;
@@ -414,6 +430,9 @@ export function ClassRoom({
     // looping. Reset once a connect succeeds.
     let authRetries = 0;
     const MAX_AUTH_RETRIES = 2;
+    // The first connect loads Tajweed annotations on mount already; every later
+    // one is a reconnect, which may have missed events while offline.
+    let tajweedConnectedBefore = false;
 
     const pushWave = (name: string) => {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -424,6 +443,8 @@ export function ClassRoom({
     socket.on('connect', () => {
       authRetries = 0;
       setConnected(true);
+      if (tajweedConnectedBefore) tajweedRef.current.resync();
+      tajweedConnectedBefore = true;
       socket.emit('room:join', {
         sessionId,
         ...(teaching ? { as: 'teach' as const } : {}),
@@ -445,6 +466,18 @@ export function ClassRoom({
     socket.on('theme:changed', (p) => setScheme(p.scheme));
     socket.on('quran:position', (p) =>
       setQuranPos({ surah: p.surah, ayah: p.ayah }),
+    );
+    socket.on('tajweed:annotation:created', (p) =>
+      tajweedRef.current.receiveSaved(p.annotation),
+    );
+    socket.on('tajweed:annotation:updated', (p) =>
+      tajweedRef.current.receiveSaved(p.annotation),
+    );
+    socket.on('tajweed:annotation:deleted', (p) =>
+      tajweedRef.current.receiveDeleted(p.id),
+    );
+    socket.on('tajweed:temporary', (p) =>
+      tajweedRef.current.receiveLive(p.annotations),
     );
     // Staff-only: a student just submitted coursework. Nudge the grading panel
     // to reload and flag it to the instructor.
@@ -1173,6 +1206,8 @@ export function ClassRoom({
                 ayah={quranPos.ayah}
                 isInstructor={isInstructor}
                 onNavigate={navigateQuran}
+                tajweed={tajweed}
+                students={users.filter((u) => u.role === 'STUDENT')}
               />
             </div>
           )}
