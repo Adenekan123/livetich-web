@@ -218,7 +218,6 @@ export function ClassRoom({
   teaching = false,
   islamicEducation = false,
   codeInstruction = false,
-  testPrep = false,
   initialView,
   dataSaverDefault,
 }: {
@@ -234,7 +233,8 @@ export function ClassRoom({
   islamicEducation?: boolean;
   /** Code Instruction pack on for this org — unlocks the shared code editor. */
   codeInstruction?: boolean;
-  /** Test Prep pack on — adds exam-style chalkboard templates (axes). */
+  /** Test Prep pack on. The classroom reads nothing from it since the board
+   *  templates went; still accepted so callers need not change. */
   testPrep?: boolean;
   /** The surface the class is already on, when the caller knows it up front. */
   initialView?: StageView;
@@ -1162,10 +1162,6 @@ export function ClassRoom({
               sessionId={sessionId}
               canDraw={isInstructor}
               teaching={teaching}
-              templates={[
-                'lined',
-                ...(testPrep ? ['axes'] : []),
-              ]}
             />
           </div>
           {/* Only mounted when the Islamic Education pack is on, so a plain

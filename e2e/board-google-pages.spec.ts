@@ -61,7 +61,7 @@ test('a Google file imports as page images', async ({ page }) => {
   await settle(page);
   const before = await images(page);
 
-  await page.getByRole('button', { name: 'Link' }).click();
+  await page.getByRole('button', { name: 'Docs & video' }).click();
   await page.locator('#board-link-input').fill(DOC);
   await page.getByRole('button', { name: /Add as pages/ }).click();
 
@@ -97,7 +97,7 @@ test('an unimportable link is refused without leaving the panel', async ({ page 
   await openBoard(page);
   await settle(page);
 
-  await page.getByRole('button', { name: 'Link' }).click();
+  await page.getByRole('button', { name: 'Docs & video' }).click();
   await page.locator('#board-link-input').fill('https://example.com/notes.pdf');
   await page.getByRole('button', { name: /Add as pages/ }).click();
 

@@ -52,8 +52,14 @@ function loadPdfjs() {
  * Rasterise a PDF into one PNG File per page. Excalidraw has no native PDF
  * element, so a deck lands on the board as image elements that sync over the
  * same Yjs doc as any drawing.
+ *
+ * `onPage` reports pages done out of pages to do — once with 0 as soon as the
+ * page count is known, then after each page — so a caller can show progress.
  */
-export async function pdfToImageFiles(file: File): Promise<File[]> {
+export async function pdfToImageFiles(
+  file: File,
+  onPage?: (done: number, count: number) => void,
+): Promise<File[]> {
   const pdfjs = await loadPdfjs();
   const data = await file.arrayBuffer();
   const pdf = await pdfjs.getDocument({ data }).promise;
@@ -61,6 +67,7 @@ export async function pdfToImageFiles(file: File): Promise<File[]> {
   const out: File[] = [];
   try {
     const count = Math.min(pdf.numPages, PDF_MAX_PAGES);
+    onPage?.(0, count);
     for (let n = 1; n <= count; n++) {
       const page = await pdf.getPage(n);
       const base = page.getViewport({ scale: 1 });
@@ -76,6 +83,7 @@ export async function pdfToImageFiles(file: File): Promise<File[]> {
         canvas.toBlob(res, 'image/png'),
       );
       if (blob) out.push(new File([blob], `${stem}-p${n}.png`, { type: 'image/png' }));
+      onPage?.(n, count);
     }
   } finally {
     await pdf.cleanup().catch(() => {});

@@ -5,7 +5,7 @@
  * centre. In a live class that lands right where the instructor is writing and
  * competes with our own board controls, so the tools move to a vertical strip
  * down the left edge and the top centre is left for the classroom pills
- * (board lock, templates, import/export).
+ * (board lock, math, docs & video, import/export).
  *
  * These are Excalidraw's internal class names, so treat this file as a
  * pinned-version dependency: re-check it when bumping @excalidraw/excalidraw.
@@ -229,4 +229,28 @@
    it. */
 .livetich-recorder nextjs-portal {
   display: none !important;
+}
+
+/* Import progress. Before a size is known (fetching from Google, opening the
+   PDF) the bar slides rather than sitting at 0%, which reads as stuck. */
+@keyframes board-import-slide {
+  from {
+    left: -35%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+.board-import-indeterminate {
+  animation: board-import-slide 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-import-indeterminate {
+    animation: none;
+    left: 0;
+    width: 100%;
+    opacity: 0.5;
+  }
 }

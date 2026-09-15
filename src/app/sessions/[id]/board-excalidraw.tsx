@@ -45,17 +45,20 @@ import {
   PiCrosshairBold,
   PiDownloadSimpleBold,
   PiCaretDownBold,
+  PiFilesBold,
   PiFunctionBold,
   PiXBold,
   PiLockBold,
   PiLinkSimpleBold,
   PiLockOpenBold,
   PiPencilSimpleBold,
+  PiSelectionAllBold,
   PiSlidersHorizontalBold,
+  PiTrashBold,
   PiUploadSimpleBold,
 } from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
-import { cn } from '@/lib/ui';
+import { cn, inputClass } from '@/lib/ui';
 import { getRealtimeToken, clearRealtimeToken } from '@/lib/client-token';
 import type {
   BoardClientToServerEvents,
@@ -171,6 +174,77 @@ function mathElementAt(
   return null;
 }
 
+/**
+ * What an imported page carries on its element, so the pages of one import can
+ * be found again — for "select all" and for deleting them — long after the
+ * import itself has finished. It rides in customData, so it syncs with the page.
+ */
+interface ImportCustomData {
+  livetichImport?: { id: string; name: string; page: number; pages: number };
+}
+
+/** The imported pages in the current selection, and where to put their actions. */
+interface SelectedImport {
+  id: string;
+  name: string;
+  /** The selected pages of this import. */
+  selectedIds: string[];
+  /** Every page of this import still on the board. */
+  allIds: string[];
+  /** The page number when exactly one page is selected, otherwise null. */
+  page: number | null;
+  /** Viewport pixels, relative to the board wrapper: the selection's top-left. */
+  left: number;
+  top: number;
+}
+
+/**
+ * The imported pages in the selection, or null.
+ *
+ * Only when the selection is nothing but pages of one import: a page selected
+ * together with a drawing is not "these pages", and delete must never take
+ * something the teacher did not point at.
+ */
+function selectedImportOf(
+  elements: readonly ExcalidrawElement[],
+  selectedIds: Readonly<Record<string, boolean>>,
+  view: { scrollX: number; scrollY: number; zoom: number },
+): SelectedImport | null {
+  let meta: NonNullable<ImportCustomData['livetichImport']> | null = null;
+  const picked: ExcalidrawElement[] = [];
+  for (const el of elements) {
+    if (el.isDeleted || !selectedIds[el.id]) continue;
+    const m = (el.customData as ImportCustomData | undefined)?.livetichImport;
+    if (!m) return null; // something that is not an imported page
+    if (meta && meta.id !== m.id) return null; // pages of two different imports
+    meta = m;
+    picked.push(el);
+  }
+  if (!meta) return null;
+  const id = meta.id;
+  const allIds = elements
+    .filter(
+      (el) =>
+        !el.isDeleted &&
+        (el.customData as ImportCustomData | undefined)?.livetichImport?.id === id,
+    )
+    .map((el) => el.id);
+  const minX = Math.min(...picked.map((el) => el.x));
+  const minY = Math.min(...picked.map((el) => el.y));
+  return {
+    id,
+    name: meta.name,
+    selectedIds: picked.map((el) => el.id),
+    allIds,
+    page:
+      picked.length === 1
+        ? ((picked[0].customData as ImportCustomData).livetichImport?.page ?? null)
+        : null,
+    left: Math.round((minX + view.scrollX) * view.zoom),
+    top: Math.round((minY + view.scrollY) * view.zoom),
+  };
+}
+
 /** Freehand drawing changes elements many times per second. Coalescing those
  *  mutations keeps the shared-board transport responsive on modest devices. */
 const SYNC_INTERVAL_MS = 50;
@@ -215,37 +289,6 @@ function boardBytes(data: unknown): Uint8Array | null {
   }
   return null;
 }
-
-/** A thin grey bar used to draw guide lines. Locked so a stray drag on the
- *  ruling doesn't move the whole template. */
-const bar = (x: number, y: number, width: number, height: number) => ({
-  type: 'rectangle' as const,
-  x,
-  y,
-  width,
-  height,
-  strokeColor: 'transparent',
-  backgroundColor: '#ced4da',
-  fillStyle: 'solid' as const,
-  roughness: 0,
-  locked: true,
-});
-
-/** Subject board templates — inserted as ordinary synced elements. */
-const TEMPLATES: Record<string, { label: string; make: () => ExcalidrawElement[] }> = {
-  axes: {
-    label: 'Axes',
-    make: () =>
-      convertToExcalidrawElements([bar(399, 100, 2, 600), bar(100, 399, 600, 2)]),
-  },
-  lined: {
-    label: 'Lined',
-    make: () =>
-      convertToExcalidrawElements(
-        Array.from({ length: 12 }, (_, i) => bar(80, 80 + i * 44, 640, 2)),
-      ),
-  },
-};
 
 /**
  * Extra shapes.
@@ -448,15 +491,12 @@ export function BoardExcalidraw({
   sessionId,
   canDraw,
   teaching = false,
-  templates = [],
 }: {
   sessionId: string;
   canDraw: boolean;
   /** This user is an org admin presenting in teach-mode — tells the board
    *  gateway to authorize them as the writer (mirrors the room join). */
   teaching?: boolean;
-  /** Subject template keys available for this org (gated per plugin). */
-  templates?: string[];
 }) {
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
@@ -518,7 +558,15 @@ export function BoardExcalidraw({
   const [boardOpen, setBoardOpen] = useState(false);
   const [following, setFollowing] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
-  const [importing, setImporting] = useState(false);
+  // What the import overlay shows. Null when nothing is importing.
+  const [importProgress, setImportProgress] = useState<{
+    title: string;
+    /** What is happening now, in words: "Reading page 3 of 12". */
+    stage: string;
+    /** 0–100, or null while the size is not known yet. */
+    percent: number | null;
+  } | null>(null);
+  const importing = importProgress !== null;
   const [exporting, setExporting] = useState(false);
   const [shapesOpen, setShapesOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -543,6 +591,8 @@ export function BoardExcalidraw({
    *  the only way to change a value is to retype the whole formula. */
   const [selectedMath, setSelectedMath] = useState<SelectedMath | null>(null);
   const selectedMathRef = useRef<SelectedMath | null>(null);
+  const [selectedImport, setSelectedImport] = useState<SelectedImport | null>(null);
+  const selectedImportRef = useRef<SelectedImport | null>(null);
   /** Set while the panel is editing an existing equation rather than composing
    *  a new one. */
   const [editingMath, setEditingMath] = useState<SelectedMath | null>(null);
@@ -1300,6 +1350,26 @@ export function BoardExcalidraw({
         setSelectedMath(picked);
       }
 
+      // Same for imported pages: which ones are selected, and where their
+      // actions go. Keyed on everything the bar shows, and nothing more.
+      const pages = selectedImportOf(scene, state.selectedElementIds, {
+        scrollX: state.scrollX,
+        scrollY: state.scrollY,
+        zoom: state.zoom.value,
+      });
+      const had = selectedImportRef.current;
+      if (
+        pages?.id !== had?.id ||
+        pages?.selectedIds.join() !== had?.selectedIds.join() ||
+        pages?.allIds.length !== had?.allIds.length ||
+        pages?.page !== had?.page ||
+        pages?.left !== had?.left ||
+        pages?.top !== had?.top
+      ) {
+        selectedImportRef.current = pages;
+        setSelectedImport(pages);
+      }
+
       emitPresenter(null);
     },
     [canEdit, flushLocal, shareNewFiles, emitPresenter],
@@ -1379,21 +1449,64 @@ export function BoardExcalidraw({
   );
 
   // ---- Board controls ------------------------------------------------------
+  /** Select every page of one import, so it moves or goes as one. */
+  const selectImportPages = useCallback((ids: string[]) => {
+    const editor = apiRef.current;
+    if (!editor || !ids.length) return;
+    editor.updateScene({
+      appState: {
+        selectedElementIds: Object.fromEntries(ids.map((id) => [id, true])) as Record<
+          string,
+          true
+        >,
+        selectedGroupIds: {},
+      },
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+  }, []);
+
+  /**
+   * Delete imported pages.
+   *
+   * The version bump is what carries it to the class: local edits are diffed by
+   * version, so an element marked deleted at the same version would stay on
+   * every other screen. Recorded as one undo step, so Undo brings the pages
+   * back if the wrong ones went.
+   */
+  const deleteImportPages = useCallback(
+    (ids: string[]) => {
+      const editor = apiRef.current;
+      if (!editor || !ids.length) return;
+      const doomed = new Set(ids);
+      editor.updateScene({
+        elements: editor.getSceneElementsIncludingDeleted().map((el) =>
+          doomed.has(el.id)
+            ? {
+                ...el,
+                isDeleted: true,
+                version: el.version + 1,
+                versionNonce: Math.floor(Math.random() * 2 ** 31),
+                updated: Date.now(),
+              }
+            : el,
+        ),
+        appState: { selectedElementIds: {} },
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      flash(
+        ids.length === 1
+          ? 'Page deleted. Undo brings it back.'
+          : `${ids.length} pages deleted. Undo brings them back.`,
+      );
+    },
+    [flash],
+  );
+
   const toggleBoardOpen = useCallback(() => {
     const open = !boardOpen;
     setBoardOpen(open);
     socketRef.current?.emit('board:writable', { sessionId, open });
   }, [boardOpen, sessionId]);
-
-  const addTemplate = useCallback((key: string) => {
-    const editor = apiRef.current;
-    const template = TEMPLATES[key];
-    if (!editor || !template) return;
-    editor.updateScene({
-      elements: [...editor.getSceneElementsIncludingDeleted(), ...template.make()],
-      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-    });
-  }, []);
 
   /**
    * Pick a shape: arm it, then drag on the board to draw it. Square, diamond
@@ -1744,7 +1857,9 @@ export function BoardExcalidraw({
     async (raw: string) => {
       const url = raw.trim();
       if (!url) return;
-      setImporting(true);
+      // Google gives no size up front, so this stretch is indeterminate; the
+      // importer takes over with real numbers once the PDF is here.
+      setImportProgress({ title: 'Google file', stage: 'Fetching from Google…', percent: null });
       try {
         const token = await getRealtimeToken();
         const res = await fetch(
@@ -1767,7 +1882,8 @@ export function BoardExcalidraw({
           return;
         }
         const blob = await res.blob();
-        const file = new File([blob], 'google.pdf', { type: 'application/pdf' });
+        // The name is what the overlay titles the import with.
+        const file = new File([blob], 'Google file.pdf', { type: 'application/pdf' });
         setLinkOpen(false);
         setLinkSource('');
         setLinkError(null);
@@ -1775,7 +1891,7 @@ export function BoardExcalidraw({
       } catch {
         setLinkError('That file could not be imported.');
       } finally {
-        setImporting(false);
+        setImportProgress(null);
       }
     },
     [sessionId],
@@ -1787,12 +1903,23 @@ export function BoardExcalidraw({
       const map = filesRef.current;
       const doc = docRef.current;
       if (!editor || !map || !doc || !list?.length) return;
-      setImporting(true);
+      const files = Array.from(list as ArrayLike<File>);
+      const title = files.length === 1 ? files[0].name : `${files.length} files`;
+      // Reading PDF pages is the first half of the bar and putting them on the
+      // board the second; a batch of plain images only has the second.
+      const hasPdf = files.some((f) => f.type === 'application/pdf');
+      setImportProgress({ title, stage: 'Opening…', percent: null });
       try {
         const images: File[] = [];
-        for (const file of Array.from(list as ArrayLike<File>)) {
+        for (const file of files) {
           if (file.type === 'application/pdf') {
-            const pages = await pdfToImageFiles(file);
+            const pages = await pdfToImageFiles(file, (done, count) =>
+              setImportProgress({
+                title,
+                stage: `Reading page ${Math.min(done + 1, count)} of ${count}`,
+                percent: Math.round((done / count) * 50),
+              }),
+            );
             if (pages.length === PDF_MAX_PAGES) {
               flash(`Only the first ${PDF_MAX_PAGES} pages were imported.`);
             }
@@ -1808,7 +1935,19 @@ export function BoardExcalidraw({
         // Lay pages out in a column so a deck reads top to bottom.
         let y = 0;
         const added: ExcalidrawElement[] = [];
-        for (const image of images) {
+        const base = hasPdf ? 50 : 0;
+        // One id for the whole import, so its pages can be selected or deleted
+        // together later.
+        const importId = crypto.randomUUID();
+        for (const [i, image] of images.entries()) {
+          setImportProgress({
+            title,
+            stage:
+              images.length === 1
+                ? 'Adding to the board'
+                : `Adding ${i + 1} of ${images.length} to the board`,
+            percent: base + Math.round((i / images.length) * (100 - base)),
+          });
           const bitmap = await createImageBitmap(image);
           const width = Math.min(900, bitmap.width);
           const height = (bitmap.height / bitmap.width) * width;
@@ -1827,13 +1966,23 @@ export function BoardExcalidraw({
           doc.transact(() => {
             map.set(fileId, { id: fileId, url, mimeType: image.type, created });
           }, LOCAL);
+          const livetichImport = {
+            id: importId,
+            name: title,
+            page: i + 1,
+            pages: images.length,
+          };
           added.push(
             ...convertToExcalidrawElements([
               { type: 'image', x: 0, y, width, height, fileId: fileId as FileId },
-            ]),
+            ]).map((el) => ({
+              ...el,
+              customData: { livetichImport } satisfies ImportCustomData,
+            })),
           );
           y += height + 24;
         }
+        setImportProgress({ title, stage: 'Finishing up', percent: 100 });
         editor.updateScene({
           elements: [...editor.getSceneElementsIncludingDeleted(), ...added],
           captureUpdate: CaptureUpdateAction.IMMEDIATELY,
@@ -1852,7 +2001,7 @@ export function BoardExcalidraw({
       } catch {
         flash('Import failed — please try again.');
       } finally {
-        setImporting(false);
+        setImportProgress(null);
         if (fileInputRef.current) fileInputRef.current.value = '';
       }
     },
@@ -2013,6 +2162,15 @@ export function BoardExcalidraw({
 
   const pill =
     'rounded-full px-3 py-1.5 text-xs font-semibold shadow ring-1 ring-neutral-200 transition';
+  // The classroom toolbar island: teal is the brand, so idle tools carry it in
+  // their icons and hover, and an open panel's tool is solid teal.
+  const toolClass =
+    'flex items-center gap-1.5 whitespace-nowrap rounded-xl px-2.5 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-500 disabled:opacity-50';
+  const toolIdle =
+    'text-neutral-700 hover:bg-signal-50 hover:text-signal-800 [&>svg]:text-signal-600';
+  const toolActive = 'bg-signal-700 text-white shadow-sm shadow-signal-800/25';
+  const dividerClass =
+    'mx-1 h-5 w-px shrink-0 bg-signal-100 max-[729px]:mx-2 max-[729px]:my-0.5 max-[729px]:h-px max-[729px]:w-auto';
   const recentEntries = mathRecent
     .map((latex) => MATH_ENTRIES.find((e) => e.latex === latex))
     .filter((e): e is MathEntry => !!e)
@@ -2230,6 +2388,60 @@ export function BoardExcalidraw({
         </button>
       )}
 
+      {/* Imported pages: select the rest of the import, or delete what is
+          selected. Only while a page is selected, so nothing sits over the
+          lesson while it is being taught from. */}
+      {selectedImport && canDraw && (
+        <div
+          data-import-actions
+          role="toolbar"
+          aria-label="Imported pages"
+          style={{
+            left: Math.max(8, selectedImport.left),
+            top: Math.max(4, selectedImport.top - 46),
+          }}
+          className="pointer-events-auto absolute z-[401] flex items-center gap-0.5 rounded-xl bg-white p-1 text-xs shadow-lg shadow-signal-900/10 ring-1 ring-signal-100"
+        >
+          <span className="flex max-w-[13rem] items-center gap-1.5 px-2 font-semibold text-neutral-700">
+            <PiFilesBold className="shrink-0 text-signal-600" aria-hidden />
+            <span className="truncate">
+              {selectedImport.allIds.length === 1
+                ? selectedImport.name
+                : selectedImport.page !== null
+                  ? `Page ${selectedImport.page} · ${selectedImport.name}`
+                  : selectedImport.selectedIds.length === selectedImport.allIds.length
+                    ? `All ${selectedImport.allIds.length} pages`
+                    : `${selectedImport.selectedIds.length} of ${selectedImport.allIds.length} pages`}
+            </span>
+          </span>
+          <span aria-hidden className="mx-0.5 h-5 w-px shrink-0 bg-signal-100" />
+          {selectedImport.selectedIds.length < selectedImport.allIds.length && (
+            <button
+              type="button"
+              onClick={() => selectImportPages(selectedImport.allIds)}
+              className="flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 font-semibold text-signal-800 transition hover:bg-signal-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-500"
+            >
+              <PiSelectionAllBold className="text-signal-600" aria-hidden />
+              Select all {selectedImport.allIds.length}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => deleteImportPages(selectedImport.selectedIds)}
+            className="flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 font-semibold text-rose-600 transition hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+          >
+            <PiTrashBold aria-hidden />
+            {selectedImport.allIds.length === 1
+              ? 'Delete'
+              : selectedImport.selectedIds.length === 1
+                ? 'Delete page'
+                : selectedImport.selectedIds.length === selectedImport.allIds.length
+                  ? `Delete all ${selectedImport.allIds.length}`
+                  : `Delete ${selectedImport.selectedIds.length} pages`}
+          </button>
+        </div>
+      )}
+
       {preview && previewShape && (
         <svg
           data-shape-preview
@@ -2333,11 +2545,14 @@ export function BoardExcalidraw({
             'pointer-events-auto absolute left-6 top-20 z-[402] min-[730px]:hidden',
             'flex items-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-semibold shadow-md ring-1 transition',
             toolsOpen
-              ? 'bg-neutral-900 text-white ring-neutral-900'
-              : 'bg-white text-neutral-800 ring-neutral-200',
+              ? 'bg-signal-700 text-white shadow-signal-800/25 ring-signal-700'
+              : 'bg-white text-signal-800 ring-signal-100 hover:bg-signal-50',
           )}
         >
-          <PiSlidersHorizontalBold className="h-3.5 w-3.5" aria-hidden />
+          <PiSlidersHorizontalBold
+            className={cn('h-3.5 w-3.5', !toolsOpen && 'text-signal-600')}
+            aria-hidden
+          />
           Tools
           {/* The label alone gave no sign this opens anything. A caret that
               turns is the plainest way to say "there is more under here". */}
@@ -2354,104 +2569,112 @@ export function BoardExcalidraw({
       <div
         id="board-classroom-tools"
         className={cn(
-          'pointer-events-none absolute z-[401] flex flex-wrap items-center gap-1.5',
+          'pointer-events-none absolute z-[401] flex items-center',
           // Desktop: centred across the top, where the tool rail no longer is.
           'min-[730px]:left-1/2 min-[730px]:top-3 min-[730px]:max-w-[calc(100%-6rem)] min-[730px]:-translate-x-1/2 min-[730px]:justify-center',
           // Phone: a panel under the toolbar, opened from the Tools button.
           'max-[729px]:left-6 max-[729px]:w-[min(15rem,calc(100%-4.5rem))] max-[729px]:justify-start',
-          // A viewer has no Tools button to open — their single follow pill
+          // A viewer has no Tools button to open — their single follow control
           // sits where that button would be, and is never collapsed.
           canDraw ? 'max-[729px]:top-32' : 'max-[729px]:top-20',
           canDraw && !toolsOpen && 'max-[729px]:hidden',
         )}
       >
         {canDraw ? (
-          <>
+          // One island in three groups — who may draw, what to put on the
+          // board, and files in and out — instead of a row of loose pills that
+          // gave every control the same weight. On a phone the same island
+          // stands up as a column.
+          <div
+            role="toolbar"
+            aria-label="Classroom tools"
+            className="pointer-events-auto flex items-center gap-0.5 rounded-2xl bg-white/95 p-1 shadow-lg shadow-signal-900/10 ring-1 ring-signal-100 backdrop-blur max-[729px]:w-full max-[729px]:flex-col max-[729px]:items-stretch min-[730px]:flex-wrap min-[730px]:justify-center"
+          >
             <button
               type="button"
+              role="switch"
+              aria-checked={boardOpen}
               onClick={toggleBoardOpen}
-              className={`pointer-events-auto ${pill} ${
+              title={boardOpen ? 'Lock the board' : 'Let students draw'}
+              className={cn(
+                toolClass,
                 boardOpen
-                  ? 'bg-emerald-600 text-white ring-emerald-600'
-                  : 'bg-white text-neutral-800'
-              }`}
+                  ? 'bg-signal-50 text-signal-800 hover:bg-signal-100'
+                  : 'text-neutral-700 hover:bg-signal-50 hover:text-signal-800',
+              )}
             >
-              <span className="flex items-center gap-1.5">
-                {boardOpen ? <PiLockOpenBold /> : <PiLockBold />}
-                {boardOpen ? 'Students can draw' : 'Board locked'}
+              {boardOpen ? (
+                <PiLockOpenBold className="text-signal-600" aria-hidden />
+              ) : (
+                <PiLockBold className="text-neutral-400" aria-hidden />
+              )}
+              {boardOpen ? 'Students can draw' : 'Board locked'}
+              <span
+                aria-hidden
+                className={cn(
+                  'relative ml-1 inline-flex h-4 w-7 shrink-0 rounded-full transition-colors max-[729px]:ml-auto',
+                  boardOpen ? 'bg-signal-600' : 'bg-neutral-300',
+                )}
+              >
+                <span
+                  className={cn(
+                    'absolute top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-all',
+                    boardOpen ? 'left-3.5' : 'left-0.5',
+                  )}
+                />
               </span>
             </button>
-            {templates
-              .filter((key) => TEMPLATES[key])
-              .map((key) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => addTemplate(key)}
-                  className={`pointer-events-auto ${pill} bg-white text-neutral-800`}
-                >
-                  {TEMPLATES[key].label}
-                </button>
-              ))}
+
+            <span aria-hidden className={dividerClass} />
+
             <button
               type="button"
+              aria-pressed={mathOpen}
               onClick={() => {
                 setEditingMath(null);
                 setMathSource('');
                 setMathOpen((v) => !v);
               }}
-              className={`pointer-events-auto ${pill} ${
-                mathOpen
-                  ? 'bg-neutral-900 text-white ring-neutral-900'
-                  : 'bg-white text-neutral-800'
-              }`}
+              className={cn(toolClass, mathOpen ? toolActive : toolIdle)}
             >
-              <span className="flex items-center gap-1.5">
-                <PiFunctionBold />
-                Math
-              </span>
+              <PiFunctionBold aria-hidden />
+              Math
             </button>
             <button
               type="button"
+              aria-pressed={linkOpen}
               onClick={() => {
                 setLinkError(null);
                 setLinkOpen((v) => !v);
                 setTimeout(() => linkInputRef.current?.focus(), 0);
               }}
-              className={`pointer-events-auto ${pill} ${
-                linkOpen
-                  ? 'bg-neutral-900 text-white ring-neutral-900'
-                  : 'bg-white text-neutral-800'
-              }`}
+              className={cn(toolClass, linkOpen ? toolActive : toolIdle)}
             >
-              <span className="flex items-center gap-1.5">
-                <PiLinkSimpleBold />
-                Link
-              </span>
+              <PiFilesBold aria-hidden />
+              Docs &amp; video
             </button>
+
+            <span aria-hidden className={dividerClass} />
+
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={importing}
-              className={`pointer-events-auto ${pill} bg-white text-neutral-800 disabled:opacity-50`}
+              className={cn(toolClass, toolIdle)}
             >
-              <span className="flex items-center gap-1.5">
-                <PiUploadSimpleBold />
-                {importing ? 'Importing…' : 'Import'}
-              </span>
+              <PiUploadSimpleBold aria-hidden />
+              {importing ? 'Importing…' : 'Import'}
             </button>
             <button
               type="button"
               onClick={() => void exportPng()}
               disabled={exporting}
-              className={`pointer-events-auto ${pill} bg-white text-neutral-800 disabled:opacity-50`}
+              className={cn(toolClass, toolIdle)}
             >
-              <span className="flex items-center gap-1.5">
-                <PiDownloadSimpleBold />
-                {exporting ? 'Exporting…' : 'Export'}
-              </span>
+              <PiDownloadSimpleBold aria-hidden />
+              {exporting ? 'Exporting…' : 'Export'}
             </button>
-          </>
+          </div>
         ) : (
           <button
             type="button"
@@ -2459,16 +2682,25 @@ export function BoardExcalidraw({
               setFollowing(true);
               applyPresenterView();
             }}
-            className={`pointer-events-auto ${pill} ${
+            className={cn(
+              'pointer-events-auto flex items-center gap-2 rounded-full px-3.5 py-2 text-xs font-semibold shadow-lg ring-1 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-500',
               following
-                ? 'bg-white text-neutral-500'
-                : 'animate-pulse bg-neutral-900 text-white ring-neutral-900'
-            }`}
+                ? 'bg-white/95 text-signal-800 shadow-signal-900/10 ring-signal-100 backdrop-blur'
+                : 'animate-pulse bg-signal-700 text-white shadow-signal-800/25 ring-signal-700 hover:bg-signal-800',
+            )}
           >
-            <span className="flex items-center gap-1.5">
-              <PiCrosshairBold />
-              {following ? 'Following instructor' : "Back to instructor's view"}
-            </span>
+            {/* A live dot while in step, so "following" reads as a state rather
+                than a button label; the crosshair only when there is somewhere
+                to go back to. Neither adds text, which the follow spec reads. */}
+            {following ? (
+              <span aria-hidden className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-signal-400 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-signal-600" />
+              </span>
+            ) : (
+              <PiCrosshairBold aria-hidden />
+            )}
+            {following ? 'Following instructor' : "Back to instructor's view"}
           </button>
         )}
       </div>
@@ -2477,85 +2709,163 @@ export function BoardExcalidraw({
           look like, then what it is made of, then the tools. The palette used
           to sit above both, so the thing you were making was buried in the
           middle of the thing you were making it with. */}
+      {/* Import progress, centred over the board. It covers the board on
+          purpose: drawing or importing again mid-import would land under or
+          between pages that are still arriving. */}
+      {importProgress && (
+        <div className="pointer-events-auto absolute inset-0 z-[404] grid place-items-center bg-white/60 p-4 backdrop-blur-[2px]">
+          <div
+            role="status"
+            aria-live="polite"
+            className="w-[min(22rem,100%)] rounded-2xl bg-white p-5 shadow-xl shadow-signal-900/10 ring-1 ring-signal-100"
+          >
+            <div className="flex items-center gap-3">
+              <span
+                aria-hidden
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-signal-50"
+              >
+                <span className="h-5 w-5 animate-spin rounded-full border-2 border-signal-200 border-t-signal-700" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-neutral-900">
+                  Importing {importProgress.title}
+                </p>
+                <p className="mt-0.5 truncate text-xs text-neutral-500">
+                  {importProgress.stage}
+                </p>
+              </div>
+              {importProgress.percent !== null && (
+                <span className="shrink-0 text-sm font-semibold tabular-nums text-signal-700">
+                  {importProgress.percent}%
+                </span>
+              )}
+            </div>
+            <div
+              role="progressbar"
+              aria-label="Import progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={importProgress.percent ?? undefined}
+              className="relative mt-4 h-2 overflow-hidden rounded-full bg-signal-100"
+            >
+              {importProgress.percent === null ? (
+                <span className="board-import-indeterminate absolute inset-y-0 w-1/3 rounded-full bg-signal-600" />
+              ) : (
+                <span
+                  className="absolute inset-y-0 left-0 rounded-full bg-signal-600 transition-[width] duration-300 ease-out"
+                  style={{ width: `${importProgress.percent}%` }}
+                />
+              )}
+            </div>
+            <p className="mt-3 text-[11px] text-neutral-400">
+              Keep this tab open until it finishes.
+            </p>
+          </div>
+        </div>
+      )}
+
       {linkOpen && canDraw && (
-        <div className="pointer-events-auto absolute left-1/2 top-14 z-[403] w-[min(32rem,calc(100%-2rem))] -translate-x-1/2 rounded-xl bg-white p-3 shadow-xl ring-1 ring-neutral-200">
+        <div className="pointer-events-auto absolute left-1/2 top-14 z-[403] w-[min(32rem,calc(100%-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl bg-white shadow-xl shadow-signal-900/10 ring-1 ring-signal-100">
           <form
             onSubmit={(e) => {
               e.preventDefault();
               addLinkToBoard(linkSource);
             }}
           >
-            <label
-              htmlFor="board-link-input"
-              className="block text-xs font-semibold text-neutral-700"
-            >
-              Paste a link
-            </label>
-            <div className="mt-1.5 flex gap-2">
-              <input
-                id="board-link-input"
-                ref={linkInputRef}
-                value={linkSource}
-                onChange={(e) => {
-                  setLinkSource(e.target.value);
-                  setLinkError(null);
-                }}
-                placeholder="https://docs.google.com/document/d/…"
-                className="min-w-0 flex-1 rounded-lg border border-neutral-300 px-2.5 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-900 focus:outline-none focus:ring-4 focus:ring-neutral-900/10"
-              />
+            {/* The dashboard's teal-into-white header, so the board's panels
+                read as part of the same product rather than a bolted-on tool. */}
+            <div className="flex items-start gap-3 border-b border-signal-100 bg-gradient-to-r from-signal-50 to-white px-4 py-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-signal-700 text-white shadow-sm shadow-signal-800/25">
+                <PiFilesBold className="h-4.5 w-4.5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-neutral-900">Docs &amp; video</p>
+                <p className="mt-0.5 text-xs text-neutral-500">
+                  Google Docs, Sheets, Slides and Drive files, or a YouTube video.
+                </p>
+              </div>
               <button
                 type="button"
+                aria-label="Close"
                 onClick={() => {
                   setLinkOpen(false);
                   setLinkSource('');
                   setLinkError(null);
                 }}
-                className={`${pill} shrink-0 bg-white text-neutral-700`}
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-neutral-400 transition hover:bg-signal-100 hover:text-signal-800"
               >
-                Cancel
+                <PiXBold />
               </button>
             </div>
 
-            {/* Two different things, so two buttons rather than one Add and a
-                setting. Pages is first because it is what teaching from a
-                document needs; the live view is for showing, not working. */}
-            <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => void importGoogleAsPages(linkSource)}
-                disabled={importing || linkSource.trim() === ''}
-                className="rounded-lg border border-neutral-900 bg-neutral-900 px-3 py-2 text-left text-white transition hover:bg-neutral-800 disabled:opacity-40"
+            <div className="p-4">
+              <label
+                htmlFor="board-link-input"
+                className="block text-xs font-semibold text-neutral-700"
               >
-                <span className="block text-xs font-semibold">
-                  {importing ? 'Importing…' : 'Add as pages'}
-                </span>
-                <span className="mt-0.5 block text-[11px] leading-snug text-neutral-300">
-                  Everyone scrolls together, and you can write on it. A
-                  snapshot — later edits will not appear.
-                </span>
-              </button>
-              <button
-                type="submit"
-                disabled={linkSource.trim() === ''}
-                className="rounded-lg border border-neutral-300 px-3 py-2 text-left text-neutral-900 transition hover:border-neutral-400 hover:bg-neutral-50 disabled:opacity-40"
-              >
-                <span className="block text-xs font-semibold">Add live view</span>
-                <span className="mt-0.5 block text-[11px] leading-snug text-neutral-500">
-                  Always current, but read-only, and each person scrolls it
-                  themselves.
-                </span>
-              </button>
-            </div>
+                Paste a link
+              </label>
+              <div className="relative mt-1.5">
+                <PiLinkSimpleBold
+                  aria-hidden
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400"
+                />
+                <input
+                  id="board-link-input"
+                  ref={linkInputRef}
+                  value={linkSource}
+                  onChange={(e) => {
+                    setLinkSource(e.target.value);
+                    setLinkError(null);
+                  }}
+                  placeholder="https://docs.google.com/document/d/…"
+                  className={cn(inputClass, 'pl-9')}
+                />
+              </div>
 
-            {linkError ? (
-              <p className="mt-2 text-xs font-medium text-red-600">{linkError}</p>
-            ) : (
-              <p className="mt-2 text-xs text-neutral-500">
-                Google Docs, Sheets, Slides and Drive files, or a YouTube video
-                (live view only). Google files must be shared with &ldquo;anyone
-                with the link&rdquo;.
-              </p>
-            )}
+              {/* Two different things, so two buttons rather than one Add and a
+                  setting. Pages is first because it is what teaching from a
+                  document needs; the live view is for showing, not working. */}
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => void importGoogleAsPages(linkSource)}
+                  disabled={importing || linkSource.trim() === ''}
+                  className="rounded-xl bg-signal-700 px-3.5 py-2.5 text-left text-white shadow-sm shadow-signal-800/25 transition hover:bg-signal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-500 focus-visible:ring-offset-2 disabled:opacity-40"
+                >
+                  <span className="flex items-center gap-2 text-xs font-semibold">
+                    {importing ? 'Importing…' : 'Add as pages'}
+                    <span className="rounded-full bg-white/15 px-1.5 py-px text-[10px] font-semibold">
+                      Recommended
+                    </span>
+                  </span>
+                  <span className="mt-0.5 block text-[11px] leading-snug text-signal-100">
+                    Everyone scrolls together, and you can write on it. A
+                    snapshot — later edits will not appear.
+                  </span>
+                </button>
+                <button
+                  type="submit"
+                  disabled={linkSource.trim() === ''}
+                  className="rounded-xl border border-neutral-300 bg-white px-3.5 py-2.5 text-left text-neutral-900 transition hover:border-signal-600 hover:bg-signal-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400 focus-visible:ring-offset-2 disabled:opacity-40"
+                >
+                  <span className="block text-xs font-semibold">Add live view</span>
+                  <span className="mt-0.5 block text-[11px] leading-snug text-neutral-500">
+                    Always current, but read-only, and each person scrolls it
+                    themselves.
+                  </span>
+                </button>
+              </div>
+
+              {linkError ? (
+                <p className="mt-2.5 text-xs font-medium text-red-600">{linkError}</p>
+              ) : (
+                <p className="mt-2.5 text-xs text-neutral-500">
+                  YouTube is live view only. Google files must be shared with
+                  &ldquo;anyone with the link&rdquo;.
+                </p>
+              )}
+            </div>
           </form>
         </div>
       )}

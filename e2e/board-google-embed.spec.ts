@@ -98,7 +98,7 @@ test('the Link control adds a Google file, and rejects what it cannot open', asy
   await openBoard(page);
   await settle(page);
 
-  await page.getByRole('button', { name: 'Link' }).click();
+  await page.getByRole('button', { name: 'Docs & video' }).click();
   const field = page.locator('#board-link-input');
   await expect(field).toBeFocused();
 
