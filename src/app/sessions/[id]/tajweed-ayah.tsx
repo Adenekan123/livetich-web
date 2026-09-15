@@ -113,7 +113,9 @@ function Label({ mark, onMark }: { mark: AnyTajweedMark; onMark: (m: AnyTajweedM
       dir="ltr"
       title={markLabel(mark)}
       className="pointer-events-auto min-w-0 cursor-pointer truncate rounded px-1 font-sans font-semibold leading-tight"
-      style={{ color, backgroundColor: tint(color, 0.16) }}
+      // White on the rule's own colour: a tinted label in the same hue as its
+      // text all but vanished against the dark page.
+      style={{ color: '#ffffff', backgroundColor: color }}
     >
       {markLabel(mark)}
     </span>

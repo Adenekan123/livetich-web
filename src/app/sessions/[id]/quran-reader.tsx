@@ -20,7 +20,7 @@ import { ayahKey, type AnyTajweedMark, type TajweedSelectionState } from '@/lib/
 import type { Surah } from '@/lib/types';
 import { marksKeyOf, TajweedAyah } from './tajweed-ayah';
 import { TajweedLegend, TajweedMarkCard, TajweedToolbar } from './tajweed-toolbar';
-import type { TajweedApi } from './use-tajweed';
+import type { TajweedApi, TajweedMode } from './use-tajweed';
 
 const NO_MARKS: readonly AnyTajweedMark[] = [];
 
@@ -184,6 +184,8 @@ export function QuranReader({
   onNavigate,
   tajweed = null,
   students = [],
+  tajweedModes,
+  startAnnotating = false,
 }: {
   surah: number;
   ayah: number;
@@ -194,8 +196,12 @@ export function QuranReader({
   tajweed?: TajweedApi | null;
   /** Students in the room, for recording a correction against one of them. */
   students?: RoomUser[];
+  /** The Tajweed modes on offer here (all of them in class). */
+  tajweedModes?: TajweedMode[];
+  /** Open already marking — for preparing a lesson, where that is the point. */
+  startAnnotating?: boolean;
 }) {
-  const [annotating, setAnnotating] = useState(false);
+  const [annotating, setAnnotating] = useState(startAnnotating);
   const [selection, setSelection] = useState<TajweedSelectionState | null>(null);
   const [openMark, setOpenMark] = useState<AnyTajweedMark | null>(null);
   const [legendOpen, setLegendOpen] = useState(false);
@@ -564,15 +570,20 @@ export function QuranReader({
       </div>
 
       {marking && tajweed && (
-        <TajweedToolbar
-          api={tajweed}
-          selection={activeSelection}
-          setSelection={setSelection}
-          ayahText={
-            activeSelection ? (text?.ayahs[activeSelection.ayahNumber - 1] ?? null) : null
-          }
-          students={students}
-        />
+        // Capped and scrolling on its own, so on a phone the text being taught
+        // keeps at least half the reader instead of two lines of it.
+        <div className="max-h-[55%] shrink-0 overflow-y-auto">
+          <TajweedToolbar
+            api={tajweed}
+            selection={activeSelection}
+            setSelection={setSelection}
+            ayahText={
+              activeSelection ? (text?.ayahs[activeSelection.ayahNumber - 1] ?? null) : null
+            }
+            students={students}
+            modes={tajweedModes}
+          />
+        </div>
       )}
       {!marking && openMark && (
         <TajweedMarkCard mark={openMark} onClose={() => setOpenMark(null)} />

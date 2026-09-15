@@ -40,6 +40,7 @@ import {
 } from 'y-protocols/awareness';
 import {
   PiArrowsClockwiseBold,
+  PiBookOpenTextBold,
   PiArrowsInBold,
   PiArrowsOutBold,
   PiCrosshairBold,
@@ -65,6 +66,13 @@ import type {
   BoardServerToClientEvents,
 } from '@/lib/realtime-contract';
 import { BoardDocEmbed } from './board-doc-embed';
+import {
+  BoardQuranBlock,
+  parseQuranBlock,
+  QURAN_BLOCK_MAX_AYAHS,
+  quranBlockLink,
+} from './board-quran-block';
+import type { TajweedApi } from './use-tajweed';
 import { googleEmbed } from './board-docs';
 import { BoardVideoEmbed } from './board-video-embed';
 import { youTubeIdOf, type VideoState } from './board-video';
@@ -487,16 +495,67 @@ function MathButton({
  * Instructors edit; students view read-only unless the instructor opens the
  * board (their board:update writes are also rejected server-side).
  */
+/**
+ * Put an embeddable on the board, centred in view and framed.
+ *
+ * convertToExcalidrawElements has no skeleton for embeddables, so the element
+ * is built outright — the same shape pasting a link produces.
+ */
+function putEmbeddable(editor: ExcalidrawImperativeAPI, link: string, w: number, h: number) {
+  const state = editor.getAppState();
+  const [x1, y1, x2, y2] = getVisibleSceneBounds(state);
+  const seed = () => Math.floor(Math.random() * 2 ** 31);
+  const element = {
+    id: crypto.randomUUID(),
+    type: 'embeddable',
+    x: (x1 + x2) / 2 - w / 2,
+    y: (y1 + y2) / 2 - h / 2,
+    width: w,
+    height: h,
+    angle: 0,
+    strokeColor: 'transparent',
+    backgroundColor: 'transparent',
+    fillStyle: 'solid',
+    strokeWidth: 1,
+    strokeStyle: 'solid',
+    roughness: 1,
+    opacity: 100,
+    groupIds: [],
+    frameId: null,
+    roundness: null,
+    seed: seed(),
+    version: 1,
+    versionNonce: seed(),
+    isDeleted: false,
+    boundElements: null,
+    updated: Date.now(),
+    link,
+    locked: false,
+    customData: undefined,
+    index: null,
+  } as unknown as ExcalidrawElement;
+
+  editor.updateScene({
+    elements: [...editor.getSceneElementsIncludingDeleted(), element],
+    captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+  });
+  editor.scrollToContent(element, { fitToContent: true, animate: false });
+}
+
 export function BoardExcalidraw({
   sessionId,
   canDraw,
   teaching = false,
+  quran = null,
 }: {
   sessionId: string;
   canDraw: boolean;
   /** This user is an org admin presenting in teach-mode — tells the board
    *  gateway to authorize them as the writer (mirrors the room join). */
   teaching?: boolean;
+  /** Islamic Education pack on: Qur'an blocks can be put on the board, and
+   *  draw the class's Tajweed marks. Null = no Qur'an blocks. */
+  quran?: { tajweed: TajweedApi | null } | null;
 }) {
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
@@ -570,6 +629,9 @@ export function BoardExcalidraw({
   const [exporting, setExporting] = useState(false);
   const [shapesOpen, setShapesOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
+  const [quranOpen, setQuranOpen] = useState(false);
+  const [quranForm, setQuranForm] = useState({ surah: '1', from: '1', to: '7' });
+  const [quranError, setQuranError] = useState<string | null>(null);
   const [linkSource, setLinkSource] = useState('');
   const [linkError, setLinkError] = useState<string | null>(null);
   const linkInputRef = useRef<HTMLInputElement>(null);
@@ -1796,50 +1858,34 @@ export function BoardExcalidraw({
           ? [700, 440]
           : [560, 720];
 
-    const state = editor.getAppState();
-    const [x1, y1, x2, y2] = getVisibleSceneBounds(state);
-    // convertToExcalidrawElements has no skeleton for embeddables, so the
-    // element is built outright — the same shape pasting a link produces.
-    const seed = () => Math.floor(Math.random() * 2 ** 31);
-    const element = {
-      id: crypto.randomUUID(),
-      type: 'embeddable',
-      x: (x1 + x2) / 2 - w / 2,
-      y: (y1 + y2) / 2 - h / 2,
-      width: w,
-      height: h,
-      angle: 0,
-      strokeColor: 'transparent',
-      backgroundColor: 'transparent',
-      fillStyle: 'solid',
-      strokeWidth: 1,
-      strokeStyle: 'solid',
-      roughness: 1,
-      opacity: 100,
-      groupIds: [],
-      frameId: null,
-      roundness: null,
-      seed: seed(),
-      version: 1,
-      versionNonce: seed(),
-      isDeleted: false,
-      boundElements: null,
-      updated: Date.now(),
-      link: url,
-      locked: false,
-      customData: undefined,
-      index: null,
-    } as unknown as ExcalidrawElement;
-
-    editor.updateScene({
-      elements: [...editor.getSceneElementsIncludingDeleted(), element],
-      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-    });
-    editor.scrollToContent(element, { fitToContent: true, animate: false });
+    putEmbeddable(editor, url, w, h);
     setLinkOpen(false);
     setLinkSource('');
     setLinkError(null);
   }, []);
+
+  /**
+   * Put a block of ayahs on the board. It travels like any embeddable; what it
+   * draws on the text comes from the mushaf's Tajweed marks as they are made.
+   */
+  const addQuranBlock = useCallback(() => {
+    const editor = apiRef.current;
+    if (!editor) return;
+    const link = quranBlockLink(
+      Number(quranForm.surah),
+      Number(quranForm.from),
+      Number(quranForm.to),
+    );
+    if (!parseQuranBlock(link)) {
+      setQuranError(
+        `Choose a surah from 1 to 114 and a range of up to ${QURAN_BLOCK_MAX_AYAHS} ayahs.`,
+      );
+      return;
+    }
+    putEmbeddable(editor, link, 640, 360);
+    setQuranOpen(false);
+    setQuranError(null);
+  }, [quranForm]);
 
   /**
    * Put a Google file on the board as pages.
@@ -2244,6 +2290,17 @@ export function BoardExcalidraw({
           // A Google link has to be rewritten to its read-only viewer before it
           // will frame at all, and it is rendered here rather than handed back
           // to Excalidraw so the element keeps the URL the instructor pasted.
+          const block = parseQuranBlock(element.link);
+          if (block) {
+            return (
+              <BoardQuranBlock
+                surah={block.surah}
+                from={block.from}
+                to={block.to}
+                tajweed={quran?.tajweed ?? null}
+              />
+            );
+          }
           const doc = googleEmbed(element.link);
           if (doc) {
             return (
@@ -2259,7 +2316,7 @@ export function BoardExcalidraw({
         // Excalidraw does not recognise youtu.be short links on its own, and
         // has no idea about Google files at all.
         validateEmbeddable={(link) =>
-          youTubeIdOf(link) || googleEmbed(link) ? true : undefined
+          youTubeIdOf(link) || googleEmbed(link) || parseQuranBlock(link) ? true : undefined
         }
         UIOptions={{
           canvasActions: {
@@ -2653,6 +2710,21 @@ export function BoardExcalidraw({
               <PiFilesBold aria-hidden />
               Docs &amp; video
             </button>
+            {quran && (
+              <button
+                type="button"
+                aria-pressed={quranOpen}
+                onClick={() => {
+                  setQuranError(null);
+                  setLinkOpen(false);
+                  setQuranOpen((v) => !v);
+                }}
+                className={cn(toolClass, quranOpen ? toolActive : toolIdle)}
+              >
+                <PiBookOpenTextBold aria-hidden />
+                Qur’an block
+              </button>
+            )}
 
             <span aria-hidden className={dividerClass} />
 
@@ -2761,6 +2833,78 @@ export function BoardExcalidraw({
               Keep this tab open until it finishes.
             </p>
           </div>
+        </div>
+      )}
+
+      {quranOpen && canDraw && quran && (
+        <div
+          data-quran-block-panel
+          className="pointer-events-auto absolute left-1/2 top-14 z-[403] w-[min(26rem,calc(100%-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl bg-white shadow-xl shadow-signal-900/10 ring-1 ring-signal-100"
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              addQuranBlock();
+            }}
+          >
+            <div className="flex items-start gap-3 border-b border-signal-100 bg-gradient-to-r from-signal-50 to-white px-4 py-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-signal-700 text-white shadow-sm shadow-signal-800/25">
+                <PiBookOpenTextBold className="h-4.5 w-4.5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-neutral-900">Qur’an block</p>
+                <p className="mt-0.5 text-xs text-neutral-500">
+                  Put ayahs on the board. Tajweed marks made in the Qur’an view
+                  show on them as they are made.
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={() => {
+                  setQuranOpen(false);
+                  setQuranError(null);
+                }}
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-neutral-400 transition hover:bg-signal-100 hover:text-signal-800"
+              >
+                <PiXBold />
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2 p-4">
+              {(
+                [
+                  ['surah', 'Surah', 114],
+                  ['from', 'From ayah', 286],
+                  ['to', 'To ayah', 286],
+                ] as const
+              ).map(([key, label, max]) => (
+                <label key={key} className="block text-xs font-semibold text-neutral-700">
+                  {label}
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={max}
+                    value={quranForm[key]}
+                    onChange={(e) => {
+                      setQuranForm((f) => ({ ...f, [key]: e.target.value }));
+                      setQuranError(null);
+                    }}
+                    className={cn(inputClass, 'mt-1')}
+                  />
+                </label>
+              ))}
+            </div>
+            <div className="flex items-center justify-between gap-3 px-4 pb-4">
+              <p className="text-xs text-red-600">{quranError}</p>
+              <button
+                type="submit"
+                className="shrink-0 rounded-xl bg-signal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-signal-800/25 transition hover:bg-signal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-500 focus-visible:ring-offset-2"
+              >
+                Add to board
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

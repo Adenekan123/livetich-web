@@ -234,6 +234,35 @@ export function deleteTajweed(courseId: string, id: string, sessionId?: string) 
   });
 }
 
+/** One change to an annotation: who made it, when, and how it stood after. */
+export interface TajweedHistoryItem {
+  id: string;
+  version: number;
+  change: 'CREATED' | 'UPDATED' | 'DELETED';
+  changedAt: string;
+  changedBy: { id: string; name: string };
+  snapshot: TajweedAnnotation;
+}
+
+export function tajweedHistory(courseId: string, id: string) {
+  return call<TajweedHistoryItem[]>(
+    `/courses/${courseId}/tajweed/annotations/${id}/history`,
+  );
+}
+
+/** Counts of what the teacher recorded for one student — never a grade. */
+export interface TajweedProgressRow {
+  student: { id: string; name: string };
+  total: number;
+  lastAt: string | null;
+  byRule: Partial<Record<TajweedRule, { issues: number; correct: number }>>;
+  byOutcome: Partial<Record<TajweedOutcome, number>>;
+}
+
+export function tajweedProgress(courseId: string) {
+  return call<TajweedProgressRow[]>(`/courses/${courseId}/tajweed/progress`);
+}
+
 export function studentTajweedCorrections(courseId: string, studentId: string) {
   return call<{
     corrections: TajweedAnnotation[];

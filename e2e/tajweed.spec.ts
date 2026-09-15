@@ -222,15 +222,22 @@ test('a correction is recorded against the student, and only staff and that stud
 
   await expect(label(teacher, 1, 'Qalqalah issue')).toBeVisible();
 
-  const res = await api.get(
-    `${API}/courses/${COURSE}/tajweed/students/${studentId}/corrections`,
-    { headers: auth(studentToken) },
-  );
-  expect(res.ok()).toBeTruthy();
-  const body = (await res.json()) as {
+  // The label shows at once (it is optimistic), so wait for the save to land
+  // rather than reading the server in the same instant.
+  type Corrections = {
     corrections: { rule: string; outcome: string }[];
     byRule: Record<string, { issues: number }>;
   };
+  const readCorrections = async (): Promise<Corrections> => {
+    const res = await api.get(
+      `${API}/courses/${COURSE}/tajweed/students/${studentId}/corrections`,
+      { headers: auth(studentToken) },
+    );
+    expect(res.ok()).toBeTruthy();
+    return (await res.json()) as Corrections;
+  };
+  await expect.poll(async () => (await readCorrections()).corrections.length).toBe(1);
+  const body = await readCorrections();
   expect(body.corrections).toEqual([
     expect.objectContaining({ rule: 'qalqalah', outcome: 'TAJWEED_ISSUE' }),
   ]);
@@ -324,6 +331,58 @@ test('on a tablet, a teacher marks single letters by tapping', async ({ browser 
 
   await toolbar(teacher).getByRole('button', { name: 'Clear live (1)', exact: true }).tap();
   await expect(label(student, 1, 'Madd')).toHaveCount(0);
+  await teacher.context().close();
+  await student.context().close();
+});
+
+test('on a phone, the Tajweed controls fit the screen and still mark a word', async ({
+  browser,
+}) => {
+  test.setTimeout(180_000);
+  const phone = devices['Pixel 7'];
+  const asPhone: BrowserContextOptions = {
+    viewport: phone.viewport,
+    userAgent: phone.userAgent,
+    deviceScaleFactor: phone.deviceScaleFactor,
+    isMobile: phone.isMobile,
+    hasTouch: true,
+  };
+  const fitsWidth = (p: Page) =>
+    p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
+
+  const teacher = await openMushaf(browser, 'instructor', asPhone);
+  await turnTo(teacher, 113, 'Al-Falaq');
+  const student = await openMushaf(browser, 'student', asPhone);
+  await expect(student.getByText('Al-Falaq').first()).toBeVisible({ timeout: 20_000 });
+
+  await teacher.getByRole('button', { name: 'Tajweed', exact: true }).tap();
+  await word(teacher, 2, 0).tap();
+
+  // Every control a teacher reaches for is on the screen, not off its edge.
+  const width = teacher.viewportSize()!.width;
+  const ikhfa = toolbar(teacher).getByRole('button', { name: 'Ikhfa', exact: true });
+  for (const control of [
+    ikhfa,
+    toolbar(teacher).getByRole('radio', { name: 'Correction' }),
+    toolbar(teacher).getByRole('button', { name: 'Style' }),
+  ]) {
+    await control.scrollIntoViewIfNeeded();
+    const box = (await control.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
+  }
+  // …and nothing pushes the page sideways, for either of them.
+  expect(await fitsWidth(teacher)).toBe(true);
+
+  await ikhfa.tap();
+  await expect(label(student, 2, 'Ikhfa')).toBeVisible();
+  expect(await fitsWidth(student)).toBe(true);
+
+  await teacher.screenshot({ path: test.info().outputPath('teacher-phone.png') });
+  await student.screenshot({ path: test.info().outputPath('student-phone.png') });
+
+  await toolbar(teacher).getByRole('button', { name: 'Clear live (1)', exact: true }).tap();
+  await expect(label(student, 2, 'Ikhfa')).toHaveCount(0);
   await teacher.context().close();
   await student.context().close();
 });

@@ -537,6 +537,19 @@ export interface HifzEntry {
   notes: string | null;
   sessionId: string | null; // set = logged during this live session
   recordedAt: string;
+  /** Tajweed corrections the teacher marked while hearing this recitation. */
+  tajweedCorrections?: HifzTajweedCorrection[];
+}
+
+/** A Tajweed correction as it appears on the recitation it was heard in. */
+export interface HifzTajweedCorrection {
+  id: string;
+  surahNumber: number;
+  ayahNumber: number;
+  rule: string | null;
+  customLabel: string | null;
+  outcome: string | null;
+  note: string | null;
 }
 
 /** Distinct-ayah progress summary derived from a student's NEW_HIFZ entries. */

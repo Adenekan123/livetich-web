@@ -16,6 +16,7 @@ import {
   type EntryInput,
   type TargetInput,
 } from '@/app/actions/hifz';
+import { TajweedCorrectionChips } from './tajweed-chips';
 import {
   ayahsDoneInTarget,
   formatRef,
@@ -700,6 +701,7 @@ function RecentRecitations({
                 {e.tajweed && (
                   <p className="mt-1 text-sm text-neutral-600">{e.tajweed}</p>
                 )}
+                <TajweedCorrectionChips corrections={e.tajweedCorrections} />
               </div>
               <button
                 onClick={() => onDelete(e.id)}

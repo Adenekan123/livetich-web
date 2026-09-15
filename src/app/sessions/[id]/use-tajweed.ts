@@ -25,6 +25,7 @@ import {
   newAnnotationId,
   TAJWEED_SUGGESTED_COLORS,
   TajweedApiError,
+  tajweedHistory,
   updateTajweed,
   type AnyTajweedMark,
   type TajweedCreateInput,
@@ -48,6 +49,10 @@ export type TajweedApi = ReturnType<typeof useTajweed>;
 
 type RoomSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
+/** The socket ref when there is no room — preparing a lesson. Always the same
+ *  object, so callbacks that read it keep a stable identity. */
+const NO_SOCKET: RefObject<RoomSocket | null> = { current: null };
+
 const DEFAULT_PREFS: TajweedPrefs = {
   style: 'HIGHLIGHT',
   colors: TAJWEED_SUGGESTED_COLORS,
@@ -55,7 +60,7 @@ const DEFAULT_PREFS: TajweedPrefs = {
 };
 
 const prefsKey = (courseId: string) => `livetich:tajweed-prefs:${courseId}`;
-const outboxKey = (sessionId: string) => `livetich:tajweed-outbox:${sessionId}`;
+const outboxKey = (scope: string) => `livetich:tajweed-outbox:${scope}`;
 
 function loadPrefs(courseId: string): TajweedPrefs {
   try {
@@ -88,22 +93,22 @@ function savePrefs(courseId: string, prefs: TajweedPrefs) {
  * middle of class. Every create carries its own id, so replaying the queue
  * after reconnecting can never make a second copy of one that did land.
  */
-function readOutbox(sessionId: string): TajweedCreateInput[] {
+function readOutbox(scope: string): TajweedCreateInput[] {
   try {
     return JSON.parse(
-      window.localStorage.getItem(outboxKey(sessionId)) ?? '[]',
+      window.localStorage.getItem(outboxKey(scope)) ?? '[]',
     ) as TajweedCreateInput[];
   } catch {
     return [];
   }
 }
 
-function writeOutbox(sessionId: string, items: TajweedCreateInput[]) {
+function writeOutbox(scope: string, items: TajweedCreateInput[]) {
   try {
     if (items.length) {
-      window.localStorage.setItem(outboxKey(sessionId), JSON.stringify(items));
+      window.localStorage.setItem(outboxKey(scope), JSON.stringify(items));
     } else {
-      window.localStorage.removeItem(outboxKey(sessionId));
+      window.localStorage.removeItem(outboxKey(scope));
     }
   } catch {
     // Nowhere to keep it; the in-memory copy still shows as saving.
@@ -173,26 +178,38 @@ function mergeSaved(prev: SavedMark[], fresh: TajweedAnnotation[]): SavedMark[] 
 }
 
 /**
- * Tajweed annotations for one live session.
+ * Tajweed annotations for one live session — or, with no session, for one
+ * lesson being prepared ahead of class.
  *
  * Saved annotations come over HTTP and are kept current by room events; live
  * ones arrive only over the socket and are replaced wholesale on every event.
- * Hiding and filtering never delete anything — they only change what is drawn.
+ * Without a socket there is no room to show live marks or hear a student in,
+ * so only lesson marks can be made. Hiding and filtering never delete
+ * anything — they only change what is drawn.
  */
 export function useTajweed({
   courseId,
   sessionId,
+  sectionId,
   canEdit,
   enabled,
-  socketRef,
+  socketRef = NO_SOCKET,
+  initialMode = 'LIVE',
 }: {
   courseId: string;
-  sessionId: string;
+  /** The live session. Absent when preparing a lesson outside class. */
+  sessionId?: string;
+  /** The lesson being prepared, when there is no session. */
+  sectionId?: string;
   canEdit: boolean;
   /** Islamic Education pack on. Off = the hook does nothing. */
   enabled: boolean;
-  socketRef: RefObject<RoomSocket | null>;
+  socketRef?: RefObject<RoomSocket | null>;
+  initialMode?: TajweedMode;
 }) {
+  // Where queued creates are kept: per session, or per lesson being prepared.
+  const scope = sessionId ?? `lesson:${sectionId ?? 'course'}`;
+
   const [lesson, setLesson] = useState<SavedMark[]>([]);
   const [corrections, setCorrections] = useState<SavedMark[]>([]);
   const [live, setLive] = useState<TajweedTemporaryAnnotation[]>([]);
@@ -203,7 +220,7 @@ export function useTajweed({
   );
   const [hideAll, setHideAll] = useState(false);
   const [prefs, setPrefs] = useState<TajweedPrefs>(() => loadPrefs(courseId));
-  const [mode, setMode] = useState<TajweedMode>('LIVE');
+  const [mode, setMode] = useState<TajweedMode>(initialMode);
   const [correctionStudent, setCorrectionStudent] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
@@ -241,11 +258,11 @@ export function useTajweed({
   const refresh = useCallback(async () => {
     if (!enabled) return;
     try {
-      applyLoaded(await listTajweed(courseId, { sessionId }));
+      applyLoaded(await listTajweed(courseId, { sessionId, sectionId }));
     } catch (e) {
       loadFailed(e);
     }
-  }, [courseId, sessionId, enabled, applyLoaded, loadFailed]);
+  }, [courseId, sessionId, sectionId, enabled, applyLoaded, loadFailed]);
 
   // ---- saving --------------------------------------------------------------
 
@@ -253,13 +270,13 @@ export function useTajweed({
     async (input: TajweedCreateInput): Promise<boolean> => {
       try {
         const saved = await createTajweed(courseId, input);
-        writeOutbox(sessionId, readOutbox(sessionId).filter((i) => i.id !== input.id));
+        writeOutbox(scope, readOutbox(scope).filter((i) => i.id !== input.id));
         receiveSaved(saved);
         return true;
       } catch (e) {
         if (e instanceof TajweedApiError && !e.retryable) {
           // The server said no — retrying will not change its mind.
-          writeOutbox(sessionId, readOutbox(sessionId).filter((i) => i.id !== input.id));
+          writeOutbox(scope, readOutbox(scope).filter((i) => i.id !== input.id));
           setterFor(input)((prev) => prev.filter((m) => m.id !== input.id));
           setError(e.message);
           return false;
@@ -268,32 +285,32 @@ export function useTajweed({
         return false;
       }
     },
-    [courseId, sessionId, receiveSaved],
+    [courseId, scope, receiveSaved],
   );
 
   /** Send anything still queued. Stops at the first failure, so a dead
    *  connection is tried once rather than once per queued annotation. */
   const flushOutbox = useCallback(async () => {
     if (!enabled || !canEdit) return;
-    for (const item of readOutbox(sessionId)) {
+    for (const item of readOutbox(scope)) {
       setterFor(item)((prev) =>
         prev.some((m) => m.id === item.id) ? prev : [...prev, optimistic(courseId, item)],
       );
       if (!(await send(item))) break;
     }
-  }, [enabled, canEdit, sessionId, courseId, send]);
+  }, [enabled, canEdit, scope, courseId, send]);
 
   const resync = useCallback(() => {
     void refresh().then(flushOutbox);
   }, [refresh, flushOutbox]);
 
-  // Load the session's annotations, then send anything queued before a reload.
-  // State is only ever set once the request settles, and not at all if the
-  // session changed in the meantime.
+  // Load the annotations, then send anything queued before a reload. State is
+  // only ever set once the request settles, and not at all if the session or
+  // lesson changed in the meantime.
   useEffect(() => {
     if (!enabled) return;
     let current = true;
-    listTajweed(courseId, { sessionId })
+    listTajweed(courseId, { sessionId, sectionId })
       .then((data) => {
         if (current) applyLoaded(data);
       })
@@ -306,7 +323,7 @@ export function useTajweed({
     return () => {
       current = false;
     };
-  }, [enabled, courseId, sessionId, applyLoaded, loadFailed, flushOutbox]);
+  }, [enabled, courseId, sessionId, sectionId, applyLoaded, loadFailed, flushOutbox]);
 
   useEffect(() => {
     if (!enabled || !canEdit) return;
@@ -316,13 +333,18 @@ export function useTajweed({
   }, [enabled, canEdit, flushOutbox]);
 
   const create = useCallback(
-    (input: Omit<TajweedCreateInput, 'id' | 'sessionId'>) => {
-      const full: TajweedCreateInput = { ...input, id: newAnnotationId(), sessionId };
+    (input: Omit<TajweedCreateInput, 'id' | 'sessionId' | 'sectionId'>) => {
+      const full: TajweedCreateInput = {
+        ...input,
+        id: newAnnotationId(),
+        ...(sessionId ? { sessionId } : {}),
+        ...(sectionId ? { sectionId } : {}),
+      };
       setterFor(full)((prev) => [...prev, optimistic(courseId, full)]);
-      writeOutbox(sessionId, [...readOutbox(sessionId), full]);
+      writeOutbox(scope, [...readOutbox(scope), full]);
       void send(full);
     },
-    [courseId, sessionId, send],
+    [courseId, sessionId, sectionId, scope, send],
   );
 
   const update = useCallback(
@@ -338,7 +360,7 @@ export function useTajweed({
         const saved = await updateTajweed(courseId, mark.id, {
           ...patch,
           version: mark.version,
-          sessionId,
+          ...(sessionId ? { sessionId } : {}),
         });
         receiveSaved(saved);
         setError(null);
@@ -374,6 +396,11 @@ export function useTajweed({
     [courseId, sessionId],
   );
 
+  const history = useCallback(
+    (id: string) => tajweedHistory(courseId, id),
+    [courseId],
+  );
+
   // ---- live ----------------------------------------------------------------
 
   const showLive = useCallback(
@@ -382,6 +409,7 @@ export function useTajweed({
       rule: TajweedRule,
       opts: { note?: string; customLabel?: string },
     ) => {
+      if (!sessionId) return;
       socketRef.current?.emit('tajweed:temporary:set', {
         sessionId,
         annotation: {
@@ -401,6 +429,7 @@ export function useTajweed({
 
   const clearLive = useCallback(
     (id?: string) => {
+      if (!sessionId) return;
       socketRef.current?.emit('tajweed:temporary:clear', {
         sessionId,
         ...(id ? { id } : {}),
@@ -536,6 +565,7 @@ export function useTajweed({
     create,
     update,
     remove,
+    history,
     showLive,
     clearLive,
     liveToLesson,

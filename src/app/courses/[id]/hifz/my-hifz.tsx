@@ -10,6 +10,7 @@ import {
 import type { HifzEntry, HifzTarget, MyHifz, Surah } from '@/lib/types';
 import { cardClass, cn } from '@/lib/ui';
 import { KindBadge, Rating } from './hifz-ui';
+import { TajweedCorrectionChips } from './tajweed-chips';
 
 const fmtDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, {
@@ -166,6 +167,7 @@ export function MyHifzPanel({
                   {e.tajweed && (
                     <p className="mt-1 text-sm text-neutral-600">{e.tajweed}</p>
                   )}
+                  <TajweedCorrectionChips corrections={e.tajweedCorrections} />
                   <p className="mt-0.5 text-xs text-neutral-500">
                     {fmtDate(e.recordedAt)}
                   </p>

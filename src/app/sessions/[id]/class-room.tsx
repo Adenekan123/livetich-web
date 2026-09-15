@@ -1195,6 +1195,7 @@ export function ClassRoom({
               sessionId={sessionId}
               canDraw={isInstructor}
               teaching={teaching}
+              quran={islamicEducation ? { tajweed } : null}
             />
           </div>
           {/* Only mounted when the Islamic Education pack is on, so a plain

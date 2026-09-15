@@ -4,6 +4,7 @@ import { useState } from 'react';
 import {
   PiArrowCounterClockwiseBold,
   PiCheckBold,
+  PiClockCounterClockwiseBold,
   PiExclamationMarkBold,
   PiFloppyDiskBold,
   PiFunnelBold,
@@ -28,6 +29,7 @@ import {
   splitWords,
   TAJWEED_OUTCOMES,
   type AnyTajweedMark,
+  type TajweedHistoryItem,
   type TajweedSelectionState,
 } from '@/lib/tajweed';
 import { cn } from '@/lib/ui';
@@ -39,6 +41,14 @@ const MODES: { key: TajweedMode; label: string; hint: string }[] = [
   { key: 'LESSON', label: 'Lesson', hint: 'Save it with the lesson' },
   { key: 'CORRECTION', label: 'Correction', hint: "Record it against a student's recitation" },
 ];
+
+const ALL_MODES: TajweedMode[] = ['LIVE', 'LESSON', 'CORRECTION'];
+
+const CHANGE_LABEL: Record<TajweedHistoryItem['change'], string> = {
+  CREATED: 'Created',
+  UPDATED: 'Edited',
+  DELETED: 'Deleted',
+};
 
 const OUTCOME_ICONS: Record<TajweedOutcome, IconType> = {
   CORRECT: PiCheckBold,
@@ -83,6 +93,7 @@ export function TajweedToolbar({
   setSelection,
   ayahText,
   students,
+  modes = ALL_MODES,
 }: {
   api: TajweedApi;
   selection: TajweedSelectionState | null;
@@ -90,6 +101,9 @@ export function TajweedToolbar({
   /** The text of the selected ayah, for previews and letter picking. */
   ayahText: string | null;
   students: RoomUser[];
+  /** Which modes this place offers. Preparing a lesson has no class to show
+   *  live marks to and no student reciting, so it offers Lesson only. */
+  modes?: TajweedMode[];
 }) {
   const [note, setNote] = useState('');
   const [customLabel, setCustomLabel] = useState('');
@@ -98,6 +112,27 @@ export function TajweedToolbar({
   const [panel, setPanel] = useState<'filter' | 'style' | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string; note: string } | null>(null);
+  const [historyFor, setHistoryFor] = useState<{
+    id: string;
+    items: TajweedHistoryItem[] | null;
+    error: string | null;
+  } | null>(null);
+
+  const openHistory = (id: string) => {
+    setHistoryFor({ id, items: null, error: null });
+    api
+      .history(id)
+      .then((items) =>
+        setHistoryFor((h) => (h?.id === id ? { id, items, error: null } : h)),
+      )
+      .catch((e: unknown) =>
+        setHistoryFor((h) =>
+          h?.id === id
+            ? { id, items: null, error: e instanceof Error ? e.message : 'Could not load history' }
+            : h,
+        ),
+      );
+  };
 
   const words = ayahText ? splitWords(ayahText) : [];
   const ready =
@@ -209,7 +244,7 @@ export function TajweedToolbar({
           aria-label="What a rule does"
           className="flex rounded-lg border border-white/10 bg-white/5 p-0.5"
         >
-          {MODES.map((m) => (
+          {MODES.filter((m) => modes.includes(m.key)).map((m) => (
             <button
               key={m.key}
               type="button"
@@ -540,6 +575,17 @@ export function TajweedToolbar({
                   </>
                 ) : (
                   <>
+                    {!(m as SavedMark).pending && (
+                      <button
+                        type="button"
+                        aria-label="Annotation history"
+                        title="History"
+                        onClick={() => openHistory(m.id)}
+                        className={cn(tool, 'h-8')}
+                      >
+                        <PiClockCounterClockwiseBold aria-hidden />
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setEditing({ id: m.id, note: m.note ?? '' })}
@@ -562,6 +608,48 @@ export function TajweedToolbar({
             </li>
           ))}
         </ul>
+      )}
+
+      {historyFor && (
+        <div
+          data-tajweed-history
+          className="mt-2 rounded-lg border border-white/10 bg-white/5 p-2.5"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+              History
+            </p>
+            <button
+              type="button"
+              aria-label="Close history"
+              onClick={() => setHistoryFor(null)}
+              className="grid h-7 w-7 place-items-center rounded-md text-neutral-400 hover:bg-white/10 hover:text-white"
+            >
+              <PiXBold />
+            </button>
+          </div>
+          {historyFor.error ? (
+            <p className="mt-1 text-xs text-rose-300">{historyFor.error}</p>
+          ) : !historyFor.items ? (
+            <p className="mt-1 text-xs text-neutral-400">Loading…</p>
+          ) : (
+            <ol className="mt-1 space-y-1">
+              {historyFor.items.map((h) => (
+                <li key={h.id} className="text-xs text-neutral-300">
+                  <span className="font-semibold text-white">{CHANGE_LABEL[h.change]}</span>{' '}
+                  by {h.changedBy.name} ·{' '}
+                  {new Date(h.changedAt).toLocaleString(undefined, {
+                    dateStyle: 'medium',
+                    timeStyle: 'short',
+                  })}
+                  {h.snapshot.note && (
+                    <span className="text-neutral-500"> — “{h.snapshot.note}”</span>
+                  )}
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
       )}
 
       {selection && (
