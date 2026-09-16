@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   PiArrowCounterClockwiseBold,
   PiCheckBold,
@@ -16,21 +16,25 @@ import {
 } from 'react-icons/pi';
 import type { IconType } from 'react-icons';
 import {
-  TAJWEED_RULE_KEYS,
+  TAJWEED_RULE_GROUPS,
   TAJWEED_RULES,
   type RoomUser,
   type TajweedOutcome,
   type TajweedRule,
+  type TajweedRuleGroupKey,
   type TajweedTemporaryAnnotation,
 } from '@/lib/realtime-contract';
 import {
-  ayahKey,
+  describeParts,
   graphemes,
+  ruleArabic,
+  ruleColor,
+  ruleLabel,
   splitWords,
+  TAJWEED_GROUP_COLORS,
   TAJWEED_OUTCOMES,
   type AnyTajweedMark,
   type TajweedHistoryItem,
-  type TajweedSelectionState,
 } from '@/lib/tajweed';
 import { cn } from '@/lib/ui';
 import { markColor, markLabel } from './tajweed-ayah';
@@ -65,6 +69,15 @@ const LIVE_DURATIONS = [
   { seconds: 300, label: '5 minutes' },
 ];
 
+/** What sits in Recent before this teacher has marked anything. */
+const RECENT_FALLBACK: TajweedRule[] = [
+  'nun.ikhfa_haqiqi',
+  'madd.tabii',
+  'qalqalah.kubra',
+  'nun.idgham_ghunnah',
+  'ghunnah.mushaddadah',
+];
+
 const tool =
   'inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 text-xs font-semibold text-neutral-200 transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-500 disabled:opacity-40';
 const field =
@@ -73,34 +86,29 @@ const field =
 const isLive = (m: AnyTajweedMark): m is TajweedTemporaryAnnotation & { live: true } =>
   m.live === true;
 
-function overlaps(m: AnyTajweedMark, s: TajweedSelectionState) {
-  if (m.selection === 'AYAH' || s.selection === 'AYAH') return true;
-  const [a1, a2] = [m.wordStart ?? 0, m.wordEnd ?? m.wordStart ?? 0];
-  const [b1, b2] = [s.wordStart ?? 0, s.wordEnd ?? s.wordStart ?? 0];
-  return a1 <= b2 && b1 <= a2;
-}
-
 /**
  * The instructor's Tajweed controls, under the mushaf.
  *
- * The common path is two taps: a word in the text, then a rule here. Mode
- * decides what that tap does, and everything else — letters, notes, styles,
- * filters — stays one step aside so it never stands in the way of teaching.
+ * Picking and marking are two separate acts, in that order: tap the words or
+ * letters you mean — anywhere, in any ayah — and the class sees them outlined
+ * while you choose the rule. The rule itself comes from Recent, from the group
+ * dropdowns, or by typing its name, so the whole taxonomy costs three lines
+ * instead of fifty chips.
  */
 export function TajweedToolbar({
   api,
-  selection,
-  setSelection,
-  ayahText,
   students,
+  surahName,
+  ayahText,
   modes = ALL_MODES,
 }: {
   api: TajweedApi;
-  selection: TajweedSelectionState | null;
-  setSelection: (s: TajweedSelectionState | null) => void;
-  /** The text of the selected ayah, for previews and letter picking. */
-  ayahText: string | null;
   students: RoomUser[];
+  /** Names the surah a part sits in, for saying where a mark is. */
+  surahName: (surah: number) => string;
+  /** The text of an ayah, for showing what is picked. The mushaf holds it —
+   *  this only reads what a part points at. */
+  ayahText: (surah: number, ayah: number) => string | null;
   /** Which modes this place offers. Preparing a lesson has no class to show
    *  live marks to and no student reciting, so it offers Lesson only. */
   modes?: TajweedMode[];
@@ -108,7 +116,10 @@ export function TajweedToolbar({
   const [note, setNote] = useState('');
   const [customLabel, setCustomLabel] = useState('');
   const [needLabel, setNeedLabel] = useState(false);
+  const [kept, setKept] = useState(false);
   const [pickingIssue, setPickingIssue] = useState(false);
+  const [group, setGroup] = useState<TajweedRuleGroupKey | ''>('');
+  const [query, setQuery] = useState('');
   const [panel, setPanel] = useState<'filter' | 'style' | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string; note: string } | null>(null);
@@ -134,33 +145,71 @@ export function TajweedToolbar({
       );
   };
 
-  const words = ayahText ? splitWords(ayahText) : [];
-  const ready =
-    !!selection && (selection.selection !== 'LETTERS' || selection.letterStart !== null);
-  const marksHere = selection
-    ? (api.index.get(ayahKey(selection.surahNumber, selection.ayahNumber)) ?? []).filter((m) =>
-        overlaps(m, selection),
-      )
-    : [];
+  const { parts, letters } = api.selection;
+  const ready = parts.length > 0;
+
+  /** The rules this teacher actually reaches for, most recent first. */
+  const recent = useMemo(() => {
+    const used = [...api.lesson, ...api.corrections]
+      .slice()
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((m) => m.rule)
+      .filter((r): r is TajweedRule => !!r && TAJWEED_RULES[r]?.pickable);
+    return [...new Set([...used, ...RECENT_FALLBACK])].slice(0, 5);
+  }, [api.lesson, api.corrections]);
+
+  /** Marks touching any word the selection touches, so what is already there
+   *  is in front of the teacher before they add another. */
+  const marksHere = useMemo(() => {
+    if (!parts.length) return [];
+    const touched = new Set(
+      parts.map((p) => `${p.surahNumber}:${p.ayahNumber}:${p.wordIndex}`),
+    );
+    const seen = new Map<string, AnyTajweedMark>();
+    for (const part of parts) {
+      for (const m of api.index.get(`${part.surahNumber}:${part.ayahNumber}`) ?? []) {
+        const hits = m.parts.some((p) =>
+          touched.has(`${p.surahNumber}:${p.ayahNumber}:${p.wordIndex}`),
+        );
+        if (hits) seen.set(m.id, m);
+      }
+    }
+    return [...seen.values()];
+  }, [parts, api.index]);
+
+  const hits = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return (Object.keys(TAJWEED_RULES) as TajweedRule[]).filter((key) => {
+      const info = TAJWEED_RULES[key];
+      return (
+        info.pickable &&
+        (info.label.toLowerCase().includes(q) ||
+          (info.groupLabel ?? '').toLowerCase().includes(q) ||
+          (info.arabic ?? '').includes(query.trim()))
+      );
+    });
+  }, [query]);
 
   const done = () => {
     setNote('');
     setCustomLabel('');
     setNeedLabel(false);
     setPickingIssue(false);
+    setQuery('');
     setHint(null);
     api.clearError();
   };
 
   const applyRule = (rule: TajweedRule) => {
-    if (!selection || !ready) {
-      setHint(selection ? 'Tap the letters to mark first.' : 'Tap a word in the text first.');
+    if (!ready) {
+      setHint('Tap the words or letters you mean first.');
       return;
     }
     const label = customLabel.trim();
     if (rule === 'custom' && !label) {
       setNeedLabel(true);
-      setHint('Give the custom note a label, then tap Custom note again.');
+      setHint('Give the custom note a label, then choose it again.');
       return;
     }
     const content = {
@@ -169,14 +218,14 @@ export function TajweedToolbar({
       note: note.trim() || undefined,
     };
     if (api.mode === 'LIVE') {
-      api.showLive(selection, rule, content);
+      api.showLive(rule, content);
     } else if (api.mode === 'LESSON') {
       api.create({
-        ...selection,
         mode: 'LESSON',
+        kept,
         ...content,
         style: api.prefs.style,
-        color: api.prefs.colors[rule],
+        color: ruleColor(rule, api.prefs.colors),
       });
     } else {
       if (!api.correctionStudent) {
@@ -184,21 +233,20 @@ export function TajweedToolbar({
         return;
       }
       api.create({
-        ...selection,
         mode: 'STUDENT_CORRECTION',
         studentId: api.correctionStudent,
         outcome: 'TAJWEED_ISSUE',
         ...content,
         style: api.prefs.style,
-        color: api.prefs.colors[rule],
+        color: ruleColor(rule, api.prefs.colors),
       });
     }
     done();
   };
 
   const applyOutcome = (outcome: TajweedOutcome) => {
-    if (!selection || !ready) {
-      setHint(selection ? 'Tap the letters to mark first.' : 'Tap a word in the text first.');
+    if (!ready) {
+      setHint('Tap the words or letters you mean first.');
       return;
     }
     if (!api.correctionStudent) {
@@ -215,7 +263,6 @@ export function TajweedToolbar({
       return;
     }
     api.create({
-      ...selection,
       mode: 'STUDENT_CORRECTION',
       studentId: api.correctionStudent,
       outcome,
@@ -225,16 +272,30 @@ export function TajweedToolbar({
     done();
   };
 
-  const pickLetter = (i: number) => {
-    if (!selection) return;
-    const { letterStart: s, letterEnd: e } = selection;
-    // First tap picks a letter; a second tap on another letter stretches the
-    // range to it; tapping again once a range is set starts over.
-    const [from, to] = s === null || s !== e ? [i, i] : [Math.min(s, i), Math.max(s, i)];
-    setSelection({ ...selection, letterStart: from, letterEnd: to });
-  };
+  /** A rule as a chip: one tap marks what is picked. */
+  const RuleChip = ({ rule }: { rule: TajweedRule }) => (
+    <button
+      type="button"
+      onClick={() => applyRule(rule)}
+      title={ruleArabic(rule) ?? undefined}
+      className={cn(tool, 'h-10 shrink-0 whitespace-nowrap px-3')}
+    >
+      <span
+        aria-hidden
+        className="h-2.5 w-2.5 rounded-full"
+        style={{ backgroundColor: ruleColor(rule, api.prefs.colors) }}
+      />
+      {ruleLabel(rule, null)}
+      {ruleArabic(rule) && (
+        <span dir="rtl" lang="ar" className="font-quran text-sm text-neutral-400">
+          {ruleArabic(rule)}
+        </span>
+      )}
+    </button>
+  );
 
   const statusMessage = hint ?? api.error;
+  const what = letters ? 'letter' : 'word';
 
   return (
     <div data-tajweed-toolbar className="border-t border-white/10 bg-neutral-950/70 px-3 py-2.5 text-sm">
@@ -314,25 +375,28 @@ export function TajweedToolbar({
 
       {panel === 'filter' && (
         <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 p-2">
-          {TAJWEED_RULE_KEYS.map((rule) => {
-            const hidden = api.hideAll || api.hiddenRules.has(rule);
+          {TAJWEED_RULE_GROUPS.map((g) => {
+            const rules = g.rules.map((r) => `${g.key}.${r.key}` as TajweedRule);
+            const hidden = api.hideAll || rules.every((r) => api.hiddenRules.has(r));
             return (
               <button
-                key={rule}
+                key={g.key}
                 type="button"
                 aria-pressed={!hidden}
                 onClick={() => {
                   if (api.hideAll) api.setHideAll(false);
-                  api.toggleRule(rule);
+                  for (const r of rules) {
+                    if (api.hiddenRules.has(r) === !hidden) api.toggleRule(r);
+                  }
                 }}
                 className={cn(tool, 'h-8', hidden && 'opacity-50')}
               >
                 <span
                   aria-hidden
                   className="h-2.5 w-2.5 rounded-full"
-                  style={{ backgroundColor: api.prefs.colors[rule] }}
+                  style={{ backgroundColor: api.prefs.colors[g.key] }}
                 />
-                {TAJWEED_RULES[rule].label}
+                {g.label}
               </button>
             );
           })}
@@ -381,28 +445,61 @@ export function TajweedToolbar({
             </label>
           </div>
           <p className="text-[11px] text-neutral-500">
-            Colours are yours to choose — Tajweed mushafs do not all use the same ones.
+            One colour per group — you read which madd from its name, not from fifty
+            colours. Tajweed mushafs do not all use the same ones, so these are yours to
+            change.
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {TAJWEED_RULE_KEYS.map((rule) => (
-              <label key={rule} className={cn(tool, 'h-8 cursor-pointer')}>
+            {TAJWEED_RULE_GROUPS.map((g) => (
+              <label key={g.key} className={cn(tool, 'h-8 cursor-pointer')}>
                 <input
                   type="color"
-                  value={api.prefs.colors[rule]}
-                  onChange={(e) => api.updatePrefs({ colors: { [rule]: e.target.value } })}
+                  value={api.prefs.colors[g.key] ?? TAJWEED_GROUP_COLORS[g.key]}
+                  onChange={(e) => api.updatePrefs({ colors: { [g.key]: e.target.value } })}
                   className="h-4 w-4 cursor-pointer rounded border-0 bg-transparent p-0"
-                  aria-label={`${TAJWEED_RULES[rule].label} colour`}
+                  aria-label={`${g.label} colour`}
                 />
-                {TAJWEED_RULES[rule].label}
+                {g.label}
               </label>
             ))}
           </div>
         </div>
       )}
 
-      {!selection ? (
+      {/* How a tap picks — decided before anything is picked, so the answer to
+          "how do I mark one letter?" is on screen from the start. */}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <div
+          role="radiogroup"
+          aria-label="What a tap picks"
+          className="flex rounded-lg border border-white/10 bg-white/5 p-0.5"
+        >
+          {([false, true] as const).map((v) => (
+            <button
+              key={String(v)}
+              type="button"
+              role="radio"
+              aria-checked={letters === v}
+              onClick={() => api.setLetters(v)}
+              className={cn(
+                'h-8 rounded-md px-3 text-xs font-semibold transition',
+                letters === v ? 'bg-white text-neutral-900' : 'text-neutral-300 hover:bg-white/10',
+              )}
+            >
+              {v ? 'Letters' : 'Words'}
+            </button>
+          ))}
+        </div>
+        <p className="min-w-0 flex-1 text-[11px] text-neutral-400">
+          Tap each {what} you mean; tap it again to drop it. They may be in different
+          ayahs, and everything you pick becomes one mark.
+        </p>
+      </div>
+
+      {!ready ? (
         <p className="mt-2 text-xs text-neutral-400">
-          Tap a word in the text to mark it. Tap it again to mark single letters.
+          Nothing picked yet — tap the text above. The class sees what you pick before you
+          choose a rule.
         </p>
       ) : (
         <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -411,93 +508,33 @@ export function TajweedToolbar({
             lang="ar"
             className="font-quran max-w-full truncate rounded-lg bg-white/5 px-2.5 py-0.5 text-2xl leading-relaxed text-white"
           >
-            {selection.selection === 'AYAH'
-              ? `Ayah ${selection.ayahNumber}`
-              : words
-                  .slice(
-                    selection.wordStart ?? 0,
-                    (selection.wordEnd ?? selection.wordStart ?? 0) + 1,
-                  )
-                  .join(' ')}
+            {parts
+              .map((p) =>
+                p.wordIndex === null
+                  ? `Ayah ${p.ayahNumber}`
+                  : (() => {
+                      const verse = ayahText(p.surahNumber, p.ayahNumber);
+                      const w = verse ? (splitWords(verse)[p.wordIndex] ?? '') : '';
+                      return p.letterIndex === null ? w : (graphemes(w)[p.letterIndex] ?? '');
+                    })(),
+              )
+              .join(' ')}
           </span>
-          <div className="ml-auto flex flex-wrap gap-1">
-            <button
-              type="button"
-              aria-pressed={selection.selection === 'AYAH'}
-              onClick={() =>
-                setSelection({
-                  ...selection,
-                  selection: 'AYAH',
-                  wordStart: null,
-                  wordEnd: null,
-                  letterStart: null,
-                  letterEnd: null,
-                })
-              }
-              className={tool}
-            >
-              Whole ayah
-            </button>
-            {selection.selection !== 'AYAH' && selection.wordStart === selection.wordEnd && (
-              <button
-                type="button"
-                aria-pressed={selection.selection === 'LETTERS'}
-                onClick={() =>
-                  setSelection({
-                    ...selection,
-                    selection: selection.selection === 'LETTERS' ? 'WORD' : 'LETTERS',
-                    letterStart: null,
-                    letterEnd: null,
-                  })
-                }
-                className={cn(
-                  tool,
-                  selection.selection === 'LETTERS' && 'border-signal-500/50 bg-signal-500/15',
-                )}
-              >
-                Letters
-              </button>
-            )}
-            <button
-              type="button"
-              aria-label="Clear selection"
-              onClick={() => {
-                setSelection(null);
-                done();
-              }}
-              className={tool}
-            >
-              <PiXBold aria-hidden />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {selection?.selection === 'LETTERS' && selection.wordStart !== null && (
-        <div dir="rtl" lang="ar" className="mt-2 flex flex-wrap gap-1.5">
-          {graphemes(words[selection.wordStart] ?? '').map((g, i) => {
-            const on =
-              selection.letterStart !== null &&
-              i >= selection.letterStart &&
-              i <= (selection.letterEnd ?? selection.letterStart);
-            return (
-              <button
-                key={i}
-                type="button"
-                aria-pressed={on}
-                aria-label={`Letter ${i + 1}`}
-                onClick={() => pickLetter(i)}
-                className={cn(
-                  'font-quran grid h-12 min-w-11 place-items-center rounded-lg border px-2 text-2xl transition',
-                  on
-                    ? 'border-signal-400 bg-signal-500/25 text-white'
-                    : 'border-white/10 bg-white/5 text-neutral-100 hover:bg-white/10',
-                )}
-              >
-                {g}
-              </button>
-            );
-          })}
+          <span className="text-[11px] text-neutral-400">
+            {describeParts(parts, surahName)}
+          </span>
+          <button
+            type="button"
+            aria-label="Clear picks"
+            onClick={() => {
+              api.clearSelection();
+              done();
+            }}
+            className={cn(tool, 'ml-auto')}
+          >
+            <PiXBold aria-hidden />
+            Clear picks
+          </button>
         </div>
       )}
 
@@ -511,9 +548,14 @@ export function TajweedToolbar({
               <span
                 aria-hidden
                 className="h-2.5 w-2.5 shrink-0 rounded-full"
-                style={{ backgroundColor: markColor(m) }}
+                style={{ backgroundColor: markColor(m, api.prefs.colors) }}
               />
               <span className="text-xs font-semibold text-white">{markLabel(m)}</span>
+              {'kept' in m && m.kept && (
+                <span className="rounded bg-white/10 px-1.5 py-px text-[10px] text-neutral-300">
+                  kept
+                </span>
+              )}
               {isLive(m) ? (
                 <span className="rounded bg-white/10 px-1.5 py-px text-[10px] text-neutral-300">
                   live
@@ -652,7 +694,7 @@ export function TajweedToolbar({
         </div>
       )}
 
-      {selection && (
+      {ready && (
         <>
           <div className="mt-2 flex flex-wrap gap-2">
             <input
@@ -671,6 +713,17 @@ export function TajweedToolbar({
                 placeholder="Label"
                 className={cn(field, 'w-36')}
               />
+            )}
+            {api.mode === 'LESSON' && (
+              <label className="flex items-center gap-2 text-xs text-neutral-300">
+                <input
+                  type="checkbox"
+                  checked={kept}
+                  onChange={(e) => setKept(e.target.checked)}
+                  className="h-4 w-4 rounded border-white/20 bg-white/5"
+                />
+                Keep for next time
+              </label>
             )}
           </div>
 
@@ -693,23 +746,84 @@ export function TajweedToolbar({
               })}
             </div>
           ) : (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {TAJWEED_RULE_KEYS.map((rule) => (
-                <button
-                  key={rule}
-                  type="button"
-                  title={TAJWEED_RULES[rule].description}
-                  onClick={() => applyRule(rule)}
-                  className={cn(tool, 'h-10 px-3')}
-                >
-                  <span
-                    aria-hidden
-                    className="h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: api.prefs.colors[rule] }}
-                  />
-                  {TAJWEED_RULES[rule].label}
-                </button>
-              ))}
+            <div className="mt-2 space-y-2">
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Find a rule — e.g. ikhfa, madd, qalqalah"
+                aria-label="Find a rule"
+                className={cn(field, 'w-full')}
+              />
+              {query ? (
+                <div className="flex gap-1.5 overflow-x-auto pb-1">
+                  {hits.length ? (
+                    hits.map((rule) => <RuleChip key={rule} rule={rule} />)
+                  ) : (
+                    <p className="text-xs text-neutral-500">No rule matches “{query}”.</p>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+                    Recent
+                  </p>
+                  {/* One line that scrolls sideways: a long list of rules never
+                      pushes the text off the screen. */}
+                  <div className="flex gap-1.5 overflow-x-auto pb-1">
+                    {recent.map((rule) => (
+                      <RuleChip key={rule} rule={rule} />
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <select
+                      aria-label="Rule group"
+                      value={group}
+                      onChange={(e) => setGroup(e.target.value as TajweedRuleGroupKey | '')}
+                      className={cn(field, 'flex-1')}
+                    >
+                      <option value="" className="bg-neutral-900">
+                        Choose a group…
+                      </option>
+                      {TAJWEED_RULE_GROUPS.map((g) => (
+                        <option key={g.key} value={g.key} className="bg-neutral-900">
+                          {g.label} · {g.arabic}
+                        </option>
+                      ))}
+                    </select>
+                    {group && (
+                      <select
+                        aria-label="Rule"
+                        value=""
+                        onChange={(e) => {
+                          if (e.target.value) applyRule(e.target.value as TajweedRule);
+                        }}
+                        className={cn(field, 'flex-1')}
+                      >
+                        <option value="" className="bg-neutral-900">
+                          Choose a rule…
+                        </option>
+                        {TAJWEED_RULE_GROUPS.find((g) => g.key === group)?.rules.map((r) => (
+                          <option
+                            key={r.key}
+                            value={`${group}.${r.key}`}
+                            className="bg-neutral-900"
+                          >
+                            {r.label} · {r.arabic}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => applyRule('custom')}
+                      className={cn(tool, 'h-9')}
+                    >
+                      Custom note
+                    </button>
+                  </div>
+                </>
+              )}
               {pickingIssue && (
                 <button
                   type="button"
@@ -717,7 +831,7 @@ export function TajweedToolbar({
                     setPickingIssue(false);
                     setHint(null);
                   }}
-                  className={cn(tool, 'h-10')}
+                  className={cn(tool, 'h-9')}
                 >
                   Back
                 </button>
@@ -749,7 +863,12 @@ export function TajweedLegend({ entries }: { entries: { rule: TajweedRule; color
         {entries.map((e) => (
           <li key={e.rule} className="flex items-center gap-2 text-xs text-neutral-200">
             <span aria-hidden className="h-1 w-6 rounded-full" style={{ backgroundColor: e.color }} />
-            {TAJWEED_RULES[e.rule].label}
+            {ruleLabel(e.rule, null)}
+            {ruleArabic(e.rule) && (
+              <span dir="rtl" lang="ar" className="font-quran text-neutral-400">
+                {ruleArabic(e.rule)}
+              </span>
+            )}
           </li>
         ))}
       </ul>
@@ -757,10 +876,25 @@ export function TajweedLegend({ entries }: { entries: { rule: TajweedRule; color
   );
 }
 
-/** What a tapped mark says — for students, and for the teacher when not
- *  annotating. */
-export function TajweedMarkCard({ mark, onClose }: { mark: AnyTajweedMark; onClose: () => void }) {
-  const rule = mark.rule ? TAJWEED_RULES[mark.rule] : null;
+/**
+ * What a tapped mark says — for students, and for the teacher when not
+ * annotating.
+ *
+ * The rule by name, in English and Arabic, on the words it was put on: what a
+ * student needs in order to know what they are being taught, rather than a
+ * colour they have to decode.
+ */
+export function TajweedMarkCard({
+  mark,
+  surahName,
+  onClose,
+}: {
+  mark: AnyTajweedMark;
+  surahName: (surah: number) => string;
+  onClose: () => void;
+}) {
+  const arabic = ruleArabic(mark.rule);
+  const group = mark.rule ? TAJWEED_RULES[mark.rule]?.groupLabel : null;
   return (
     <div data-tajweed-card className="border-t border-white/10 bg-neutral-950/80 px-4 py-3">
       <div className="flex items-start gap-3">
@@ -770,15 +904,21 @@ export function TajweedMarkCard({ mark, onClose }: { mark: AnyTajweedMark; onClo
           style={{ backgroundColor: markColor(mark) }}
         />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-white">
+          <p className="flex flex-wrap items-baseline gap-2 text-sm font-semibold text-white">
             {markLabel(mark)}
+            {arabic && (
+              <span dir="rtl" lang="ar" className="font-quran text-base font-normal text-neutral-300">
+                {arabic}
+              </span>
+            )}
             {'studentId' in mark && mark.studentId && (
-              <span className="ml-2 text-xs font-normal text-neutral-400">correction</span>
+              <span className="text-xs font-normal text-amber-300">just for you</span>
             )}
           </p>
-          {rule && mark.rule !== 'custom' && (
-            <p className="text-xs text-neutral-400">{rule.description}</p>
-          )}
+          <p className="text-xs text-neutral-400">
+            {describeParts(mark.parts, surahName)}
+            {group && ` · ${group}`}
+          </p>
           {mark.note && <p className="mt-1 text-sm text-neutral-200">{mark.note}</p>}
         </div>
         <button

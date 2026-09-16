@@ -36,6 +36,13 @@ let hifzEntryId = '';
 
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
+/** A mark points at parts of the text: a whole word, or one letter of it. */
+const wordPart = (ayahNumber: number, wordIndex: number, surahNumber = 113) => ({
+  surahNumber,
+  ayahNumber,
+  wordIndex,
+});
+
 async function tokenFor(request: APIRequestContext, email: string) {
   const res = await request.post(`${API}/auth/login`, { data: { email, password: PASSWORD } });
   expect(res.ok(), `login ${email}: ${res.status()}`).toBeTruthy();
@@ -52,7 +59,9 @@ interface Mark {
   version: number;
   note: string | null;
   rule: string | null;
+  kept: boolean;
   ayahNumber: number;
+  parts: { ayahNumber: number; wordIndex: number | null; letterIndex: number | null }[];
   sessionId: string | null;
   hifzEntryId: string | null;
 }
@@ -80,18 +89,15 @@ async function clearTajweed() {
  *  an earlier one did not leave it — so each test also runs on its own. */
 async function ensureLessonMark() {
   const { lesson } = await list(`sectionId=${sectionId}`);
-  if (lesson.some((m) => m.rule === 'madd' && m.ayahNumber === 5)) return;
+  if (lesson.some((m) => m.rule === 'madd.tabii' && m.ayahNumber === 5)) return;
   const res = await api.post(`${API}/courses/${COURSE}/tajweed/annotations`, {
     headers: auth(teacherToken),
     data: {
       id: `e2e-lesson-${Date.now()}`,
       mode: 'LESSON',
       sectionId,
-      surahNumber: 113,
-      ayahNumber: 5,
-      selection: 'WORD',
-      wordStart: 0,
-      rule: 'madd',
+      parts: [wordPart(5, 0)],
+      rule: 'madd.tabii',
       note: NOTE,
     },
   });
@@ -183,6 +189,7 @@ const word = (p: Page, ayah: number, w: number) =>
 const label = (p: Page, ayah: number, text: string) =>
   p.locator(`[data-ayah="${ayah}"] [data-tajweed-label]`, { hasText: text });
 const toolbar = (p: Page) => p.locator('[data-tajweed-toolbar]');
+const rule = (p: Page, name: RegExp) => toolbar(p).getByRole('button', { name });
 
 test('a lesson prepared on the course page is on the mushaf when its class runs', async ({
   browser,
@@ -195,20 +202,26 @@ test('a lesson prepared on the course page is on the mushaf when its class runs'
   await expect(prep.getByRole('heading', { name: 'Tajweed', exact: true })).toBeVisible();
   await expect(prep.getByLabel('Lesson')).toHaveValue(sectionId);
   await expect(toolbar(prep)).toBeVisible({ timeout: 30_000 });
-  // No class to show live marks to, and no student reciting: Lesson only.
-  await expect(toolbar(prep).getByRole('radio')).toHaveCount(1);
+  // No class to show live marks to, and no student reciting: Lesson only. The
+  // Words/Letters radios are how a tap picks, not what a rule does.
   await expect(toolbar(prep).getByRole('radio', { name: 'Lesson' })).toBeVisible();
+  await expect(toolbar(prep).getByRole('radio', { name: 'Live' })).toHaveCount(0);
+  await expect(toolbar(prep).getByRole('radio', { name: 'Correction' })).toHaveCount(0);
 
   await turnTo(prep, 113, 'Al-Falaq');
   await word(prep, 5, 0).click();
   await toolbar(prep).getByPlaceholder('Teacher note (optional)').fill(NOTE);
-  await toolbar(prep).getByRole('button', { name: 'Madd', exact: true }).click();
+  await rule(prep, /^Madd tabi/).click();
 
   await expect.poll(async () => (await list(`sectionId=${sectionId}`)).lesson.length).toBe(1);
   const [saved] = (await list(`sectionId=${sectionId}`)).lesson;
-  expect(saved).toMatchObject({ rule: 'madd', note: NOTE, sessionId: null });
+  expect(saved).toMatchObject({ rule: 'madd.tabii', note: NOTE, sessionId: null });
+  expect(saved.parts).toEqual([
+    { surahNumber: 113, ayahNumber: 5, wordIndex: 0, letterIndex: null },
+  ]);
 
   // Its history says what happened to it.
+  await word(prep, 5, 0).click();
   await toolbar(prep).getByRole('button', { name: 'Annotation history' }).click();
   await expect(prep.locator('[data-tajweed-history]')).toContainText('Created');
   await ctx.close();
@@ -217,9 +230,37 @@ test('a lesson prepared on the course page is on the mushaf when its class runs'
   const teacher = await openClass(browser, 'instructor', 'quran');
   await turnTo(teacher, 113, 'Al-Falaq');
   const student = await openClass(browser, 'student', 'quran');
-  await expect(label(student, 5, 'Madd')).toBeVisible({ timeout: 30_000 });
+  await expect(label(student, 5, 'Madd tabi')).toBeVisible({ timeout: 30_000 });
   await teacher.context().close();
   await student.context().close();
+});
+
+test('a kept mark comes back in another lesson of the same course', async () => {
+  test.setTimeout(120_000);
+  await clearTajweed();
+  const id = `e2e-kept-${Date.now()}`;
+  const made = await api.post(`${API}/courses/${COURSE}/tajweed/annotations`, {
+    headers: auth(teacherToken),
+    data: {
+      id,
+      mode: 'LESSON',
+      sectionId,
+      kept: true,
+      parts: [wordPart(4, 1)],
+      rule: 'qalqalah.kubra',
+    },
+  });
+  expect(made.ok(), `kept mark: ${made.status()} ${await made.text()}`).toBeTruthy();
+
+  // A class with no lesson of its own still opens on what the teacher kept:
+  // "keep for next time" belongs to the ayah, not to one lesson.
+  const elsewhere = await list(`sessionId=${sessionId}`);
+  expect(elsewhere.lesson.map((m) => m.id)).toContain(id);
+  expect(elsewhere.lesson.find((m) => m.id === id)?.kept).toBe(true);
+
+  await api.delete(`${API}/courses/${COURSE}/tajweed/annotations/${id}`, {
+    headers: auth(teacherToken),
+  });
 });
 
 test('the lesson sheet shows the lesson’s marks, ready to print', async ({ browser }) => {
@@ -231,7 +272,7 @@ test('the lesson sheet shows the lesson’s marks, ready to print', async ({ bro
 
   await expect(page.getByRole('heading', { name: LESSON_TITLE })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('Al-Falaq 5')).toBeVisible();
-  await expect(page.getByRole('cell', { name: 'Madd' }).first()).toBeVisible();
+  await expect(page.getByRole('cell', { name: /Madd tabi/ }).first()).toBeVisible();
   await expect(page.getByRole('cell', { name: NOTE }).first()).toBeVisible();
 
   const print = page.getByRole('button', { name: 'Print or save as PDF' });
@@ -259,11 +300,8 @@ test('a correction heard in class joins the recitation, with its history and in 
       sessionId,
       studentId,
       outcome: 'TAJWEED_ISSUE',
-      rule: 'qalqalah',
-      surahNumber: 113,
-      ayahNumber: 1,
-      selection: 'WORD',
-      wordStart: 0,
+      rule: 'qalqalah.kubra',
+      parts: [wordPart(1, 0)],
     },
   });
   expect(created.ok(), `correction: ${created.status()} ${await created.text()}`).toBeTruthy();
@@ -313,7 +351,7 @@ test('a correction heard in class joins the recitation, with its history and in 
   await mine.goto(`/courses/${COURSE}/hifz`);
   await expect(
     mine.getByRole('list', { name: 'Tajweed corrections' }).first(),
-  ).toContainText('Qalqalah issue', { timeout: 30_000 });
+  ).toContainText('Qalqalah kubra issue', { timeout: 30_000 });
   await mine.goto(`/courses/${COURSE}/tajweed`);
   await expect(mine.locator('tbody tr')).toHaveCount(1, { timeout: 30_000 });
   await expect(mine.locator('tbody tr')).toContainText('1 to work on');
@@ -324,13 +362,13 @@ test('a correction heard in class joins the recitation, with its history and in 
   const page = await teacherCtx.newPage();
   await page.goto(`/courses/${COURSE}/tajweed`);
   await page.getByRole('tab', { name: 'Progress' }).click();
-  await expect(page.locator('tbody tr', { hasText: 'Qalqalah' }).first()).toContainText(
+  await expect(page.locator('tbody tr', { hasText: 'Qalqalah kubra' }).first()).toContainText(
     '1 to work on',
     { timeout: 30_000 },
   );
   await page.goto(`/courses/${COURSE}/tajweed/print/student/${studentId}`);
   await expect(page.getByText('Tajweed correction sheet')).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole('cell', { name: 'Qalqalah issue' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Qalqalah kubra issue' })).toBeVisible();
   await teacherCtx.close();
 });
 
@@ -355,7 +393,7 @@ test('a Qur’an block on the board shows the ayahs with the lesson’s marks, f
     await expect(block).toContainText('Al-Falaq');
     // The mark prepared for this lesson is drawn on the board's copy too.
     await expect(
-      block.locator('[data-ayah="5"] [data-tajweed-label]', { hasText: 'Madd' }),
+      block.locator('[data-ayah="5"] [data-tajweed-label]', { hasText: 'Madd tabi' }),
     ).toBeVisible({ timeout: 20_000 });
   }
   await student.screenshot({ path: test.info().outputPath('student-board-block.png') });

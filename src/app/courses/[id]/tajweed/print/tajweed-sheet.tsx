@@ -1,7 +1,7 @@
 'use client';
 
-import type { TajweedAnnotation } from '@/lib/realtime-contract';
-import { indexByAyah, splitWords } from '@/lib/tajweed';
+import type { TajweedAnnotation, TajweedPart } from '@/lib/realtime-contract';
+import { graphemes, indexByAyah, partsIn, splitWords } from '@/lib/tajweed';
 import { btn } from '@/lib/ui';
 import { marksKeyOf, markColor, markLabel, TajweedAyah } from '@/app/sessions/[id]/tajweed-ayah';
 
@@ -12,16 +12,32 @@ export interface SheetSurah {
 }
 
 const noop = () => {};
+const NO_PARTS: TajweedPart[] = [];
 
 function toArabicNumerals(n: number): string {
   return String(n).replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[Number(d)]);
 }
 
-/** The marked words of one annotation, from the text itself. */
-function excerpt(text: string, a: TajweedAnnotation): string {
-  if (a.selection === 'AYAH' || a.wordStart === null) return '';
-  return splitWords(text)
-    .slice(a.wordStart, (a.wordEnd ?? a.wordStart) + 1)
+/**
+ * The pieces one mark holds in one ayah, from the text itself.
+ *
+ * A mark may reach into the next ayah, and it is printed under each ayah it
+ * touches — so the excerpt shows what it holds here, not the whole mark.
+ */
+function excerpt(
+  text: string,
+  mark: TajweedAnnotation,
+  surah: number,
+  ayah: number,
+): string {
+  const here = partsIn(mark, surah, ayah);
+  if (!here.length || here.some((p) => p.wordIndex === null)) return '';
+  const words = splitWords(text);
+  return here
+    .map((p) => {
+      const word = words[p.wordIndex!] ?? '';
+      return p.letterIndex === null ? word : (graphemes(word)[p.letterIndex] ?? '');
+    })
     .join(' ');
 }
 
@@ -48,8 +64,13 @@ export function TajweedSheet({
   summary?: React.ReactNode;
 }) {
   const texts = new Map(surahs.map((s) => [s.number, s]));
+  // Keyed by ayah, so a mark that spans two of them is printed under each —
+  // under the verse it actually marks, never under whichever came first.
   const groups = [...indexByAyah(annotations)]
-    .map(([key, marks]) => ({ key, surah: marks[0].surahNumber, ayah: marks[0].ayahNumber, marks }))
+    .map(([key, marks]) => {
+      const [surah, ayah] = key.split(':').map(Number);
+      return { key, surah, ayah, marks };
+    })
     .sort((a, b) => a.surah - b.surah || a.ayah - b.ayah);
 
   return (
@@ -104,11 +125,13 @@ export function TajweedSheet({
                   text={text}
                   marks={g.marks}
                   marksKey={marksKeyOf(g.marks)}
-                  selection={null}
+                  picked={NO_PARTS}
+                  pointed={NO_PARTS}
+                  letters={false}
                   anchor={false}
                   interactive={false}
                   numeral={`﴿${toArabicNumerals(g.ayah)}﴾`}
-                  onWord={noop}
+                  onPart={noop}
                   onAyah={null}
                   onMark={noop}
                 />
@@ -124,7 +147,7 @@ export function TajweedSheet({
                         {markLabel(m)}
                       </td>
                       <td dir="rtl" lang="ar" className="font-quran w-40 py-1.5 pr-3 align-top text-lg">
-                        {excerpt(text, m)}
+                        {excerpt(text, m, g.surah, g.ayah)}
                       </td>
                       <td className="py-1.5 align-top text-neutral-700">{m.note ?? ''}</td>
                     </tr>

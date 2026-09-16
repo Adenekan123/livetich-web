@@ -35,6 +35,13 @@ let sessionId = '';
 
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
+/** A mark points at parts of the text: a whole word, or one letter of it. */
+const wordPart = (ayahNumber: number, wordIndex: number, surahNumber = 113) => ({
+  surahNumber,
+  ayahNumber,
+  wordIndex,
+});
+
 async function tokenFor(request: APIRequestContext, email: string) {
   const res = await request.post(`${API}/auth/login`, { data: { email, password: PASSWORD } });
   expect(res.ok(), `login ${email}: ${res.status()}`).toBeTruthy();
@@ -134,9 +141,14 @@ async function turnTo(page: Page, surah: number, name: string) {
 
 const word = (p: Page, ayah: number, w: number) =>
   p.locator(`[data-ayah="${ayah}"] [data-word="${w}"]`).first();
+const letter = (p: Page, ayah: number, w: number, l: number) =>
+  p.locator(`[data-ayah="${ayah}"] [data-word="${w}"][data-letter="${l}"]`).first();
 const label = (p: Page, ayah: number, text: string) =>
   p.locator(`[data-ayah="${ayah}"] [data-tajweed-label]`, { hasText: text });
 const toolbar = (p: Page) => p.locator('[data-tajweed-toolbar]');
+/** A rule as it is offered: Recent chips carry the rule's name. */
+const rule = (p: Page, name: string | RegExp) =>
+  toolbar(p).getByRole('button', { name, exact: typeof name === 'string' });
 
 test('a live mark reaches the student, and goes when the teacher clears it', async ({
   browser,
@@ -149,9 +161,9 @@ test('a live mark reaches the student, and goes when the teacher clears it', asy
 
   await teacher.getByRole('button', { name: 'Tajweed', exact: true }).click();
   await word(teacher, 3, 1).click();
-  await toolbar(teacher).getByRole('button', { name: 'Ikhfa', exact: true }).click();
+  await rule(teacher, /^Ikhfa haqiqi/).click();
 
-  const seen = label(student, 3, 'Ikhfa');
+  const seen = label(student, 3, 'Ikhfa haqiqi');
   await expect(seen).toBeVisible();
   // Live marks are drawn dashed, so a class can tell them from kept ones.
   expect(await word(student, 3, 1).evaluate((el) => getComputedStyle(el).outlineStyle)).toBe(
@@ -163,6 +175,39 @@ test('a live mark reaches the student, and goes when the teacher clears it', asy
 
   // Live means live: nothing reached the database.
   expect((await listAs(teacherToken)).lesson).toHaveLength(0);
+  await teacher.context().close();
+  await student.context().close();
+});
+
+test('the class sees what the teacher has picked, before any rule', async ({ browser }) => {
+  test.setTimeout(180_000);
+  const teacher = await openMushaf(browser, 'instructor');
+  await turnTo(teacher, 113, 'Al-Falaq');
+  const student = await openMushaf(browser, 'student');
+  await expect(student.getByText('Al-Falaq').first()).toBeVisible({ timeout: 20_000 });
+
+  await teacher.getByRole('button', { name: 'Tajweed', exact: true }).click();
+  await word(teacher, 2, 1).click();
+
+  // The same word, outlined on the student's screen while the teacher decides:
+  // marking is something the class watches, not a result that appears.
+  await expect(async () => {
+    const outline = await word(student, 2, 1).evaluate(
+      (el) => getComputedStyle(el).outlineStyle,
+    );
+    expect(outline).toBe('dashed');
+  }).toPass({ timeout: 20_000 });
+  // Nothing has been marked: no label yet, and nothing saved.
+  await expect(student.locator('[data-ayah="2"] [data-tajweed-label]')).toHaveCount(0);
+
+  // Dropping the pick takes the outline away again.
+  await toolbar(teacher).getByRole('button', { name: 'Clear picks' }).click();
+  await expect(async () => {
+    const outline = await word(student, 2, 1).evaluate(
+      (el) => getComputedStyle(el).outlineStyle,
+    );
+    expect(outline).not.toBe('dashed');
+  }).toPass({ timeout: 20_000 });
   await teacher.context().close();
   await student.context().close();
 });
@@ -183,21 +228,24 @@ test('a lesson annotation keeps its note, survives a reload, and goes when delet
   await toolbar(teacher)
     .getByPlaceholder('Teacher note (optional)')
     .fill('Keep the sound hidden, with its ghunnah.');
-  await toolbar(teacher).getByRole('button', { name: 'Ikhfa', exact: true }).click();
+  await rule(teacher, /^Ikhfa haqiqi/).click();
 
-  await expect(label(student, 2, 'Ikhfa')).toBeVisible();
+  await expect(label(student, 2, 'Ikhfa haqiqi')).toBeVisible();
   await expect.poll(async () => (await listAs(teacherToken)).lesson.length).toBe(1);
 
-  // The student can read the teacher's note.
-  await label(student, 2, 'Ikhfa').click();
-  await expect(student.locator('[data-tajweed-card]')).toContainText('Keep the sound hidden');
+  // The student can read the teacher's note, and is told the rule by name.
+  await label(student, 2, 'Ikhfa haqiqi').click();
+  const card = student.locator('[data-tajweed-card]');
+  await expect(card).toContainText('Keep the sound hidden');
+  await expect(card).toContainText('إخفاء حقيقي');
 
   // It belongs to the lesson now, so it comes back when the page does.
   await student.reload();
-  await expect(label(student, 2, 'Ikhfa')).toBeVisible({ timeout: 40_000 });
+  await expect(label(student, 2, 'Ikhfa haqiqi')).toBeVisible({ timeout: 40_000 });
 
+  await word(teacher, 2, 0).click();
   await toolbar(teacher).getByRole('button', { name: 'Delete annotation' }).click();
-  await expect(label(student, 2, 'Ikhfa')).toHaveCount(0);
+  await expect(label(student, 2, 'Ikhfa haqiqi')).toHaveCount(0);
   await expect.poll(async () => (await listAs(teacherToken)).lesson.length).toBe(0);
   await teacher.context().close();
   await student.context().close();
@@ -218,9 +266,9 @@ test('a correction is recorded against the student, and only staff and that stud
   await toolbar(teacher).getByLabel('Student reciting').selectOption(studentId);
   await word(teacher, 1, 0).click();
   await toolbar(teacher).getByRole('button', { name: 'Tajweed issue' }).click();
-  await toolbar(teacher).getByRole('button', { name: 'Qalqalah', exact: true }).click();
+  await rule(teacher, /^Qalqalah kubra/).click();
 
-  await expect(label(teacher, 1, 'Qalqalah issue')).toBeVisible();
+  await expect(label(teacher, 1, 'Qalqalah kubra issue')).toBeVisible();
 
   // The label shows at once (it is optimistic), so wait for the save to land
   // rather than reading the server in the same instant.
@@ -239,15 +287,15 @@ test('a correction is recorded against the student, and only staff and that stud
   await expect.poll(async () => (await readCorrections()).corrections.length).toBe(1);
   const body = await readCorrections();
   expect(body.corrections).toEqual([
-    expect.objectContaining({ rule: 'qalqalah', outcome: 'TAJWEED_ISSUE' }),
+    expect.objectContaining({ rule: 'qalqalah.kubra', outcome: 'TAJWEED_ISSUE' }),
   ]);
-  expect(body.byRule.qalqalah.issues).toBe(1);
+  expect(body.byRule['qalqalah.kubra'].issues).toBe(1);
 
   // Feedback on one student is never broadcast to the class; the student finds
   // their own correction when the lesson loads.
-  await expect(label(student, 1, 'Qalqalah issue')).toHaveCount(0);
+  await expect(label(student, 1, 'Qalqalah kubra issue')).toHaveCount(0);
   await student.reload();
-  await expect(label(student, 1, 'Qalqalah issue')).toBeVisible({ timeout: 40_000 });
+  await expect(label(student, 1, 'Qalqalah kubra issue')).toBeVisible({ timeout: 40_000 });
   await teacher.context().close();
   await student.context().close();
 });
@@ -264,11 +312,8 @@ test('a student cannot annotate, and a reference outside the Qur’an is refused
     id: `e2e-${Date.now()}`,
     mode: 'LESSON',
     sessionId,
-    surahNumber: 113,
-    ayahNumber: 1,
-    selection: 'WORD',
-    wordStart: 0,
-    rule: 'madd',
+    parts: [wordPart(1, 0)],
+    rule: 'madd.tabii',
   };
   const asStudent = await api.post(`${API}/courses/${COURSE}/tajweed/annotations`, {
     headers: auth(studentToken),
@@ -278,10 +323,42 @@ test('a student cannot annotate, and a reference outside the Qur’an is refused
 
   const offTheText = await api.post(`${API}/courses/${COURSE}/tajweed/annotations`, {
     headers: auth(teacherToken),
-    data: { ...annotation, ayahNumber: 9 },
+    data: { ...annotation, parts: [wordPart(9, 0)] },
   });
   expect(offTheText.status()).toBe(400);
   expect(await offTheText.text()).toContain('has no ayah 9');
+});
+
+test('a mark can hold letters from two different ayahs', async ({ browser }) => {
+  test.setTimeout(180_000);
+  const teacher = await openMushaf(browser, 'instructor');
+  await turnTo(teacher, 113, 'Al-Falaq');
+  const student = await openMushaf(browser, 'student');
+  await expect(student.getByText('Al-Falaq').first()).toBeVisible({ timeout: 20_000 });
+
+  await teacher.getByRole('button', { name: 'Tajweed', exact: true }).click();
+  await toolbar(teacher).getByRole('radio', { name: 'Lesson' }).click();
+  // Letters are a mode, not a place a selection falls into: switch the bar and
+  // every letter in the text is tappable straight away.
+  await toolbar(teacher).getByRole('radio', { name: 'Letters' }).click();
+  await letter(teacher, 3, 4, 1).click();
+  await letter(teacher, 4, 0, 0).click();
+  await rule(teacher, /^Ikhfa haqiqi/).click();
+
+  // One mark, named on both ayahs it reaches into.
+  await expect(label(student, 3, 'Ikhfa haqiqi')).toBeVisible({ timeout: 20_000 });
+  await expect(label(student, 4, 'Ikhfa haqiqi')).toBeVisible();
+  await expect.poll(async () => (await listAs(teacherToken)).lesson.length).toBe(1);
+
+  const [saved] = (await listAs(teacherToken)).lesson as unknown as {
+    parts: { ayahNumber: number; wordIndex: number; letterIndex: number | null }[];
+  }[];
+  expect(saved.parts).toEqual([
+    { surahNumber: 113, ayahNumber: 3, wordIndex: 4, letterIndex: 1 },
+    { surahNumber: 113, ayahNumber: 4, wordIndex: 0, letterIndex: 0 },
+  ]);
+  await teacher.context().close();
+  await student.context().close();
 });
 
 test('on a tablet, a teacher marks single letters by tapping', async ({ browser }) => {
@@ -299,20 +376,18 @@ test('on a tablet, a teacher marks single letters by tapping', async ({ browser 
   await expect(student.getByText('Al-Falaq').first()).toBeVisible({ timeout: 20_000 });
 
   await teacher.getByRole('button', { name: 'Tajweed', exact: true }).tap();
-  // One tap selects the word; a second tap on it moves to its letters.
-  await word(teacher, 1, 1).tap();
-  await word(teacher, 1, 1).tap();
-  const firstLetter = toolbar(teacher).getByRole('button', { name: 'Letter 1', exact: true });
-  await expect(firstLetter).toBeVisible();
+  const letters = toolbar(teacher).getByRole('radio', { name: 'Letters' });
+  await expect(letters).toBeVisible();
   // Big enough for a finger, not a mouse pointer.
-  expect((await firstLetter.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect((await letters.boundingBox())!.height).toBeGreaterThanOrEqual(32);
+  await letters.tap();
 
-  await firstLetter.tap();
+  await letter(teacher, 1, 1, 0).tap();
   // Where the next word sits for the student before anything is marked.
   const before = await word(student, 1, 2).boundingBox();
-  await toolbar(teacher).getByRole('button', { name: 'Madd', exact: true }).tap();
+  await rule(teacher, /^Madd tabi/).tap();
 
-  await expect(label(student, 1, 'Madd')).toBeVisible();
+  await expect(label(student, 1, 'Madd tabi')).toBeVisible();
   // A label floats above its word: the text a student is reading must not
   // shift along the line when the teacher marks something.
   const after = await word(student, 1, 2).boundingBox();
@@ -321,7 +396,7 @@ test('on a tablet, a teacher marks single letters by tapping', async ({ browser 
   // …and the label sits above its word, within its width: never over the
   // harakat being taught, never across the next word.
   const wordBox = (await word(student, 1, 1).boundingBox())!;
-  const labelBox = (await label(student, 1, 'Madd').boundingBox())!;
+  const labelBox = (await label(student, 1, 'Madd tabi').boundingBox())!;
   expect(labelBox.y + labelBox.height).toBeLessThanOrEqual(wordBox.y + 1);
   expect(labelBox.x).toBeGreaterThanOrEqual(wordBox.x - 1);
   expect(labelBox.x + labelBox.width).toBeLessThanOrEqual(wordBox.x + wordBox.width + 1);
@@ -330,7 +405,7 @@ test('on a tablet, a teacher marks single letters by tapping', async ({ browser 
   expect(await word(student, 1, 1).locator('span').count()).toBeGreaterThan(1);
 
   await toolbar(teacher).getByRole('button', { name: 'Clear live (1)', exact: true }).tap();
-  await expect(label(student, 1, 'Madd')).toHaveCount(0);
+  await expect(label(student, 1, 'Madd tabi')).toHaveCount(0);
   await teacher.context().close();
   await student.context().close();
 });
@@ -360,10 +435,11 @@ test('on a phone, the Tajweed controls fit the screen and still mark a word', as
 
   // Every control a teacher reaches for is on the screen, not off its edge.
   const width = teacher.viewportSize()!.width;
-  const ikhfa = toolbar(teacher).getByRole('button', { name: 'Ikhfa', exact: true });
+  const ikhfa = rule(teacher, /^Ikhfa haqiqi/);
   for (const control of [
     ikhfa,
     toolbar(teacher).getByRole('radio', { name: 'Correction' }),
+    toolbar(teacher).getByRole('radio', { name: 'Letters' }),
     toolbar(teacher).getByRole('button', { name: 'Style' }),
   ]) {
     await control.scrollIntoViewIfNeeded();
@@ -375,14 +451,14 @@ test('on a phone, the Tajweed controls fit the screen and still mark a word', as
   expect(await fitsWidth(teacher)).toBe(true);
 
   await ikhfa.tap();
-  await expect(label(student, 2, 'Ikhfa')).toBeVisible();
+  await expect(label(student, 2, 'Ikhfa haqiqi')).toBeVisible();
   expect(await fitsWidth(student)).toBe(true);
 
   await teacher.screenshot({ path: test.info().outputPath('teacher-phone.png') });
   await student.screenshot({ path: test.info().outputPath('student-phone.png') });
 
   await toolbar(teacher).getByRole('button', { name: 'Clear live (1)', exact: true }).tap();
-  await expect(label(student, 2, 'Ikhfa')).toHaveCount(0);
+  await expect(label(student, 2, 'Ikhfa haqiqi')).toHaveCount(0);
   await teacher.context().close();
   await student.context().close();
 });

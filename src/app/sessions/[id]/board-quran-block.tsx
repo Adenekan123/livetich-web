@@ -142,11 +142,13 @@ export function BoardQuranBlock({
                   text={text.ayahs[n - 1]}
                   marks={marks}
                   marksKey={marksKeyOf(marks)}
-                  selection={null}
+                  picked={[]}
+                  pointed={[]}
+                  letters={false}
                   anchor={false}
                   interactive={false}
                   numeral={`﴿${toArabicNumerals(n)}﴾`}
-                  onWord={noop}
+                  onPart={noop}
                   onAyah={null}
                   onMark={noop}
                 />

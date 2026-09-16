@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { TAJWEED_RULE_KEYS, TAJWEED_RULES } from '@/lib/realtime-contract';
+import { TAJWEED_RULE_KEYS } from '@/lib/realtime-contract';
 import {
-  TAJWEED_SUGGESTED_COLORS,
+  ruleColor,
+  ruleLabel,
   tajweedProgress,
   type TajweedProgressRow,
 } from '@/lib/tajweed';
@@ -276,9 +277,9 @@ function RuleTally({ row }: { row: TajweedProgressRow }) {
             <span
               aria-hidden
               className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: TAJWEED_SUGGESTED_COLORS[rule] }}
+              style={{ backgroundColor: ruleColor(rule) }}
             />
-            <span className="font-medium text-neutral-800">{TAJWEED_RULES[rule].label}</span>
+            <span className="font-medium text-neutral-800">{ruleLabel(rule, null)}</span>
             {t.issues > 0 && <span className="text-amber-700">{t.issues} to work on</span>}
             {t.correct > 0 && <span className="text-emerald-700">{t.correct} correct</span>}
           </li>

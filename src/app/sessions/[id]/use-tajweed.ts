@@ -13,8 +13,9 @@ import type {
   ServerToClientEvents,
   TajweedAnnotation,
   TajweedAnnotationStyle,
-  TajweedRef,
+  TajweedPart,
   TajweedRule,
+  TajweedRuleGroupKey,
   TajweedTemporaryAnnotation,
 } from '@/lib/realtime-contract';
 import {
@@ -23,12 +24,15 @@ import {
   indexByAyah,
   listTajweed,
   newAnnotationId,
-  TAJWEED_SUGGESTED_COLORS,
+  ruleColor,
+  TAJWEED_GROUP_COLORS,
   TajweedApiError,
   tajweedHistory,
+  togglePart,
   updateTajweed,
   type AnyTajweedMark,
   type TajweedCreateInput,
+  type TajweedSelectionState,
 } from '@/lib/tajweed';
 
 /** What tapping a rule does: show it to the class now, save it to the lesson,
@@ -37,7 +41,9 @@ export type TajweedMode = 'LIVE' | 'LESSON' | 'CORRECTION';
 
 export interface TajweedPrefs {
   style: TajweedAnnotationStyle;
-  colors: Record<TajweedRule, string>;
+  /** Colour per rule group — a teacher reads which madd from the label, not
+   *  from fifty distinguishable colours. */
+  colors: Record<TajweedRuleGroupKey, string>;
   /** Seconds a live annotation stays up; 0 keeps it until cleared. */
   liveSeconds: number;
 }
@@ -55,9 +61,11 @@ const NO_SOCKET: RefObject<RoomSocket | null> = { current: null };
 
 const DEFAULT_PREFS: TajweedPrefs = {
   style: 'HIGHLIGHT',
-  colors: TAJWEED_SUGGESTED_COLORS,
+  colors: TAJWEED_GROUP_COLORS,
   liveSeconds: 0,
 };
+
+const EMPTY_PARTS: TajweedPart[] = [];
 
 const prefsKey = (courseId: string) => `livetich:tajweed-prefs:${courseId}`;
 const outboxKey = (scope: string) => `livetich:tajweed-outbox:${scope}`;
@@ -115,22 +123,10 @@ function writeOutbox(scope: string, items: TajweedCreateInput[]) {
   }
 }
 
-export function refOf(mark: TajweedRef): TajweedRef {
-  return {
-    surahNumber: mark.surahNumber,
-    ayahNumber: mark.ayahNumber,
-    selection: mark.selection,
-    wordStart: mark.wordStart,
-    wordEnd: mark.wordEnd,
-    letterStart: mark.letterStart,
-    letterEnd: mark.letterEnd,
-  };
-}
-
 function optimistic(courseId: string, input: TajweedCreateInput): SavedMark {
   const now = new Date().toISOString();
+  const [first] = input.parts;
   return {
-    ...refOf(input),
     id: input.id,
     courseId,
     sectionId: input.sectionId ?? null,
@@ -138,6 +134,10 @@ function optimistic(courseId: string, input: TajweedCreateInput): SavedMark {
     mode: input.mode,
     studentId: input.studentId ?? null,
     hifzEntryId: input.hifzEntryId ?? null,
+    kept: input.kept ?? false,
+    surahNumber: first.surahNumber,
+    ayahNumber: first.ayahNumber,
+    parts: input.parts,
     rule: input.rule ?? null,
     customLabel: input.customLabel ?? null,
     style: input.style ?? 'HIGHLIGHT',
@@ -181,11 +181,12 @@ function mergeSaved(prev: SavedMark[], fresh: TajweedAnnotation[]): SavedMark[] 
  * Tajweed annotations for one live session — or, with no session, for one
  * lesson being prepared ahead of class.
  *
- * Saved annotations come over HTTP and are kept current by room events; live
- * ones arrive only over the socket and are replaced wholesale on every event.
- * Without a socket there is no room to show live marks or hear a student in,
- * so only lesson marks can be made. Hiding and filtering never delete
- * anything — they only change what is drawn.
+ * The hook owns what the teacher has picked, because a pick is not private:
+ * the class sees the same letters outlined while the teacher decides which
+ * rule it is, and that only stays true if every change to the selection is the
+ * same event. Saved annotations come over HTTP and are kept current by room
+ * events; live ones arrive only over the socket and are replaced wholesale.
+ * Hiding and filtering never delete anything — they only change what is drawn.
  */
 export function useTajweed({
   courseId,
@@ -213,6 +214,11 @@ export function useTajweed({
   const [lesson, setLesson] = useState<SavedMark[]>([]);
   const [corrections, setCorrections] = useState<SavedMark[]>([]);
   const [live, setLive] = useState<TajweedTemporaryAnnotation[]>([]);
+  const [pointing, setPointing] = useState<TajweedPart[]>(EMPTY_PARTS);
+  const [selection, setSelection] = useState<TajweedSelectionState>({
+    parts: [],
+    letters: false,
+  });
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hiddenRules, setHiddenRules] = useState<ReadonlySet<TajweedRule>>(
@@ -242,6 +248,12 @@ export function useTajweed({
     setLive(annotations);
   }, []);
 
+  /** What the instructor is pointing at. Their own client already knows — it is
+   *  the selection — so only the rest of the room draws this. */
+  const receivePointing = useCallback((parts: TajweedPart[]) => {
+    setPointing(parts.length ? parts : EMPTY_PARTS);
+  }, []);
+
   const applyLoaded = useCallback(
     (data: { lesson: TajweedAnnotation[]; corrections: TajweedAnnotation[] }) => {
       setLesson((prev) => mergeSaved(prev, data.lesson));
@@ -263,6 +275,54 @@ export function useTajweed({
       loadFailed(e);
     }
   }, [courseId, sessionId, sectionId, enabled, applyLoaded, loadFailed]);
+
+  // ---- what the class is shown mid-pick ------------------------------------
+
+  /** Tell the room what is picked. Nothing is stored: the outline lasts as long
+   *  as the pick does, and an empty list takes it away. */
+  const broadcastPointing = useCallback(
+    (parts: TajweedPart[]) => {
+      if (!sessionId || !canEdit) return;
+      const socket = socketRef.current;
+      if (!socket) return;
+      if (parts.length) socket.emit('tajweed:pointing:set', { sessionId, parts });
+      else socket.emit('tajweed:pointing:clear', { sessionId });
+    },
+    [socketRef, sessionId, canEdit],
+  );
+
+  /** One tap on a word or a letter: it adds what was tapped, or drops it if it
+   *  was already picked. Parts may sit in different ayahs. */
+  const pickPart = useCallback(
+    (part: TajweedPart) => {
+      setSelection((prev) => {
+        // A letter tapped anywhere means letters are what is being picked, so
+        // the bar above the text never says otherwise.
+        const letters = part.letterIndex !== null ? true : prev.letters;
+        const next = { parts: togglePart(prev.parts, part), letters };
+        broadcastPointing(next.parts);
+        return next;
+      });
+    },
+    [broadcastPointing],
+  );
+
+  const clearSelection = useCallback(() => {
+    setSelection((prev) => ({ parts: [], letters: prev.letters }));
+    broadcastPointing([]);
+  }, [broadcastPointing]);
+
+  /** Words and letters are different things to pick, so switching lets go of
+   *  what was picked under the other setting rather than half-keeping it. */
+  const setLetters = useCallback(
+    (letters: boolean) => {
+      setSelection((prev) =>
+        prev.letters === letters ? prev : { parts: [], letters },
+      );
+      broadcastPointing([]);
+    },
+    [broadcastPointing],
+  );
 
   // ---- saving --------------------------------------------------------------
 
@@ -323,7 +383,15 @@ export function useTajweed({
     return () => {
       current = false;
     };
-  }, [enabled, courseId, sessionId, sectionId, applyLoaded, loadFailed, flushOutbox]);
+  }, [
+    enabled,
+    courseId,
+    sessionId,
+    sectionId,
+    applyLoaded,
+    loadFailed,
+    flushOutbox,
+  ]);
 
   useEffect(() => {
     if (!enabled || !canEdit) return;
@@ -332,10 +400,23 @@ export function useTajweed({
     return () => window.removeEventListener('online', onOnline);
   }, [enabled, canEdit, flushOutbox]);
 
+  /**
+   * Save what is picked as a mark.
+   *
+   * The parts come from the selection unless the caller names its own, and the
+   * pick is let go afterwards: the mark now says what the pointing said.
+   */
   const create = useCallback(
-    (input: Omit<TajweedCreateInput, 'id' | 'sessionId' | 'sectionId'>) => {
+    (
+      input: Omit<TajweedCreateInput, 'id' | 'sessionId' | 'sectionId' | 'parts'> & {
+        parts?: TajweedPart[];
+      },
+    ) => {
+      const parts = input.parts ?? selection.parts;
+      if (!parts.length) return;
       const full: TajweedCreateInput = {
         ...input,
+        parts,
         id: newAnnotationId(),
         ...(sessionId ? { sessionId } : {}),
         ...(sectionId ? { sectionId } : {}),
@@ -343,14 +424,21 @@ export function useTajweed({
       setterFor(full)((prev) => [...prev, optimistic(courseId, full)]);
       writeOutbox(scope, [...readOutbox(scope), full]);
       void send(full);
+      clearSelection();
     },
-    [courseId, sessionId, sectionId, scope, send],
+    [courseId, sessionId, sectionId, scope, send, selection.parts, clearSelection],
   );
 
   const update = useCallback(
     async (
       mark: SavedMark,
-      patch: { note?: string | null; rule?: TajweedRule; color?: string | null },
+      patch: {
+        note?: string | null;
+        rule?: TajweedRule;
+        color?: string | null;
+        kept?: boolean;
+        parts?: TajweedPart[];
+      },
     ) => {
       if (mark.pending) {
         setError('Still saving this one — try again in a moment.');
@@ -404,27 +492,28 @@ export function useTajweed({
   // ---- live ----------------------------------------------------------------
 
   const showLive = useCallback(
-    (
-      ref: TajweedRef,
-      rule: TajweedRule,
-      opts: { note?: string; customLabel?: string },
-    ) => {
-      if (!sessionId) return;
+    (rule: TajweedRule, opts: { note?: string; customLabel?: string; parts?: TajweedPart[] }) => {
+      const parts = opts.parts ?? selection.parts;
+      if (!sessionId || !parts.length) return;
+      const [first] = parts;
       socketRef.current?.emit('tajweed:temporary:set', {
         sessionId,
         annotation: {
-          ...refOf(ref),
           id: newAnnotationId(),
+          surahNumber: first.surahNumber,
+          ayahNumber: first.ayahNumber,
+          parts,
           rule,
           customLabel: opts.customLabel ?? null,
           style: prefs.style,
-          color: prefs.colors[rule],
+          color: ruleColor(rule, prefs.colors),
           note: opts.note || null,
           ttlSec: prefs.liveSeconds,
         },
       });
+      clearSelection();
     },
-    [socketRef, sessionId, prefs],
+    [socketRef, sessionId, prefs, selection.parts, clearSelection],
   );
 
   const clearLive = useCallback(
@@ -442,8 +531,9 @@ export function useTajweed({
   const liveToLesson = useCallback(
     (a: TajweedTemporaryAnnotation) => {
       create({
-        ...refOf(a),
+        parts: a.parts,
         mode: 'LESSON',
+        kept: true,
         rule: a.rule,
         customLabel: a.customLabel ?? undefined,
         style: a.style,
@@ -506,11 +596,11 @@ export function useTajweed({
     const seen = new Map<TajweedRule, string>();
     for (const m of visible) {
       if (m.rule && !seen.has(m.rule)) {
-        seen.set(m.rule, m.color ?? TAJWEED_SUGGESTED_COLORS[m.rule]);
+        seen.set(m.rule, m.color ?? ruleColor(m.rule, prefs.colors));
       }
     }
     return [...seen].map(([rule, color]) => ({ rule, color }));
-  }, [visible]);
+  }, [visible, prefs.colors]);
 
   const toggleRule = useCallback((rule: TajweedRule) => {
     setHiddenRules((prev) => {
@@ -529,7 +619,7 @@ export function useTajweed({
   const updatePrefs = useCallback(
     (
       patch: Partial<Omit<TajweedPrefs, 'colors'>> & {
-        colors?: Partial<Record<TajweedRule, string>>;
+        colors?: Partial<Record<TajweedRuleGroupKey, string>>;
       },
     ) => {
       setPrefs((prev) => {
@@ -562,6 +652,11 @@ export function useTajweed({
     setMode,
     correctionStudent,
     setCorrectionStudent,
+    selection,
+    pickPart,
+    clearSelection,
+    setLetters,
+    pointing,
     create,
     update,
     remove,
@@ -572,6 +667,7 @@ export function useTajweed({
     receiveSaved,
     receiveDeleted,
     receiveLive,
+    receivePointing,
     resync,
   };
 }

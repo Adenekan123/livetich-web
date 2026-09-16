@@ -479,6 +479,11 @@ export function ClassRoom({
     socket.on('tajweed:temporary', (p) =>
       tajweedRef.current.receiveLive(p.annotations),
     );
+    // What the instructor has picked but not yet marked: the class sees the
+    // same letters outlined while they decide which rule it is.
+    socket.on('tajweed:pointing', (p) =>
+      tajweedRef.current.receivePointing(p.parts),
+    );
     // Staff-only: a student just submitted coursework. Nudge the grading panel
     // to reload and flag it to the instructor.
     socket.on('submission:new', (p) => {

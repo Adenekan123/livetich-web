@@ -16,7 +16,8 @@ import { API_URL } from '@/lib/api';
 import { getRealtimeToken } from '@/lib/client-token';
 import { cn } from '@/lib/ui';
 import type { RoomUser } from '@/lib/realtime-contract';
-import { ayahKey, type AnyTajweedMark, type TajweedSelectionState } from '@/lib/tajweed';
+import { ayahKey, partsIn, type AnyTajweedMark } from '@/lib/tajweed';
+import type { TajweedPart } from '@/lib/realtime-contract';
 import type { Surah } from '@/lib/types';
 import { marksKeyOf, TajweedAyah } from './tajweed-ayah';
 import { TajweedLegend, TajweedMarkCard, TajweedToolbar } from './tajweed-toolbar';
@@ -202,16 +203,17 @@ export function QuranReader({
   startAnnotating?: boolean;
 }) {
   const [annotating, setAnnotating] = useState(startAnnotating);
-  const [selection, setSelection] = useState<TajweedSelectionState | null>(null);
   const [openMark, setOpenMark] = useState<AnyTajweedMark | null>(null);
   const [legendOpen, setLegendOpen] = useState(false);
   // Handlers handed to every ayah must stay the same function across renders,
   // or memoising the ayahs saves nothing; they read the latest values here.
   const navRef = useRef(onNavigate);
   const annotatingRef = useRef(annotating);
+  const tajweedRef = useRef(tajweed);
   useEffect(() => {
     navRef.current = onNavigate;
     annotatingRef.current = annotating;
+    tajweedRef.current = tajweed;
   });
   const [text, setText] = useState<SurahText | null>(null);
   const [catalog, setCatalog] = useState<Surah[]>([]);
@@ -296,53 +298,40 @@ export function QuranReader({
     [catalog],
   );
 
-  // A selection belongs to the surah it was made in; turning to another drops it.
-  const activeSelection = selection && selection.surahNumber === surah ? selection : null;
   const canAnnotate = !!tajweed && isInstructor;
   const marking = canAnnotate && annotating;
+  const selected = tajweed?.selection.parts ?? [];
+  // The teacher's own pick is already drawn as `picked`; the outline is for
+  // everyone else's screen, so it is never drawn twice for the one pointing.
+  const pointed = tajweed && !isInstructor ? tajweed.pointing : [];
 
   /**
-   * A tap on a word while annotating. One tap selects the word; a tap on the
-   * same word again moves to its letters; shift/ctrl/cmd-tap stretches the
-   * selection to another word of the same ayah. The shared page follows to the
-   * ayah being marked, so the class is looking where the teacher points.
+   * A tap on a word or a letter while annotating: it adds what was tapped, or
+   * drops it if it was already picked — in any ayah. The shared page follows to
+   * the ayah being marked, so the class is looking where the teacher points.
    */
-  const onWord = useCallback(
-    (ayahN: number, word: number, extend: boolean) => {
+  const onPart = useCallback(
+    (part: TajweedPart) => {
       setOpenMark(null);
-      setSelection((prev) => {
-        const same = prev && prev.surahNumber === surah && prev.ayahNumber === ayahN;
-        if (extend && same && prev.selection !== 'AYAH' && prev.wordStart !== null) {
-          return {
-            ...prev,
-            selection: 'WORD',
-            wordStart: Math.min(prev.wordStart, word),
-            wordEnd: Math.max(prev.wordEnd ?? prev.wordStart, word),
-            letterStart: null,
-            letterEnd: null,
-          };
-        }
-        if (
-          same &&
-          prev.selection === 'WORD' &&
-          prev.wordStart === word &&
-          prev.wordEnd === word
-        ) {
-          return { ...prev, selection: 'LETTERS', letterStart: null, letterEnd: null };
-        }
-        return {
-          surahNumber: surah,
-          ayahNumber: ayahN,
-          selection: 'WORD',
-          wordStart: word,
-          wordEnd: word,
-          letterStart: null,
-          letterEnd: null,
-        };
-      });
-      navRef.current(surah, ayahN);
+      tajweedRef.current?.pickPart(part);
+      navRef.current(surah, part.ayahNumber);
     },
     [surah],
+  );
+
+  /** Names a surah, for saying where a mark sits. */
+  const surahName = useCallback(
+    (n: number) =>
+      (n === surah ? text?.transliteration : catalog.find((s) => s.number === n)?.transliteration) ??
+      `Surah ${n}`,
+    [surah, text, catalog],
+  );
+
+  /** The text of one ayah, for showing what is picked. Only the surah on
+   *  screen is loaded, and it is the only one that can be picked in. */
+  const ayahText = useCallback(
+    (n: number, a: number) => (n === surah ? (text?.ayahs[a - 1] ?? null) : null),
+    [surah, text],
   );
 
   const onAyahTap = useCallback(
@@ -353,19 +342,7 @@ export function QuranReader({
   );
 
   const onMark = useCallback((mark: AnyTajweedMark) => {
-    if (annotatingRef.current) {
-      setSelection({
-        surahNumber: mark.surahNumber,
-        ayahNumber: mark.ayahNumber,
-        selection: mark.selection,
-        wordStart: mark.wordStart,
-        wordEnd: mark.wordEnd,
-        letterStart: mark.letterStart,
-        letterEnd: mark.letterEnd,
-      });
-    } else {
-      setOpenMark(mark);
-    }
+    setOpenMark(mark);
   }, []);
 
   const step = (dir: -1 | 1) => {
@@ -406,7 +383,7 @@ export function QuranReader({
                 aria-pressed={annotating}
                 onClick={() => {
                   setAnnotating((v) => !v);
-                  setSelection(null);
+                  tajweed.clearSelection();
                   setOpenMark(null);
                 }}
                 className={cn(
@@ -531,11 +508,13 @@ export function QuranReader({
                       text={verse}
                       marks={marks}
                       marksKey={marksKeyOf(marks)}
-                      selection={activeSelection?.ayahNumber === n ? activeSelection : null}
+                      picked={partsIn({ parts: selected }, surah, n)}
+                      pointed={partsIn({ parts: pointed }, surah, n)}
+                      letters={tajweed.selection.letters}
                       anchor={isAnchor}
                       interactive={marking}
                       numeral={`﴿${toArabicNumerals(n)}﴾`}
-                      onWord={onWord}
+                      onPart={onPart}
                       onAyah={isInstructor ? onAyahTap : null}
                       onMark={onMark}
                     />
@@ -575,18 +554,19 @@ export function QuranReader({
         <div className="max-h-[55%] shrink-0 overflow-y-auto">
           <TajweedToolbar
             api={tajweed}
-            selection={activeSelection}
-            setSelection={setSelection}
-            ayahText={
-              activeSelection ? (text?.ayahs[activeSelection.ayahNumber - 1] ?? null) : null
-            }
             students={students}
+            surahName={surahName}
+            ayahText={ayahText}
             modes={tajweedModes}
           />
         </div>
       )}
-      {!marking && openMark && (
-        <TajweedMarkCard mark={openMark} onClose={() => setOpenMark(null)} />
+      {openMark && (
+        <TajweedMarkCard
+          mark={openMark}
+          surahName={surahName}
+          onClose={() => setOpenMark(null)}
+        />
       )}
     </div>
   );

@@ -1,15 +1,19 @@
 'use client';
 
 import { memo, useMemo, type CSSProperties, type KeyboardEvent, type MouseEvent } from 'react';
-import { TAJWEED_RULES } from '@/lib/realtime-contract';
+import type { TajweedPart, TajweedRuleGroupKey } from '@/lib/realtime-contract';
 import {
   coverage,
   graphemes,
+  hasPart,
+  oneLetter,
+  partsIn,
+  ruleColor,
+  ruleLabel,
   splitWords,
   TAJWEED_OUTCOMES,
-  TAJWEED_SUGGESTED_COLORS,
+  wholeWord,
   type AnyTajweedMark,
-  type TajweedSelectionState,
 } from '@/lib/tajweed';
 import { cn } from '@/lib/ui';
 
@@ -20,15 +24,17 @@ const OUTCOME_COLORS: Record<string, string> = {
   NOTE: '#64748b',
 };
 
-export function markColor(m: AnyTajweedMark): string {
+export function markColor(
+  m: AnyTajweedMark,
+  overrides: Partial<Record<TajweedRuleGroupKey, string>> = {},
+): string {
   if (m.color) return m.color;
-  if (m.rule) return TAJWEED_SUGGESTED_COLORS[m.rule];
+  if (m.rule) return ruleColor(m.rule, overrides);
   return ('outcome' in m && m.outcome && OUTCOME_COLORS[m.outcome]) || '#64748b';
 }
 
 export function markLabel(m: AnyTajweedMark): string {
-  const rule =
-    m.rule === 'custom' ? (m.customLabel ?? 'Note') : m.rule ? TAJWEED_RULES[m.rule].label : null;
+  const rule = m.rule ? ruleLabel(m.rule, m.customLabel) : null;
   if ('outcome' in m && m.outcome) {
     if (m.outcome === 'TAJWEED_ISSUE') return `${rule ?? 'Tajweed'} issue`;
     return TAJWEED_OUTCOMES.find((o) => o.key === m.outcome)?.label ?? 'Note';
@@ -71,24 +77,32 @@ function styleFor(marks: readonly AnyTajweedMark[]): CSSProperties {
   };
 }
 
-const selectedWord = 'rounded-md bg-signal-400/25 shadow-[0_0_0_2px_rgba(45,212,191,0.85)]';
+const pickedStyle = 'rounded-md bg-signal-400/25 shadow-[0_0_0_2px_rgba(45,212,191,0.85)]';
+/** What the class sees while the teacher is still deciding: the same letters,
+ *  outlined rather than filled, so a pick never looks like a mark. */
+const pointedStyle = 'rounded-md outline-2 outline-dashed outline-signal-400/80 outline-offset-2';
 
 export interface TajweedAyahProps {
   surah: number;
   ayah: number;
   text: string;
-  /** Marks on this ayah only. */
+  /** Marks touching this ayah — a mark reaching in from the one before is here
+   *  too, drawn on the parts it holds in this ayah. */
   marks: readonly AnyTajweedMark[];
   /** Changes whenever anything about `marks` that is drawn changes. */
   marksKey: string;
-  /** The selection, when it is in this ayah. */
-  selection: TajweedSelectionState | null;
+  /** What the teacher has picked in this ayah. */
+  picked: readonly TajweedPart[];
+  /** What the instructor is pointing at, for everyone else's screen. */
+  pointed: readonly TajweedPart[];
+  /** A tap picks a letter rather than the whole word. */
+  letters: boolean;
   anchor: boolean;
-  /** The teacher is annotating: words are tap targets. */
+  /** The teacher is annotating: words and letters are tap targets. */
   interactive: boolean;
   /** "﴿٧﴾" */
   numeral: string;
-  onWord: (ayah: number, word: number, extend: boolean) => void;
+  onPart: (part: TajweedPart) => void;
   onAyah: ((ayah: number) => void) | null;
   onMark: (mark: AnyTajweedMark) => void;
 }
@@ -123,24 +137,32 @@ function Label({ mark, onMark }: { mark: AnyTajweedMark; onMark: (m: AnyTajweedM
 }
 
 function AyahImpl({
+  surah,
   ayah,
   text,
   marks,
-  selection,
+  picked,
+  pointed,
+  letters,
   anchor,
   interactive,
   numeral,
-  onWord,
+  onPart,
   onAyah,
   onMark,
 }: TajweedAyahProps) {
   const words = useMemo(() => splitWords(text), [text]);
-  const ayahMarks = marks.filter((m) => m.selection === 'AYAH');
+  const ayahMarks = marks.filter((m) => coverage(m, surah, ayah, 0) === 'ayah');
+  const ayahPicked = picked.some((p) => p.wordIndex === null);
 
-  const pick = (e: MouseEvent | KeyboardEvent, word: number, wordMarks: AnyTajweedMark[]) => {
+  const tap = (
+    e: MouseEvent | KeyboardEvent,
+    part: TajweedPart,
+    wordMarks: AnyTajweedMark[],
+  ) => {
     if (interactive) {
       e.stopPropagation();
-      onWord(ayah, word, e.shiftKey || e.metaKey || e.ctrlKey);
+      onPart(part);
     } else if (wordMarks.length) {
       e.stopPropagation();
       onMark(wordMarks[0]);
@@ -155,84 +177,117 @@ function AyahImpl({
         'rounded-lg px-1 transition-colors',
         !interactive && onAyah && 'cursor-pointer',
         anchor ? 'bg-white/15 text-white' : !interactive && 'hover:bg-white/5',
-        selection?.selection === 'AYAH' && selectedWord,
+        ayahPicked && pickedStyle,
       )}
       style={styleFor(ayahMarks)}
     >
       {words.map((word, i) => {
         const wordMarks: AnyTajweedMark[] = [];
-        const letterMarks: { mark: AnyTajweedMark; from: number; to: number }[] = [];
+        const letterMarks: { mark: AnyTajweedMark; letters: number[] }[] = [];
         for (const m of marks) {
-          const c = coverage(m, i);
+          const c = coverage(m, surah, ayah, i);
           if (c === 'word') wordMarks.push(m);
-          else if (c && c !== 'ayah') letterMarks.push({ mark: m, ...c });
+          else if (Array.isArray(c)) letterMarks.push({ mark: m, letters: c });
         }
-        const inSelection =
-          selection &&
-          selection.selection !== 'AYAH' &&
-          selection.wordStart !== null &&
-          i >= selection.wordStart &&
-          i <= (selection.wordEnd ?? selection.wordStart);
-        const selectingLetters = inSelection && selection.selection === 'LETTERS';
-        const endingHere = marks.filter(
-          (m) => m.selection !== 'AYAH' && (m.wordEnd ?? m.wordStart) === i,
+        const wordPart = wholeWord(surah, ayah, i);
+        const wordPicked = hasPart(picked, wordPart);
+        const wordPointed = hasPart(pointed, wordPart);
+        const pickedLetters = picked.filter(
+          (p) => p.wordIndex === i && p.letterIndex !== null,
+        );
+        const pointedLetters = pointed.filter(
+          (p) => p.wordIndex === i && p.letterIndex !== null,
         );
 
-        // Letters are only split into their own spans where something needs
-        // them — splitting every word would cost shaping and render time for
-        // nothing.
-        const body =
-          letterMarks.length || selectingLetters
-            ? graphemes(word).map((g, j) => {
-                const on = letterMarks.filter((l) => j >= l.from && j <= l.to).map((l) => l.mark);
-                const picked =
-                  selectingLetters &&
-                  selection.letterStart !== null &&
-                  j >= selection.letterStart &&
-                  j <= (selection.letterEnd ?? selection.letterStart);
-                return (
-                  <span key={j} className={cn(picked && selectedWord)} style={styleFor(on)}>
-                    {g}
-                  </span>
-                );
-              })
-            : word;
+        // A mark is named on the first part it holds in this ayah, so one that
+        // reaches into the next ayah is labelled on both.
+        const startsHere = marks.filter((m) => {
+          const here = partsIn(m, surah, ayah);
+          if (!here.length || here.some((p) => p.wordIndex === null)) return false;
+          return Math.min(...here.map((p) => p.wordIndex!)) === i;
+        });
+
+        // Letters get their own spans only where something needs them —
+        // splitting every word would cost shaping and render time for nothing.
+        const showLetters =
+          letterMarks.length > 0 ||
+          pickedLetters.length > 0 ||
+          pointedLetters.length > 0 ||
+          (interactive && letters);
+
+        const body = showLetters
+          ? graphemes(word).map((g, j) => {
+              const on = letterMarks.filter((l) => l.letters.includes(j)).map((l) => l.mark);
+              const part = oneLetter(surah, ayah, i, j);
+              const isPicked = hasPart(picked, part);
+              const isPointed = hasPart(pointed, part);
+              const content = (
+                <span
+                  className={cn(isPicked && pickedStyle, isPointed && pointedStyle)}
+                  style={styleFor(on)}
+                >
+                  {g}
+                </span>
+              );
+              return interactive && letters ? (
+                <button
+                  key={j}
+                  type="button"
+                  data-word={i}
+                  data-letter={j}
+                  aria-pressed={isPicked}
+                  aria-label={`Word ${i + 1}, letter ${j + 1}`}
+                  onClick={(e) => tap(e, part, [])}
+                  className="cursor-pointer bg-transparent p-0 font-[inherit] leading-[inherit] text-inherit"
+                >
+                  {content}
+                </button>
+              ) : (
+                <span key={j}>{content}</span>
+              );
+            })
+          : word;
 
         return (
           <span key={i}>
-            <span className={endingHere.length ? 'relative' : undefined}>
-            <span
-              data-word={i}
-              role={interactive || wordMarks.length ? 'button' : undefined}
-              tabIndex={interactive ? 0 : undefined}
-              onClick={(e) => pick(e, i, [...wordMarks, ...letterMarks.map((l) => l.mark)])}
-              onKeyDown={(e) => {
-                if (interactive && (e.key === 'Enter' || e.key === ' ')) {
-                  e.preventDefault();
-                  pick(e, i, wordMarks);
+            <span className={startsHere.length ? 'relative' : undefined}>
+              <span
+                data-word={i}
+                role={interactive || wordMarks.length ? 'button' : undefined}
+                tabIndex={interactive && !letters ? 0 : undefined}
+                onClick={
+                  interactive && letters
+                    ? undefined
+                    : (e) => tap(e, wordPart, [...wordMarks, ...letterMarks.map((l) => l.mark)])
                 }
-              }}
-              className={cn(
-                'transition-colors',
-                interactive && 'cursor-pointer rounded-md hover:bg-white/10',
-                !interactive && wordMarks.length > 0 && 'cursor-pointer',
-                inSelection && !selectingLetters && selectedWord,
-              )}
-              style={styleFor(wordMarks)}
-            >
-              {body}
-            </span>
-            {endingHere.length > 0 && (
-              // Above the word and out of the line: a label appearing must never
-              // push the text along under every student's eyes.
-              // Only as wide as the word and clear of its harakat, so labels on
-              // neighbouring words never meet and never cover what is taught.
-              <span className="pointer-events-none absolute inset-x-0 bottom-full flex justify-center gap-0.5 overflow-hidden whitespace-nowrap text-[0.3em]">
-                {endingHere.map((m) => (
-                  <Label key={m.id} mark={m} onMark={onMark} />
-                ))}
+                onKeyDown={(e) => {
+                  if (interactive && !letters && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    tap(e, wordPart, wordMarks);
+                  }
+                }}
+                className={cn(
+                  'transition-colors',
+                  interactive && !letters && 'cursor-pointer rounded-md hover:bg-white/10',
+                  !interactive && wordMarks.length > 0 && 'cursor-pointer',
+                  wordPicked && pickedStyle,
+                  wordPointed && pointedStyle,
+                )}
+                style={styleFor(wordMarks)}
+              >
+                {body}
               </span>
-            )}
+              {startsHere.length > 0 && (
+                // Above the word and out of the line: a label appearing must never
+                // push the text along under every student's eyes.
+                // Only as wide as the word and clear of its harakat, so labels on
+                // neighbouring words never meet and never cover what is taught.
+                <span className="pointer-events-none absolute inset-x-0 bottom-full flex justify-center gap-0.5 overflow-hidden whitespace-nowrap text-[0.3em]">
+                  {startsHere.map((m) => (
+                    <Label key={m.id} mark={m} onMark={onMark} />
+                  ))}
+                </span>
+              )}
             </span>{' '}
           </span>
         );
@@ -249,8 +304,9 @@ function AyahImpl({
   );
 }
 
-const selectionKey = (s: TajweedSelectionState | null) =>
-  s ? `${s.selection}:${s.wordStart}:${s.wordEnd}:${s.letterStart}:${s.letterEnd}` : '';
+/** Parts as one string, so memoised ayahs redraw when the pick moves. */
+export const partsKeyOf = (parts: readonly TajweedPart[]) =>
+  parts.map((p) => `${p.surahNumber}:${p.ayahNumber}:${p.wordIndex}:${p.letterIndex}`).join('|');
 
 /**
  * One ayah of the shared mushaf, as tappable words carrying their marks.
@@ -267,9 +323,11 @@ export const TajweedAyah = memo(
     a.marksKey === b.marksKey &&
     a.anchor === b.anchor &&
     a.interactive === b.interactive &&
+    a.letters === b.letters &&
     a.numeral === b.numeral &&
-    selectionKey(a.selection) === selectionKey(b.selection) &&
-    a.onWord === b.onWord &&
+    partsKeyOf(a.picked) === partsKeyOf(b.picked) &&
+    partsKeyOf(a.pointed) === partsKeyOf(b.pointed) &&
+    a.onPart === b.onPart &&
     a.onAyah === b.onAyah &&
     a.onMark === b.onMark,
 );
@@ -281,7 +339,7 @@ export function marksKeyOf(marks: readonly AnyTajweedMark[]): string {
       (m) =>
         `${m.id}:${'version' in m ? m.version : 'live'}:${m.style}:${m.color}:${m.rule}:${
           'outcome' in m ? m.outcome : ''
-        }:${m.customLabel}`,
+        }:${m.customLabel}:${partsKeyOf(m.parts)}`,
     )
     .join('|');
 }
