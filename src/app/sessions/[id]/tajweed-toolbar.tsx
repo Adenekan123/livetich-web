@@ -138,15 +138,21 @@ function RuleCombobox({
         aria-expanded={open}
         aria-haspopup="listbox"
         onClick={() => setOpen((v) => !v)}
-        className={cn(tool, 'h-10 w-full justify-between px-3')}
+        // The dashboard's card gradient, in the tones that read on a dark
+        // panel. Built from the signal tokens rather than a fixed teal, so it
+        // follows whatever colour the workspace is themed to.
+        className={cn(
+          tool,
+          'h-10 w-full justify-between border-signal-500/30 bg-gradient-to-br from-signal-900/50 to-neutral-900 px-3 text-white hover:from-signal-800/50',
+        )}
       >
         Choose a rule…
         <PiCaretDownBold aria-hidden className={cn('transition', open && 'rotate-180')} />
       </button>
 
       {open && (
-        <div className="absolute bottom-full z-30 mb-1.5 w-full overflow-hidden rounded-xl border border-white/10 bg-neutral-900 shadow-2xl shadow-black/50">
-          <div className="border-b border-white/10 p-2">
+        <div className="absolute bottom-full z-30 mb-1.5 w-full overflow-hidden rounded-xl border border-signal-500/30 bg-gradient-to-br from-signal-900/60 to-neutral-900 shadow-2xl shadow-black/50 backdrop-blur">
+          <div className="border-b border-signal-500/20 p-2">
             <input
               autoFocus
               type="search"
@@ -171,7 +177,7 @@ function RuleCombobox({
                   setOpen(false);
                 }
               }}
-              className={cn(field, 'w-full')}
+              className={cn(field, 'w-full border-signal-500/25 bg-neutral-950/40')}
             />
           </div>
           <ul role="listbox" aria-label="Tajweed rules" className="max-h-64 overflow-y-auto p-1">
@@ -190,7 +196,9 @@ function RuleCombobox({
                   onClick={() => choose(r.rule)}
                   className={cn(
                     'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition',
-                    i === active ? 'bg-white/10 text-white' : 'text-neutral-200',
+                    i === active
+                      ? 'bg-gradient-to-r from-signal-600/40 to-signal-600/10 text-white'
+                      : 'text-neutral-200',
                   )}
                 >
                   <span

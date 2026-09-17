@@ -34,6 +34,9 @@ import {
 import type { TajweedApi } from './use-tajweed';
 
 const NO_MARKS: readonly AnyTajweedMark[] = [];
+/** Nothing picked, as one stable value: a fresh [] every render would make the
+ *  overlay re-measure for no reason. */
+const NO_PARTS: readonly TajweedPart[] = [];
 
 /** Standard basmalah, shown as a surah header (every surah opens with it
  *  except At-Tawbah; Al-Fatihah already carries it as ayah 1). */
@@ -492,7 +495,7 @@ export function QuranReader({
       {/* What the class is told: the instructor pointing, then the rule they
           chose. Only for the people being taught — the instructor already
           knows what they just marked. */}
-      {tajweed && !tajweed.canEdit && (
+      {tajweed && !tajweed.canEdit && !tajweed.hideAll && (
         <TajweedNotice
           pointing={tajweed.pointing}
           mark={tajweed.announced}
@@ -543,7 +546,16 @@ export function QuranReader({
                 <TajweedOverlay
                   containerRef={mushafRef}
                   marks={tajweed.visible}
-                  pointing={isInstructor ? tajweed.selection.parts : tajweed.pointing}
+                  // Hiding marks hides everything Tajweed draws, the pick and
+                  // its joining curve included — a teal underline left behind
+                  // reads as the button not working.
+                  pointing={
+                    tajweed.hideAll
+                      ? NO_PARTS
+                      : isInstructor
+                        ? tajweed.selection.parts
+                        : tajweed.pointing
+                  }
                   textOf={ayahText}
                   colors={tajweed.prefs.colors}
                 />
