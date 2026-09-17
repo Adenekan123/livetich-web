@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   PiCaretDownBold,
   PiFunnelBold,
@@ -101,7 +102,65 @@ function RuleCombobox({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
-  const boxRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState<{
+    left: number;
+    width: number;
+    top?: number;
+    bottom?: number;
+    maxHeight: number;
+  } | null>(null);
+
+  /**
+   * Where the list can actually go.
+   *
+   * The toolbar scrolls, so a menu drawn inside it is clipped at its edge —
+   * which ate the search box. This measures the room above and below the
+   * button and caps the list to it, and the list itself is drawn outside the
+   * toolbar entirely.
+   */
+  const position = useCallback(() => {
+    const el = triggerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const gap = 6;
+    const above = r.top - gap;
+    const below = window.innerHeight - r.bottom - gap;
+    // Upward by preference — the toolbar sits at the bottom of the screen —
+    // but downward when there is more room there.
+    setPlace(
+      above >= Math.min(320, below) || above >= below
+        ? {
+            left: r.left,
+            width: r.width,
+            bottom: window.innerHeight - r.top + gap,
+            maxHeight: Math.max(180, above - 8),
+          }
+        : {
+            left: r.left,
+            width: r.width,
+            top: r.bottom + gap,
+            maxHeight: Math.max(180, below - 8),
+          },
+    );
+  }, []);
+
+  useLayoutEffect(() => {
+    if (open) position();
+  }, [open, position]);
+
+  useEffect(() => {
+    if (!open) return;
+    const again = () => position();
+    window.addEventListener('resize', again);
+    // Capture: the panel it sits in scrolls, and so does the page.
+    window.addEventListener('scroll', again, true);
+    return () => {
+      window.removeEventListener('resize', again);
+      window.removeEventListener('scroll', again, true);
+    };
+  }, [open, position]);
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -114,11 +173,15 @@ function RuleCombobox({
     );
   }, [query]);
 
-  // Close on a click elsewhere or on Escape, the way a menu is expected to.
+  // Close on a click elsewhere, the way a menu is expected to. The list is
+  // drawn outside this component's subtree, so it has to be asked separately.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (triggerRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target)) return;
+      setOpen(false);
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
@@ -132,8 +195,9 @@ function RuleCombobox({
   };
 
   return (
-    <div ref={boxRef} className="relative">
+    <div className="relative">
       <button
+        ref={triggerRef}
         type="button"
         aria-expanded={open}
         aria-haspopup="listbox"
@@ -150,9 +214,23 @@ function RuleCombobox({
         <PiCaretDownBold aria-hidden className={cn('transition', open && 'rotate-180')} />
       </button>
 
-      {open && (
-        <div className="absolute bottom-full z-30 mb-1.5 w-full overflow-hidden rounded-xl border border-signal-500/30 bg-gradient-to-br from-signal-900/60 to-neutral-900 shadow-2xl shadow-black/50 backdrop-blur">
-          <div className="border-b border-signal-500/20 p-2">
+      {open &&
+        place &&
+        createPortal(
+          <div
+            ref={panelRef}
+            style={{
+              position: 'fixed',
+              left: place.left,
+              width: place.width,
+              ...(place.top === undefined ? {} : { top: place.top }),
+              ...(place.bottom === undefined ? {} : { bottom: place.bottom }),
+              maxHeight: place.maxHeight,
+            }}
+            className="z-50 flex flex-col overflow-hidden rounded-xl border border-signal-500/30 bg-gradient-to-br from-signal-900/60 to-neutral-900 shadow-2xl shadow-black/50 backdrop-blur"
+          >
+            {/* The search never scrolls away: only the list below it does. */}
+            <div className="shrink-0 border-b border-signal-500/20 p-2">
             <input
               autoFocus
               type="search"
@@ -180,7 +258,7 @@ function RuleCombobox({
               className={cn(field, 'w-full border-signal-500/25 bg-neutral-950/40')}
             />
           </div>
-          <ul role="listbox" aria-label="Tajweed rules" className="max-h-64 overflow-y-auto p-1">
+          <ul role="listbox" aria-label="Tajweed rules" className="min-h-0 flex-1 overflow-y-auto p-1">
             {matches.length === 0 && (
               <li className="px-2.5 py-3 text-center text-xs text-neutral-500">
                 No rule matches “{query}”.
@@ -219,8 +297,9 @@ function RuleCombobox({
               </li>
             ))}
           </ul>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </div>
   );
 }
