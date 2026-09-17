@@ -141,8 +141,18 @@ async function turnTo(page: Page, surah: number, name: string) {
 
 const word = (p: Page, ayah: number, w: number) =>
   p.locator(`[data-ayah="${ayah}"] [data-word="${w}"]`).first();
+/**
+ * A letter, in the panel's strip — never in the text.
+ *
+ * The Qur'an is one unbroken run of joined letters, so a letter has no element
+ * of its own there; the words picked are laid out letter by letter below, and
+ * that is where one is chosen.
+ */
 const letter = (p: Page, ayah: number, w: number, l: number) =>
-  p.locator(`[data-ayah="${ayah}"] [data-word="${w}"][data-letter="${l}"]`).first();
+  toolbar(p).getByRole('button', {
+    name: `Ayah ${ayah}, word ${w + 1}, letter ${l + 1}`,
+    exact: true,
+  });
 const label = (p: Page, ayah: number, text: string) =>
   p.locator(`[data-ayah="${ayah}"] [data-tajweed-label]`, { hasText: text });
 const toolbar = (p: Page) => p.locator('[data-tajweed-toolbar]');
@@ -338,12 +348,12 @@ test('a mark can hold letters from two different ayahs', async ({ browser }) => 
 
   await teacher.getByRole('button', { name: 'Tajweed', exact: true }).click();
   await toolbar(teacher).getByRole('radio', { name: 'Lesson' }).click();
-  // Tap a word in ayah 3 first: the class follows to the verse being marked,
-  // and that verse and the ones either side of it are the ones whose letters
-  // become their own elements. Switching to Letters lets the pick go.
+  // Tap the words in the text; their letters appear in the panel below, and
+  // the letters are chosen there. Picking a letter drops the whole-word pick
+  // it came from, so what is left is exactly the two letters.
   await word(teacher, 3, 4).click();
-  await toolbar(teacher).getByRole('radio', { name: 'Letters' }).click();
   await letter(teacher, 3, 4, 1).click();
+  await word(teacher, 4, 0).click();
   await letter(teacher, 4, 0, 0).click();
   await rule(teacher, /^Ikhfa haqiqi/).click();
 
@@ -378,13 +388,14 @@ test('on a tablet, a teacher marks single letters by tapping', async ({ browser 
   await expect(student.getByText('Al-Falaq').first()).toBeVisible({ timeout: 20_000 });
 
   await teacher.getByRole('button', { name: 'Tajweed', exact: true }).tap();
-  const letters = toolbar(teacher).getByRole('radio', { name: 'Letters' });
-  await expect(letters).toBeVisible();
+  // A word in the text, then its letters in the panel — which is where a
+  // finger has room to aim.
+  await word(teacher, 1, 1).tap();
+  const firstLetter = letter(teacher, 1, 1, 0);
+  await expect(firstLetter).toBeVisible();
   // Big enough for a finger, not a mouse pointer.
-  expect((await letters.boundingBox())!.height).toBeGreaterThanOrEqual(32);
-  await letters.tap();
-
-  await letter(teacher, 1, 1, 0).tap();
+  expect((await firstLetter.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await firstLetter.tap();
   // Where the next word sits for the student before anything is marked.
   const before = await word(student, 1, 2).boundingBox();
   await rule(teacher, /^Madd tabi/).tap();
@@ -441,7 +452,7 @@ test('on a phone, the Tajweed controls fit the screen and still mark a word', as
   for (const control of [
     ikhfa,
     toolbar(teacher).getByRole('radio', { name: 'Correction' }),
-    toolbar(teacher).getByRole('radio', { name: 'Letters' }),
+    toolbar(teacher).getByRole('button', { name: 'Clear picks' }),
     toolbar(teacher).getByRole('button', { name: 'Style' }),
   ]) {
     await control.scrollIntoViewIfNeeded();
