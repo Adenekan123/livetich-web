@@ -20,6 +20,7 @@ import {
   TAJWEED_RULES,
   type RoomUser,
   type TajweedOutcome,
+  type TajweedPart,
   type TajweedRule,
   type TajweedRuleGroupKey,
   type TajweedTemporaryAnnotation,
@@ -872,6 +873,106 @@ export function TajweedLegend({ entries }: { entries: { rule: TajweedRule; color
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * What the class is told, without having to tap anything.
+ *
+ * While the instructor is picking, the same letters are outlined on every
+ * screen and this says so in words. Once they choose a rule, it says which
+ * rule — by name and in Arabic, on the words it was put on — and stays until
+ * the next one, so a student who looked up a second late has not missed it.
+ */
+export function TajweedNotice({
+  pointing,
+  mark,
+  textOf,
+  surahName,
+  colors,
+  onDismiss,
+}: {
+  pointing: readonly TajweedPart[];
+  mark: AnyTajweedMark | null;
+  /** The Arabic some parts point at, read off the mushaf itself. */
+  textOf: (parts: readonly TajweedPart[]) => string;
+  surahName: (surah: number) => string;
+  colors?: Partial<Record<TajweedRuleGroupKey, string>>;
+  onDismiss: () => void;
+}) {
+  if (!pointing.length && !mark) return null;
+  const isPrivate = !!mark && 'studentId' in mark && !!mark.studentId;
+  const arabic = mark ? ruleArabic(mark.rule) : null;
+  return (
+    <div
+      data-tajweed-notice
+      className="grid gap-2 border-b border-white/10 bg-neutral-950/60 px-4 py-2"
+    >
+      {pointing.length > 0 && (
+        <div
+          role="status"
+          className="flex items-center gap-3 rounded-xl border-2 border-dashed border-signal-400/60 px-3 py-1.5"
+        >
+          <span dir="rtl" lang="ar" className="font-quran shrink-0 text-2xl text-white">
+            {textOf(pointing)}
+          </span>
+          <span className="min-w-0">
+            <b className="block text-sm font-semibold text-white">
+              Your instructor is pointing here
+            </b>
+            <span className="text-xs text-neutral-400">
+              {describeParts(pointing, surahName)}
+            </span>
+          </span>
+        </div>
+      )}
+      {mark && (
+        <div
+          role="status"
+          className={cn(
+            'flex items-stretch gap-3 overflow-hidden rounded-xl border',
+            isPrivate ? 'border-amber-400/40 bg-amber-500/10' : 'border-white/10 bg-white/5',
+          )}
+        >
+          <span
+            aria-hidden
+            className="w-1.5 shrink-0"
+            style={{ backgroundColor: markColor(mark, colors) }}
+          />
+          <span
+            dir="rtl"
+            lang="ar"
+            className="font-quran shrink-0 self-center py-1.5 text-2xl text-white"
+          >
+            {textOf(mark.parts)}
+          </span>
+          <span className="min-w-0 flex-1 py-1.5">
+            <b className="block text-sm font-semibold text-white">
+              {isPrivate
+                ? `Just for you · ${markLabel(mark)}`
+                : `Your instructor marked this as ${markLabel(mark)}`}
+            </b>
+            {arabic && (
+              <span dir="rtl" lang="ar" className="font-quran block text-base text-neutral-300">
+                {arabic}
+              </span>
+            )}
+            <span className="block truncate text-xs text-neutral-400">
+              {describeParts(mark.parts, surahName)}
+              {mark.note ? ` · “${mark.note}”` : ''}
+            </span>
+          </span>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={onDismiss}
+            className="grid w-9 shrink-0 place-items-center text-neutral-500 hover:text-white"
+          >
+            <PiXBold />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

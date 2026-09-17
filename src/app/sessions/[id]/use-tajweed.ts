@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type RefObject,
 } from 'react';
@@ -215,6 +216,10 @@ export function useTajweed({
   const [corrections, setCorrections] = useState<SavedMark[]>([]);
   const [live, setLive] = useState<TajweedTemporaryAnnotation[]>([]);
   const [pointing, setPointing] = useState<TajweedPart[]>(EMPTY_PARTS);
+  /** The last mark to arrive, so the class is told what was marked and in
+   *  which rule — it stays until the next one rather than flashing past. */
+  const [announced, setAnnounced] = useState<AnyTajweedMark | null>(null);
+  const liveIds = useRef<Set<string>>(new Set());
   const [selection, setSelection] = useState<TajweedSelectionState>({
     parts: [],
     letters: false,
@@ -237,15 +242,22 @@ export function useTajweed({
 
   const receiveSaved = useCallback((annotation: TajweedAnnotation) => {
     setterFor(annotation)((prev) => upsert(prev, annotation));
+    setAnnounced(annotation);
   }, []);
 
   const receiveDeleted = useCallback((id: string) => {
     setLesson((prev) => prev.filter((m) => m.id !== id));
     setCorrections((prev) => prev.filter((m) => m.id !== id));
+    setAnnounced((prev) => (prev?.id === id ? null : prev));
   }, []);
 
   const receiveLive = useCallback((annotations: TajweedTemporaryAnnotation[]) => {
+    // Live marks arrive as the whole list, so the new one is whichever id was
+    // not there a moment ago — that is the one worth telling the class about.
+    const fresh = annotations.find((a) => !liveIds.current.has(a.id));
+    liveIds.current = new Set(annotations.map((a) => a.id));
     setLive(annotations);
+    if (fresh) setAnnounced({ ...fresh, live: true });
   }, []);
 
   /** What the instructor is pointing at. Their own client already knows — it is
@@ -660,6 +672,8 @@ export function useTajweed({
     clearSelection,
     setLetters,
     pointing,
+    announced,
+    dismissAnnounced: () => setAnnounced(null),
     create,
     update,
     remove,

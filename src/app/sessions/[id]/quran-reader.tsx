@@ -16,11 +16,22 @@ import { API_URL } from '@/lib/api';
 import { getRealtimeToken } from '@/lib/client-token';
 import { cn } from '@/lib/ui';
 import type { RoomUser } from '@/lib/realtime-contract';
-import { ayahKey, partsIn, type AnyTajweedMark } from '@/lib/tajweed';
+import {
+  ayahKey,
+  graphemes,
+  partsIn,
+  splitWords,
+  type AnyTajweedMark,
+} from '@/lib/tajweed';
 import type { TajweedPart } from '@/lib/realtime-contract';
 import type { Surah } from '@/lib/types';
 import { marksKeyOf, TajweedAyah, TajweedLinks } from './tajweed-ayah';
-import { TajweedLegend, TajweedMarkCard, TajweedToolbar } from './tajweed-toolbar';
+import {
+  TajweedLegend,
+  TajweedMarkCard,
+  TajweedNotice,
+  TajweedToolbar,
+} from './tajweed-toolbar';
 import type { TajweedApi, TajweedMode } from './use-tajweed';
 
 const NO_MARKS: readonly AnyTajweedMark[] = [];
@@ -341,6 +352,22 @@ export function QuranReader({
     [surah, text],
   );
 
+  /** The Arabic some parts point at, read back off the mushaf — so the class
+   *  is told what was marked in the words themselves, not a reference. */
+  const partsText = useCallback(
+    (parts: readonly TajweedPart[]) =>
+      parts
+        .map((p) => {
+          const verse = p.surahNumber === surah ? text?.ayahs[p.ayahNumber - 1] : null;
+          if (!verse || p.wordIndex === null) return '';
+          const word = splitWords(verse)[p.wordIndex] ?? '';
+          return p.letterIndex === null ? word : (graphemes(word)[p.letterIndex] ?? '');
+        })
+        .filter(Boolean)
+        .join(' '),
+    [surah, text],
+  );
+
   const onAyahTap = useCallback(
     (n: number) => {
       if (isInstructor) navRef.current(surah, n);
@@ -471,6 +498,20 @@ export function QuranReader({
           </span>
         )}
       </div>
+
+      {/* What the class is told: the instructor pointing, then the rule they
+          chose. Only for the people being taught — the instructor already
+          knows what they just marked. */}
+      {tajweed && !tajweed.canEdit && (
+        <TajweedNotice
+          pointing={tajweed.pointing}
+          mark={tajweed.announced}
+          textOf={partsText}
+          surahName={surahName}
+          colors={tajweed.prefs.colors}
+          onDismiss={tajweed.dismissAnnounced}
+        />
+      )}
 
       {/* The page */}
       <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto px-5 py-6">
