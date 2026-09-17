@@ -2919,6 +2919,24 @@ export function BoardExcalidraw({
             </button>
             <button
               type="button"
+              onClick={() => void exportPdf()}
+              disabled={exporting}
+              className={cn(toolClass, toolIdle)}
+            >
+              <PiDownloadSimpleBold aria-hidden />
+              {exporting
+                ? exportPage
+                  ? `Page ${exportPage.page} of ${exportPage.of}…`
+                  : 'Exporting…'
+                : 'Export'}
+            </button>
+
+            {/* Last, and behind a divider: taking the board off every screen
+                does not belong flush against the tools that put things on it. */}
+            <span aria-hidden className={dividerClass} />
+
+            <button
+              type="button"
               ref={clearTriggerRef}
               aria-haspopup="dialog"
               aria-expanded={clearOpen}
@@ -2947,19 +2965,6 @@ export function BoardExcalidraw({
             >
               <PiTrashBold aria-hidden />
               Clear
-            </button>
-            <button
-              type="button"
-              onClick={() => void exportPdf()}
-              disabled={exporting}
-              className={cn(toolClass, toolIdle)}
-            >
-              <PiDownloadSimpleBold aria-hidden />
-              {exporting
-                ? exportPage
-                  ? `Page ${exportPage.page} of ${exportPage.of}…`
-                  : 'Exporting…'
-                : 'Export'}
             </button>
 
           </div>
