@@ -381,7 +381,14 @@ export function TajweedToolbar({
   const statusMessage = hint ?? api.error;
 
   return (
-    <div data-tajweed-toolbar className="border-t border-white/10 bg-neutral-950/70 px-3 py-2.5 text-sm">
+    <div
+      data-tajweed-toolbar
+      // The dashboard card's gradient across the whole panel, from the signal
+      // tokens so it follows whatever colour the workspace is themed to. It
+      // fades out rather than tinting the full width: this sits under the text
+      // being taught, and should not compete with it.
+      className="border-t border-signal-500/25 bg-gradient-to-br from-signal-900/50 via-neutral-950 to-neutral-950 px-3 py-2.5 text-sm"
+    >
       <div className="flex flex-wrap items-center gap-2">
         {/* The mode selector and the student picker live here when Lesson and
             Correction are switched back on. */}
@@ -414,7 +421,7 @@ export function TajweedToolbar({
       </div>
 
       {panel === 'filter' && (
-        <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 p-2">
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-signal-500/20 bg-white/5 p-2">
           {TAJWEED_RULE_GROUPS.map((g) => {
             const rules = g.rules.map((r) => `${g.key}.${r.key}` as TajweedRule);
             const hidden = api.hideAll || rules.every((r) => api.hiddenRules.has(r));
@@ -451,7 +458,7 @@ export function TajweedToolbar({
       )}
 
       {panel === 'style' && (
-        <div className="mt-2 space-y-2 rounded-lg border border-white/10 bg-white/5 p-2">
+        <div className="mt-2 space-y-2 rounded-lg border border-signal-500/20 bg-white/5 p-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-neutral-400">Mark with</span>
             {(['HIGHLIGHT', 'UNDERLINE'] as const).map((style) => (
@@ -550,7 +557,7 @@ export function TajweedToolbar({
       )}
 
       {strip.length > 0 && (
-        <div className="mt-2 rounded-lg border border-white/10 bg-white/5 p-2">
+        <div className="mt-2 rounded-lg border border-signal-500/20 bg-white/5 p-2">
           <p className="text-[11px] text-neutral-400">
             Tap a letter to mark just that letter instead of the whole word — one here and
             one in the word beside it, if that is what the rule holds.
