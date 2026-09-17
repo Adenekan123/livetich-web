@@ -15,7 +15,6 @@ import {
 import { API_URL } from '@/lib/api';
 import { getRealtimeToken } from '@/lib/client-token';
 import { cn } from '@/lib/ui';
-import type { RoomUser } from '@/lib/realtime-contract';
 import {
   ayahKey,
   graphemes,
@@ -32,7 +31,7 @@ import {
   TajweedNotice,
   TajweedToolbar,
 } from './tajweed-toolbar';
-import type { TajweedApi, TajweedMode } from './use-tajweed';
+import type { TajweedApi } from './use-tajweed';
 
 const NO_MARKS: readonly AnyTajweedMark[] = [];
 
@@ -195,8 +194,6 @@ export function QuranReader({
   isInstructor,
   onNavigate,
   tajweed = null,
-  students = [],
-  tajweedModes,
   startAnnotating = false,
 }: {
   surah: number;
@@ -206,10 +203,8 @@ export function QuranReader({
   onNavigate: (surah: number, ayah: number) => void;
   /** Tajweed annotations on the text. Absent = the plain mushaf. */
   tajweed?: TajweedApi | null;
-  /** Students in the room, for recording a correction against one of them. */
-  students?: RoomUser[];
-  /** The Tajweed modes on offer here (all of them in class). */
-  tajweedModes?: TajweedMode[];
+  /* The students in the room and the modes on offer come back with Lesson and
+     Correction: a live mark is shown to the whole class, so it needs neither. */
   /** Open already marking — for preparing a lesson, where that is the point. */
   startAnnotating?: boolean;
 }) {
@@ -609,13 +604,7 @@ export function QuranReader({
         // Capped and scrolling on its own, so on a phone the text being taught
         // keeps at least half the reader instead of two lines of it.
         <div className="max-h-[55%] shrink-0 overflow-y-auto">
-          <TajweedToolbar
-            api={tajweed}
-            students={students}
-            surahName={surahName}
-            ayahText={ayahText}
-            modes={tajweedModes}
-          />
+          <TajweedToolbar api={tajweed} surahName={surahName} ayahText={ayahText} />
         </div>
       )}
       {openMark && (

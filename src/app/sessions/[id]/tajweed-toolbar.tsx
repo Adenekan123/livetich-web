@@ -1,25 +1,15 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  PiArrowCounterClockwiseBold,
-  PiCheckBold,
-  PiClockCounterClockwiseBold,
-  PiExclamationMarkBold,
-  PiFloppyDiskBold,
+  PiCaretDownBold,
   PiFunnelBold,
   PiGearSixBold,
-  PiNotePencilBold,
-  PiTrashBold,
-  PiWarningBold,
   PiXBold,
 } from 'react-icons/pi';
-import type { IconType } from 'react-icons';
 import {
   TAJWEED_RULE_GROUPS,
   TAJWEED_RULES,
-  type RoomUser,
-  type TajweedOutcome,
   type TajweedPart,
   type TajweedRule,
   type TajweedRuleGroupKey,
@@ -35,35 +25,28 @@ import {
   ruleLabel,
   splitWords,
   TAJWEED_GROUP_COLORS,
-  TAJWEED_OUTCOMES,
   type AnyTajweedMark,
-  type TajweedHistoryItem,
 } from '@/lib/tajweed';
 import { cn } from '@/lib/ui';
 import { markColor, markLabel } from './tajweed-ayah';
-import type { SavedMark, TajweedApi, TajweedMode } from './use-tajweed';
+import type { TajweedApi } from './use-tajweed';
 
-const MODES: { key: TajweedMode; label: string; hint: string }[] = [
-  { key: 'LIVE', label: 'Live', hint: 'Show it to the class now; not kept' },
-  { key: 'LESSON', label: 'Lesson', hint: 'Save it with the lesson' },
-  { key: 'CORRECTION', label: 'Correction', hint: "Record it against a student's recitation" },
-];
-
-const ALL_MODES: TajweedMode[] = ['LIVE', 'LESSON', 'CORRECTION'];
-
-const CHANGE_LABEL: Record<TajweedHistoryItem['change'], string> = {
-  CREATED: 'Created',
-  UPDATED: 'Edited',
-  DELETED: 'Deleted',
-};
-
-const OUTCOME_ICONS: Record<TajweedOutcome, IconType> = {
-  CORRECT: PiCheckBold,
-  REPEAT: PiArrowCounterClockwiseBold,
-  TAJWEED_ISSUE: PiWarningBold,
-  PRONUNCIATION: PiExclamationMarkBold,
-  NOTE: PiNotePencilBold,
-};
+/*
+ * Lesson and student corrections are switched off for now, so a mark is only
+ * ever shown to the class and never saved. Turning them back on means restoring
+ * the mode selector, the student picker, the outcome buttons, the "Keep for
+ * next time" switch, the note field, and the per-mark edit/delete/history row —
+ * they exist to serve a saved mark, and there is nothing saved without them.
+ *
+ * const MODES: { key: TajweedMode; label: string; hint: string }[] = [
+ *   { key: 'LIVE', label: 'Live', hint: 'Show it to the class now; not kept' },
+ *   { key: 'LESSON', label: 'Lesson', hint: 'Save it with the lesson' },
+ *   { key: 'CORRECTION', label: 'Correction', hint: "Record it against a student's recitation" },
+ * ];
+ * const OUTCOME_ICONS: Record<TajweedOutcome, IconType> = { ... };
+ * const CHANGE_LABEL: Record<TajweedHistoryItem['change'], string> = { ... };
+ * const ALL_MODES: TajweedMode[] = ['LIVE', 'LESSON', 'CORRECTION'];
+ */
 
 const LIVE_DURATIONS = [
   { seconds: 0, label: 'Until cleared' },
@@ -88,6 +71,151 @@ const field =
 
 const isLive = (m: AnyTajweedMark): m is TajweedTemporaryAnnotation & { live: true } =>
   m.live === true;
+
+/** Every rule a teacher can choose, with what it can be found by. */
+const PICKABLE: { rule: TajweedRule; label: string; arabic: string | null; group: string }[] =
+  TAJWEED_RULE_GROUPS.flatMap((g) =>
+    g.rules.map((r) => ({
+      rule: `${g.key}.${r.key}` as TajweedRule,
+      label: r.label,
+      arabic: r.arabic,
+      group: g.label,
+    })),
+  );
+
+/**
+ * One control for the whole taxonomy: type to narrow, arrows to move, Enter to
+ * choose.
+ *
+ * A search box and two dropdowns asked the same question three ways. This asks
+ * it once. It is written out rather than pulled in because the app has no
+ * Radix or cmdk to build on, and a rule picker is not worth two dependencies.
+ */
+function RuleCombobox({
+  onPick,
+  colors,
+}: {
+  onPick: (rule: TajweedRule) => void;
+  colors: Partial<Record<TajweedRuleGroupKey, string>>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [active, setActive] = useState(0);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return PICKABLE;
+    return PICKABLE.filter(
+      (r) =>
+        r.label.toLowerCase().includes(q) ||
+        r.group.toLowerCase().includes(q) ||
+        (r.arabic ?? '').includes(query.trim()),
+    );
+  }, [query]);
+
+  // Close on a click elsewhere or on Escape, the way a menu is expected to.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  const choose = (rule: TajweedRule) => {
+    onPick(rule);
+    setOpen(false);
+    setQuery('');
+    setActive(0);
+  };
+
+  return (
+    <div ref={boxRef} className="relative">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onClick={() => setOpen((v) => !v)}
+        className={cn(tool, 'h-10 w-full justify-between px-3')}
+      >
+        Choose a rule…
+        <PiCaretDownBold aria-hidden className={cn('transition', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div className="absolute bottom-full z-30 mb-1.5 w-full overflow-hidden rounded-xl border border-white/10 bg-neutral-900 shadow-2xl shadow-black/50">
+          <div className="border-b border-white/10 p-2">
+            <input
+              autoFocus
+              type="search"
+              value={query}
+              aria-label="Find a rule"
+              placeholder="Find a rule — e.g. ikhfa, madd, qalqalah"
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setActive(0);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setActive((i) => {
+                    const next = e.key === 'ArrowDown' ? i + 1 : i - 1;
+                    return (next + matches.length) % Math.max(1, matches.length);
+                  });
+                } else if (e.key === 'Enter' && matches[active]) {
+                  e.preventDefault();
+                  choose(matches[active].rule);
+                } else if (e.key === 'Escape') {
+                  setOpen(false);
+                }
+              }}
+              className={cn(field, 'w-full')}
+            />
+          </div>
+          <ul role="listbox" aria-label="Tajweed rules" className="max-h-64 overflow-y-auto p-1">
+            {matches.length === 0 && (
+              <li className="px-2.5 py-3 text-center text-xs text-neutral-500">
+                No rule matches “{query}”.
+              </li>
+            )}
+            {matches.map((r, i) => (
+              <li key={r.rule}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={i === active}
+                  onMouseEnter={() => setActive(i)}
+                  onClick={() => choose(r.rule)}
+                  className={cn(
+                    'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition',
+                    i === active ? 'bg-white/10 text-white' : 'text-neutral-200',
+                  )}
+                >
+                  <span
+                    aria-hidden
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: ruleColor(r.rule, colors) }}
+                  />
+                  <span className="min-w-0 flex-1 truncate">
+                    {r.label}
+                    <span className="text-neutral-500"> · {r.group}</span>
+                  </span>
+                  {r.arabic && (
+                    <span dir="rtl" lang="ar" className="font-quran shrink-0 text-sm text-neutral-400">
+                      {r.arabic}
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** One word picked brings the words either side of it into the strip, so the
  *  letter beside it is a tap away rather than a fresh pick in the text. */
@@ -119,53 +247,22 @@ function withNeighbours(
  */
 export function TajweedToolbar({
   api,
-  students,
   surahName,
   ayahText,
-  modes = ALL_MODES,
 }: {
   api: TajweedApi;
-  students: RoomUser[];
   /** Names the surah a part sits in, for saying where a mark is. */
   surahName: (surah: number) => string;
   /** The text of an ayah, for showing what is picked. The mushaf holds it —
    *  this only reads what a part points at. */
   ayahText: (surah: number, ayah: number) => string | null;
-  /** Which modes this place offers. Preparing a lesson has no class to show
-   *  live marks to and no student reciting, so it offers Lesson only. */
-  modes?: TajweedMode[];
+  /* The students in the room and the modes on offer come back with Lesson and
+     Correction: a live mark is shown to everyone, so it needs neither. */
 }) {
-  const [note, setNote] = useState('');
   const [customLabel, setCustomLabel] = useState('');
   const [needLabel, setNeedLabel] = useState(false);
-  const [kept, setKept] = useState(false);
-  const [pickingIssue, setPickingIssue] = useState(false);
-  const [group, setGroup] = useState<TajweedRuleGroupKey | ''>('');
-  const [query, setQuery] = useState('');
   const [panel, setPanel] = useState<'filter' | 'style' | null>(null);
   const [hint, setHint] = useState<string | null>(null);
-  const [editing, setEditing] = useState<{ id: string; note: string } | null>(null);
-  const [historyFor, setHistoryFor] = useState<{
-    id: string;
-    items: TajweedHistoryItem[] | null;
-    error: string | null;
-  } | null>(null);
-
-  const openHistory = (id: string) => {
-    setHistoryFor({ id, items: null, error: null });
-    api
-      .history(id)
-      .then((items) =>
-        setHistoryFor((h) => (h?.id === id ? { id, items, error: null } : h)),
-      )
-      .catch((e: unknown) =>
-        setHistoryFor((h) =>
-          h?.id === id
-            ? { id, items: null, error: e instanceof Error ? e.message : 'Could not load history' }
-            : h,
-        ),
-      );
-  };
 
   const { parts } = api.selection;
   const ready = parts.length > 0;
@@ -197,15 +294,15 @@ export function TajweedToolbar({
     });
   }, [parts, ayahText]);
 
-  /** The rules this teacher actually reaches for, most recent first. */
+  /** The rules this teacher reaches for, most recent first. Nothing is saved
+   *  while Live is the only mode, so this is what they have used this session. */
   const recent = useMemo(() => {
-    const used = [...api.lesson, ...api.corrections]
-      .slice()
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    const used = api.live
       .map((m) => m.rule)
-      .filter((r): r is TajweedRule => !!r && TAJWEED_RULES[r]?.pickable);
+      .filter((r): r is TajweedRule => !!r)
+      .reverse();
     return [...new Set([...used, ...RECENT_FALLBACK])].slice(0, 5);
-  }, [api.lesson, api.corrections]);
+  }, [api.live]);
 
   /** Marks touching any word the selection touches, so what is already there
    *  is in front of the teacher before they add another. */
@@ -226,30 +323,14 @@ export function TajweedToolbar({
     return [...seen.values()];
   }, [parts, api.index]);
 
-  const hits = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return [];
-    return (Object.keys(TAJWEED_RULES) as TajweedRule[]).filter((key) => {
-      const info = TAJWEED_RULES[key];
-      return (
-        info.pickable &&
-        (info.label.toLowerCase().includes(q) ||
-          (info.groupLabel ?? '').toLowerCase().includes(q) ||
-          (info.arabic ?? '').includes(query.trim()))
-      );
-    });
-  }, [query]);
-
   const done = () => {
-    setNote('');
     setCustomLabel('');
     setNeedLabel(false);
-    setPickingIssue(false);
-    setQuery('');
     setHint(null);
     api.clearError();
   };
 
+  /** Show the rule to the class. Nothing is saved while Live is the only mode. */
   const applyRule = (rule: TajweedRule) => {
     if (!ready) {
       setHint('Tap the words or letters you mean first.');
@@ -261,62 +342,8 @@ export function TajweedToolbar({
       setHint('Give the custom note a label, then choose it again.');
       return;
     }
-    const content = {
-      rule,
+    api.showLive(rule, {
       customLabel: rule === 'custom' ? label : undefined,
-      note: note.trim() || undefined,
-    };
-    if (api.mode === 'LIVE') {
-      api.showLive(rule, content);
-    } else if (api.mode === 'LESSON') {
-      api.create({
-        mode: 'LESSON',
-        kept,
-        ...content,
-        style: api.prefs.style,
-        color: ruleColor(rule, api.prefs.colors),
-      });
-    } else {
-      if (!api.correctionStudent) {
-        setHint('Choose the student first.');
-        return;
-      }
-      api.create({
-        mode: 'STUDENT_CORRECTION',
-        studentId: api.correctionStudent,
-        outcome: 'TAJWEED_ISSUE',
-        ...content,
-        style: api.prefs.style,
-        color: ruleColor(rule, api.prefs.colors),
-      });
-    }
-    done();
-  };
-
-  const applyOutcome = (outcome: TajweedOutcome) => {
-    if (!ready) {
-      setHint('Tap the words or letters you mean first.');
-      return;
-    }
-    if (!api.correctionStudent) {
-      setHint('Choose the student first.');
-      return;
-    }
-    if (outcome === 'TAJWEED_ISSUE') {
-      setPickingIssue(true);
-      setHint('Which rule needs work?');
-      return;
-    }
-    if (outcome === 'NOTE' && !note.trim()) {
-      setHint('Write the note first.');
-      return;
-    }
-    api.create({
-      mode: 'STUDENT_CORRECTION',
-      studentId: api.correctionStudent,
-      outcome,
-      note: note.trim() || undefined,
-      style: api.prefs.style,
     });
     done();
   };
@@ -348,51 +375,8 @@ export function TajweedToolbar({
   return (
     <div data-tajweed-toolbar className="border-t border-white/10 bg-neutral-950/70 px-3 py-2.5 text-sm">
       <div className="flex flex-wrap items-center gap-2">
-        <div
-          role="radiogroup"
-          aria-label="What a rule does"
-          className="flex rounded-lg border border-white/10 bg-white/5 p-0.5"
-        >
-          {MODES.filter((m) => modes.includes(m.key)).map((m) => (
-            <button
-              key={m.key}
-              type="button"
-              role="radio"
-              aria-checked={api.mode === m.key}
-              title={m.hint}
-              onClick={() => {
-                api.setMode(m.key);
-                setPickingIssue(false);
-                setHint(null);
-              }}
-              className={cn(
-                'h-8 rounded-md px-3 text-xs font-semibold transition',
-                api.mode === m.key ? 'bg-signal-600 text-white' : 'text-neutral-300 hover:bg-white/10',
-              )}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-
-        {api.mode === 'CORRECTION' && (
-          <select
-            aria-label="Student reciting"
-            value={api.correctionStudent ?? ''}
-            onChange={(e) => api.setCorrectionStudent(e.target.value || null)}
-            className={cn(field, 'max-w-[11rem]')}
-          >
-            <option value="" className="bg-neutral-900">
-              {students.length ? 'Student reciting…' : 'No students in the room'}
-            </option>
-            {students.map((s) => (
-              <option key={s.userId} value={s.userId} className="bg-neutral-900">
-                {s.name}
-              </option>
-            ))}
-          </select>
-        )}
-
+        {/* The mode selector and the student picker live here when Lesson and
+            Correction are switched back on. */}
         <div className="ml-auto flex flex-wrap items-center gap-1">
           {api.live.length > 0 && (
             <button type="button" onClick={() => api.clearLive()} className={tool}>
@@ -620,294 +604,70 @@ export function TajweedToolbar({
                 style={{ backgroundColor: markColor(m, api.prefs.colors) }}
               />
               <span className="text-xs font-semibold text-white">{markLabel(m)}</span>
-              {'kept' in m && m.kept && (
-                <span className="rounded bg-white/10 px-1.5 py-px text-[10px] text-neutral-300">
-                  kept
-                </span>
-              )}
-              {isLive(m) ? (
+              {/* "kept" and "saving…" belong to a mark on its way to the
+                  database; nothing is saved while Live is the only mode. */}
+              {isLive(m) && (
                 <span className="rounded bg-white/10 px-1.5 py-px text-[10px] text-neutral-300">
                   live
                 </span>
-              ) : (m as SavedMark).pending ? (
-                <span className="text-[10px] text-amber-300">saving…</span>
-              ) : null}
-              {editing?.id === m.id ? (
-                <input
-                  autoFocus
-                  value={editing.note}
-                  maxLength={1000}
-                  onChange={(e) => setEditing({ id: m.id, note: e.target.value })}
-                  placeholder="Teacher note"
-                  className={cn(field, 'h-8 flex-1')}
-                />
-              ) : (
-                <span className="min-w-0 flex-1 truncate text-xs text-neutral-400">{m.note}</span>
               )}
+              <span className="min-w-0 flex-1 truncate text-xs text-neutral-400">{m.note}</span>
               <span className="ml-auto flex gap-1">
-                {isLive(m) ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => api.liveToLesson(m)}
-                      className={cn(tool, 'h-8')}
-                    >
-                      <PiFloppyDiskBold aria-hidden />
-                      Save to lesson
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="Clear live mark"
-                      onClick={() => api.clearLive(m.id)}
-                      className={cn(tool, 'h-8')}
-                    >
-                      <PiXBold aria-hidden />
-                    </button>
-                  </>
-                ) : editing?.id === m.id ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void api.update(m as SavedMark, { note: editing.note.trim() || null });
-                        setEditing(null);
-                      }}
-                      className={cn(tool, 'h-8 border-signal-500/50 bg-signal-500/15 text-white')}
-                    >
-                      Save
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEditing(null)}
-                      className={cn(tool, 'h-8')}
-                    >
-                      Cancel
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {!(m as SavedMark).pending && (
-                      <button
-                        type="button"
-                        aria-label="Annotation history"
-                        title="History"
-                        onClick={() => openHistory(m.id)}
-                        className={cn(tool, 'h-8')}
-                      >
-                        <PiClockCounterClockwiseBold aria-hidden />
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setEditing({ id: m.id, note: m.note ?? '' })}
-                      className={cn(tool, 'h-8')}
-                    >
-                      <PiNotePencilBold aria-hidden />
-                      Note
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="Delete annotation"
-                      onClick={() => void api.remove(m as SavedMark)}
-                      className={cn(tool, 'h-8 text-rose-300 hover:bg-rose-500/15')}
-                    >
-                      <PiTrashBold aria-hidden />
-                    </button>
-                  </>
+                {isLive(m) && (
+                  <button
+                    type="button"
+                    aria-label="Clear live mark"
+                    onClick={() => api.clearLive(m.id)}
+                    className={cn(tool, 'h-8')}
+                  >
+                    <PiXBold aria-hidden />
+                  </button>
                 )}
+                {/* Save to lesson, the note editor, the history panel and delete
+                    return with Lesson and Correction. */}
               </span>
             </li>
           ))}
         </ul>
       )}
 
-      {historyFor && (
-        <div
-          data-tajweed-history
-          className="mt-2 rounded-lg border border-white/10 bg-white/5 p-2.5"
-        >
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
-              History
-            </p>
+      {ready && (
+        <div className="mt-2 space-y-2">
+          {needLabel && (
+            <input
+              autoFocus
+              value={customLabel}
+              maxLength={60}
+              onChange={(e) => setCustomLabel(e.target.value)}
+              placeholder="Label"
+              className={cn(field, 'w-36')}
+            />
+          )}
+          {/* The teacher note is switched off with Lesson and Correction: a
+              live mark is spoken aloud, not read later. */}
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
+            Recent
+          </p>
+          {/* One line that scrolls sideways: a long list of rules never pushes
+              the text off the screen. */}
+          <div className="flex gap-1.5 overflow-x-auto pb-1">
+            {recent.map((rule) => (
+              <RuleChip key={rule} rule={rule} />
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="min-w-[14rem] flex-1">
+              <RuleCombobox onPick={applyRule} colors={api.prefs.colors} />
+            </div>
             <button
               type="button"
-              aria-label="Close history"
-              onClick={() => setHistoryFor(null)}
-              className="grid h-7 w-7 place-items-center rounded-md text-neutral-400 hover:bg-white/10 hover:text-white"
+              onClick={() => applyRule('custom')}
+              className={cn(tool, 'h-10')}
             >
-              <PiXBold />
+              Custom note
             </button>
           </div>
-          {historyFor.error ? (
-            <p className="mt-1 text-xs text-rose-300">{historyFor.error}</p>
-          ) : !historyFor.items ? (
-            <p className="mt-1 text-xs text-neutral-400">Loading…</p>
-          ) : (
-            <ol className="mt-1 space-y-1">
-              {historyFor.items.map((h) => (
-                <li key={h.id} className="text-xs text-neutral-300">
-                  <span className="font-semibold text-white">{CHANGE_LABEL[h.change]}</span>{' '}
-                  by {h.changedBy.name} ·{' '}
-                  {new Date(h.changedAt).toLocaleString(undefined, {
-                    dateStyle: 'medium',
-                    timeStyle: 'short',
-                  })}
-                  {h.snapshot.note && (
-                    <span className="text-neutral-500"> — “{h.snapshot.note}”</span>
-                  )}
-                </li>
-              ))}
-            </ol>
-          )}
         </div>
-      )}
-
-      {ready && (
-        <>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <input
-              value={note}
-              maxLength={1000}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Teacher note (optional)"
-              className={cn(field, 'flex-1')}
-            />
-            {needLabel && (
-              <input
-                autoFocus
-                value={customLabel}
-                maxLength={60}
-                onChange={(e) => setCustomLabel(e.target.value)}
-                placeholder="Label"
-                className={cn(field, 'w-36')}
-              />
-            )}
-            {api.mode === 'LESSON' && (
-              <label className="flex items-center gap-2 text-xs text-neutral-300">
-                <input
-                  type="checkbox"
-                  checked={kept}
-                  onChange={(e) => setKept(e.target.checked)}
-                  className="h-4 w-4 rounded border-white/20 bg-white/5"
-                />
-                Keep for next time
-              </label>
-            )}
-          </div>
-
-          {api.mode === 'CORRECTION' && !pickingIssue ? (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {TAJWEED_OUTCOMES.map((o) => {
-                const Icon = OUTCOME_ICONS[o.key];
-                return (
-                  <button
-                    key={o.key}
-                    type="button"
-                    title={o.hint}
-                    onClick={() => applyOutcome(o.key)}
-                    className={cn(tool, 'h-10 px-3')}
-                  >
-                    <Icon aria-hidden />
-                    {o.label}
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="mt-2 space-y-2">
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Find a rule — e.g. ikhfa, madd, qalqalah"
-                aria-label="Find a rule"
-                className={cn(field, 'w-full')}
-              />
-              {query ? (
-                <div className="flex gap-1.5 overflow-x-auto pb-1">
-                  {hits.length ? (
-                    hits.map((rule) => <RuleChip key={rule} rule={rule} />)
-                  ) : (
-                    <p className="text-xs text-neutral-500">No rule matches “{query}”.</p>
-                  )}
-                </div>
-              ) : (
-                <>
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
-                    Recent
-                  </p>
-                  {/* One line that scrolls sideways: a long list of rules never
-                      pushes the text off the screen. */}
-                  <div className="flex gap-1.5 overflow-x-auto pb-1">
-                    {recent.map((rule) => (
-                      <RuleChip key={rule} rule={rule} />
-                    ))}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <select
-                      aria-label="Rule group"
-                      value={group}
-                      onChange={(e) => setGroup(e.target.value as TajweedRuleGroupKey | '')}
-                      className={cn(field, 'flex-1')}
-                    >
-                      <option value="" className="bg-neutral-900">
-                        Choose a group…
-                      </option>
-                      {TAJWEED_RULE_GROUPS.map((g) => (
-                        <option key={g.key} value={g.key} className="bg-neutral-900">
-                          {g.label} · {g.arabic}
-                        </option>
-                      ))}
-                    </select>
-                    {group && (
-                      <select
-                        aria-label="Rule"
-                        value=""
-                        onChange={(e) => {
-                          if (e.target.value) applyRule(e.target.value as TajweedRule);
-                        }}
-                        className={cn(field, 'flex-1')}
-                      >
-                        <option value="" className="bg-neutral-900">
-                          Choose a rule…
-                        </option>
-                        {TAJWEED_RULE_GROUPS.find((g) => g.key === group)?.rules.map((r) => (
-                          <option
-                            key={r.key}
-                            value={`${group}.${r.key}`}
-                            className="bg-neutral-900"
-                          >
-                            {r.label} · {r.arabic}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => applyRule('custom')}
-                      className={cn(tool, 'h-9')}
-                    >
-                      Custom note
-                    </button>
-                  </div>
-                </>
-              )}
-              {pickingIssue && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPickingIssue(false);
-                    setHint(null);
-                  }}
-                  className={cn(tool, 'h-9')}
-                >
-                  Back
-                </button>
-              )}
-            </div>
-          )}
-        </>
       )}
 
       {statusMessage && (

@@ -222,7 +222,11 @@ test('the class sees what the teacher has picked, before any rule', async ({ bro
   await student.context().close();
 });
 
-test('a lesson annotation keeps its note, survives a reload, and goes when deleted', async ({
+// Lesson and Correction are switched off in the class-room UI for now: a mark
+// is shown to the class and never saved. The API still does all of it, so these
+// come back by deleting the .skip once those modes are un-commented in
+// tajweed-toolbar.tsx.
+test.skip('a lesson annotation keeps its note, survives a reload, and goes when deleted', async ({
   browser,
 }) => {
   test.setTimeout(180_000);
@@ -261,7 +265,8 @@ test('a lesson annotation keeps its note, survives a reload, and goes when delet
   await student.context().close();
 });
 
-test('a correction is recorded against the student, and only staff and that student see it', async ({
+// Switched off with Correction — see the note above.
+test.skip('a correction is recorded against the student, and only staff and that student see it', async ({
   browser,
 }) => {
   test.setTimeout(180_000);
@@ -451,8 +456,8 @@ test('on a phone, the Tajweed controls fit the screen and still mark a word', as
   const ikhfa = rule(teacher, /^Ikhfa haqiqi/);
   for (const control of [
     ikhfa,
-    toolbar(teacher).getByRole('radio', { name: 'Correction' }),
     toolbar(teacher).getByRole('button', { name: 'Clear picks' }),
+    toolbar(teacher).getByRole('button', { name: 'Choose a rule…' }),
     toolbar(teacher).getByRole('button', { name: 'Style' }),
   ]) {
     await control.scrollIntoViewIfNeeded();

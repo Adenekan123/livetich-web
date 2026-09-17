@@ -164,7 +164,6 @@ function LessonMushaf({ courseId, sectionId }: { courseId: string; sectionId: st
         isInstructor
         onNavigate={(surah, ayah) => setPos({ surah, ayah })}
         tajweed={tajweed}
-        tajweedModes={['LESSON']}
         startAnnotating
       />
     </div>

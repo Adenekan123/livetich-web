@@ -191,7 +191,11 @@ const label = (p: Page, ayah: number, text: string) =>
 const toolbar = (p: Page) => p.locator('[data-tajweed-toolbar]');
 const rule = (p: Page, name: RegExp) => toolbar(p).getByRole('button', { name });
 
-test('a lesson prepared on the course page is on the mushaf when its class runs', async ({
+// The prep page saves nothing while Live is the only mode in the toolbar: no
+// Lesson radio, no note field, no history. The API still does all of it, so
+// this comes back by deleting the .skip once those modes are un-commented in
+// tajweed-toolbar.tsx.
+test.skip('a lesson prepared on the course page is on the mushaf when its class runs', async ({
   browser,
 }) => {
   test.setTimeout(180_000);
@@ -263,6 +267,8 @@ test('a kept mark comes back in another lesson of the same course', async () => 
   });
 });
 
+// The sheet and the board block read marks the API makes (ensureLessonMark),
+// not marks made through the toolbar, so both still hold with Live only.
 test('the lesson sheet shows the lesson’s marks, ready to print', async ({ browser }) => {
   test.setTimeout(120_000);
   await ensureLessonMark();

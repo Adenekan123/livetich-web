@@ -1213,7 +1213,6 @@ export function ClassRoom({
                 isInstructor={isInstructor}
                 onNavigate={navigateQuran}
                 tajweed={tajweed}
-                students={users.filter((u) => u.role === 'STUDENT')}
               />
             </div>
           )}
