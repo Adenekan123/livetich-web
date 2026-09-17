@@ -637,6 +637,9 @@ export function useTajweed({
     corrections,
     live: liveNow,
     index,
+    /** Everything drawn right now, flat — what the connector curves are read
+     *  from, since a mark may reach across two ayahs. */
+    visible,
     legend,
     loadError,
     error,

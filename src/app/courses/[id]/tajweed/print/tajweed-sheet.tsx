@@ -127,6 +127,7 @@ export function TajweedSheet({
                   marksKey={marksKeyOf(g.marks)}
                   picked={NO_PARTS}
                   pointed={NO_PARTS}
+                  lettersRef={{ current: false }}
                   letters={false}
                   anchor={false}
                   interactive={false}

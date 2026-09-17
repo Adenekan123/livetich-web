@@ -1,11 +1,23 @@
 'use client';
 
-import { memo, useMemo, type CSSProperties, type KeyboardEvent, type MouseEvent } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type MouseEvent,
+  type RefObject,
+} from 'react';
 import type { TajweedPart, TajweedRuleGroupKey } from '@/lib/realtime-contract';
 import {
   coverage,
   graphemes,
   hasPart,
+  letterAtOffset,
   oneLetter,
   partsIn,
   ruleColor,
@@ -23,6 +35,9 @@ const OUTCOME_COLORS: Record<string, string> = {
   PRONUNCIATION: '#dc2626',
   NOTE: '#64748b',
 };
+
+/** What a pick and a pointing outline are drawn in, on either screen. */
+const POINT = '#2dd4bf';
 
 export function markColor(
   m: AnyTajweedMark,
@@ -48,39 +63,45 @@ const tint = (hex: string, alpha: number) =>
     .toString(16)
     .padStart(2, '0')}`;
 
-/** How a set of marks draws one run of text. The first highlight fills it; the
- *  first underline underlines it; a live mark gets a dashed outline, so a
- *  teacher can tell at a glance what will vanish and what is kept. */
-function styleFor(marks: readonly AnyTajweedMark[]): CSSProperties {
-  if (!marks.length) return {};
-  const fill = marks.find((m) => m.style === 'HIGHLIGHT');
-  const line = marks.find((m) => m.style === 'UNDERLINE');
-  const live = marks.find((m) => m.live);
+/**
+ * A marked word is tinted in its rule's colour; a marked letter is underlined
+ * in it and never boxed, so two marked letters can sit side by side without
+ * their outlines meeting. A live mark is dashed, so a teacher can tell at a
+ * glance what will vanish and what is kept.
+ */
+function wordStyle(marks: readonly AnyTajweedMark[]): CSSProperties {
+  const mark = marks[0];
+  if (!mark) return {};
+  const color = markColor(mark);
   return {
-    ...(fill && {
-      backgroundColor: tint(markColor(fill), 0.3),
-      borderRadius: '0.3em',
-      boxDecorationBreak: 'clone',
-      WebkitBoxDecorationBreak: 'clone',
-    }),
-    ...(line && {
-      textDecorationLine: 'underline',
-      textDecorationColor: markColor(line),
-      textDecorationThickness: '0.08em',
-      textUnderlineOffset: '0.35em',
-    }),
-    ...(live && {
-      outline: `2px dashed ${markColor(live)}`,
+    backgroundColor: tint(color, 0.25),
+    borderRadius: '0.3em',
+    boxDecorationBreak: 'clone',
+    WebkitBoxDecorationBreak: 'clone',
+    ...(mark.live && {
+      outline: `2px dashed ${color}`,
       outlineOffset: '2px',
-      borderRadius: '0.3em',
     }),
   };
 }
 
-const pickedStyle = 'rounded-md bg-signal-400/25 shadow-[0_0_0_2px_rgba(45,212,191,0.85)]';
-/** What the class sees while the teacher is still deciding: the same letters,
- *  outlined rather than filled, so a pick never looks like a mark. */
-const pointedStyle = 'rounded-md outline-2 outline-dashed outline-signal-400/80 outline-offset-2';
+function letterStyle(marks: readonly AnyTajweedMark[]): CSSProperties {
+  const mark = marks[0];
+  if (!mark) return {};
+  const color = markColor(mark);
+  return {
+    borderBottomColor: color,
+    ...(mark.live && { borderBottomStyle: 'dashed' }),
+  };
+}
+
+/** Every letter carries the underline slot, so marking one never moves the
+ *  line: only its colour changes. */
+const letterBase = 'relative inline-block border-b-[0.11em] border-b-transparent pb-[0.1em]';
+const pickedWord = 'rounded-md bg-signal-400/20 shadow-[0_0_0_2px_rgba(45,212,191,0.85)]';
+const pointedWord = 'rounded-md bg-signal-400/15 outline-2 outline-dashed outline-signal-400/80 outline-offset-2';
+const pickedLetter = 'bg-signal-400/20 !border-b-signal-400';
+const pointedLetter = 'bg-signal-400/15 !border-b-signal-400 !border-b-dashed';
 
 export interface TajweedAyahProps {
   surah: number;
@@ -95,7 +116,12 @@ export interface TajweedAyahProps {
   picked: readonly TajweedPart[];
   /** What the instructor is pointing at, for everyone else's screen. */
   pointed: readonly TajweedPart[];
-  /** A tap picks a letter rather than the whole word. */
+  /** A tap picks a letter rather than the whole word. Read when the tap
+   *  happens, so switching between them re-renders nothing. */
+  lettersRef: RefObject<boolean>;
+  /** Draw this ayah's letters as their own elements. Set on the ayah the class
+   *  is on and nothing else: a letter then has something to tab to and to aim
+   *  at, without splitting — and re-shaping — a whole surah of text. */
   letters: boolean;
   anchor: boolean;
   /** The teacher is annotating: words and letters are tap targets. */
@@ -136,6 +162,40 @@ function Label({ mark, onMark }: { mark: AnyTajweedMark; onMark: (m: AnyTajweedM
   );
 }
 
+/**
+ * Which letter of a word a tap landed on.
+ *
+ * The browser already knows — it puts a text caret wherever you click — so the
+ * letter is found by asking it, not by giving every letter an element of its
+ * own. Splitting a word into elements stops Arabic joining across the seams,
+ * which changes every line's width and re-flows the page.
+ */
+function letterFromEvent(e: MouseEvent, word: string): number | null {
+  const doc = document as Document & {
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    caretPositionFromPoint?: (
+      x: number,
+      y: number,
+    ) => { offsetNode: Node; offset: number } | null;
+  };
+  let node: Node | null = null;
+  let offset = 0;
+  if (doc.caretRangeFromPoint) {
+    const range = doc.caretRangeFromPoint(e.clientX, e.clientY);
+    if (!range) return null;
+    node = range.startContainer;
+    offset = range.startOffset;
+  } else if (doc.caretPositionFromPoint) {
+    const pos = doc.caretPositionFromPoint(e.clientX, e.clientY);
+    if (!pos) return null;
+    node = pos.offsetNode;
+    offset = pos.offset;
+  }
+  if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+  // The caret can land past the last character when a tap is near the edge.
+  return letterAtOffset(word, Math.min(offset, Math.max(0, word.length - 1)));
+}
+
 function AyahImpl({
   surah,
   ayah,
@@ -143,6 +203,7 @@ function AyahImpl({
   marks,
   picked,
   pointed,
+  lettersRef,
   letters,
   anchor,
   interactive,
@@ -155,18 +216,32 @@ function AyahImpl({
   const ayahMarks = marks.filter((m) => coverage(m, surah, ayah, 0) === 'ayah');
   const ayahPicked = picked.some((p) => p.wordIndex === null);
 
-  const tap = (
-    e: MouseEvent | KeyboardEvent,
-    part: TajweedPart,
-    wordMarks: AnyTajweedMark[],
-  ) => {
-    if (interactive) {
-      e.stopPropagation();
-      onPart(part);
-    } else if (wordMarks.length) {
-      e.stopPropagation();
-      onMark(wordMarks[0]);
+  const tap = (e: MouseEvent | KeyboardEvent, word: number, wordMarks: AnyTajweedMark[]) => {
+    if (!interactive) {
+      if (wordMarks.length) {
+        e.stopPropagation();
+        onMark(wordMarks[0]);
+      }
+      return;
     }
+    e.stopPropagation();
+    // Letters mode asks the browser which letter the tap hit; a keyboard press,
+    // which has no point to hit, picks the whole word. A word that is already
+    // split — because something is drawn on one of its letters — says which
+    // letter was hit outright, and the caret offset inside such a word would
+    // index that one letter rather than the word.
+    let letter: number | null = null;
+    if (lettersRef.current && 'clientX' in e) {
+      const hit = (e.target as Element | null)?.closest?.('[data-letter]');
+      const named = hit?.getAttribute('data-letter');
+      letter =
+        named === null || named === undefined
+          ? letterFromEvent(e, words[word] ?? '')
+          : Number(named);
+    }
+    onPart(
+      letter === null ? wholeWord(surah, ayah, word) : oneLetter(surah, ayah, word, letter),
+    );
   };
 
   return (
@@ -177,9 +252,9 @@ function AyahImpl({
         'rounded-lg px-1 transition-colors',
         !interactive && onAyah && 'cursor-pointer',
         anchor ? 'bg-white/15 text-white' : !interactive && 'hover:bg-white/5',
-        ayahPicked && pickedStyle,
+        ayahPicked && pickedWord,
       )}
-      style={styleFor(ayahMarks)}
+      style={wordStyle(ayahMarks)}
     >
       {words.map((word, i) => {
         const wordMarks: AnyTajweedMark[] = [];
@@ -190,14 +265,10 @@ function AyahImpl({
           else if (Array.isArray(c)) letterMarks.push({ mark: m, letters: c });
         }
         const wordPart = wholeWord(surah, ayah, i);
-        const wordPicked = hasPart(picked, wordPart);
-        const wordPointed = hasPart(pointed, wordPart);
-        const pickedLetters = picked.filter(
-          (p) => p.wordIndex === i && p.letterIndex !== null,
-        );
-        const pointedLetters = pointed.filter(
-          (p) => p.wordIndex === i && p.letterIndex !== null,
-        );
+        const isPickedWord = hasPart(picked, wordPart);
+        const isPointedWord = hasPart(pointed, wordPart);
+        const pickedLetters = picked.filter((p) => p.wordIndex === i && p.letterIndex !== null);
+        const pointedLetters = pointed.filter((p) => p.wordIndex === i && p.letterIndex !== null);
 
         // A mark is named on the first part it holds in this ayah, so one that
         // reaches into the next ayah is labelled on both.
@@ -207,43 +278,34 @@ function AyahImpl({
           return Math.min(...here.map((p) => p.wordIndex!)) === i;
         });
 
-        // Letters get their own spans only where something needs them —
-        // splitting every word would cost shaping and render time for nothing.
-        const showLetters =
+        // A word is split where something is drawn on one of its letters —
+        // splitting is what lets that letter be underlined on its own — and
+        // across the ayah the class is on while letters are being picked. Every
+        // other word stays a single run of text, joined the way Arabic joins.
+        const splitLetters =
           letterMarks.length > 0 ||
           pickedLetters.length > 0 ||
           pointedLetters.length > 0 ||
-          (interactive && letters);
+          letters;
 
-        const body = showLetters
+        const body = splitLetters
           ? graphemes(word).map((g, j) => {
               const on = letterMarks.filter((l) => l.letters.includes(j)).map((l) => l.mark);
               const part = oneLetter(surah, ayah, i, j);
-              const isPicked = hasPart(picked, part);
-              const isPointed = hasPart(pointed, part);
-              const content = (
+              return (
                 <span
-                  className={cn(isPicked && pickedStyle, isPointed && pointedStyle)}
-                  style={styleFor(on)}
+                  key={j}
+                  data-word={i}
+                  data-letter={j}
+                  className={cn(
+                    letterBase,
+                    hasPart(picked, part) && pickedLetter,
+                    hasPart(pointed, part) && pointedLetter,
+                  )}
+                  style={letterStyle(on)}
                 >
                   {g}
                 </span>
-              );
-              return interactive && letters ? (
-                <button
-                  key={j}
-                  type="button"
-                  data-word={i}
-                  data-letter={j}
-                  aria-pressed={isPicked}
-                  aria-label={`Word ${i + 1}, letter ${j + 1}`}
-                  onClick={(e) => tap(e, part, [])}
-                  className="cursor-pointer bg-transparent p-0 font-[inherit] leading-[inherit] text-inherit"
-                >
-                  {content}
-                </button>
-              ) : (
-                <span key={j}>{content}</span>
               );
             })
           : word;
@@ -254,26 +316,22 @@ function AyahImpl({
               <span
                 data-word={i}
                 role={interactive || wordMarks.length ? 'button' : undefined}
-                tabIndex={interactive && !letters ? 0 : undefined}
-                onClick={
-                  interactive && letters
-                    ? undefined
-                    : (e) => tap(e, wordPart, [...wordMarks, ...letterMarks.map((l) => l.mark)])
-                }
+                tabIndex={interactive ? 0 : undefined}
+                onClick={(e) => tap(e, i, [...wordMarks, ...letterMarks.map((l) => l.mark)])}
                 onKeyDown={(e) => {
-                  if (interactive && !letters && (e.key === 'Enter' || e.key === ' ')) {
+                  if (interactive && (e.key === 'Enter' || e.key === ' ')) {
                     e.preventDefault();
-                    tap(e, wordPart, wordMarks);
+                    tap(e, i, wordMarks);
                   }
                 }}
                 className={cn(
-                  'transition-colors',
-                  interactive && !letters && 'cursor-pointer rounded-md hover:bg-white/10',
+                  'inline-block transition-colors',
+                  interactive && 'cursor-pointer rounded-md hover:bg-white/10',
                   !interactive && wordMarks.length > 0 && 'cursor-pointer',
-                  wordPicked && pickedStyle,
-                  wordPointed && pointedStyle,
+                  isPickedWord && pickedWord,
+                  isPointedWord && pointedWord,
                 )}
-                style={styleFor(wordMarks)}
+                style={wordStyle(wordMarks)}
               >
                 {body}
               </span>
@@ -312,7 +370,9 @@ export const partsKeyOf = (parts: readonly TajweedPart[]) =>
  * One ayah of the shared mushaf, as tappable words carrying their marks.
  *
  * Memoised on what it draws, so adding one annotation redraws the one ayah it
- * is on — not the whole surah, which for Al-Baqarah is 286 of these.
+ * is on — not the whole surah, which for Al-Baqarah is 286 of these. Whether a
+ * tap means a word or a letter is deliberately not among these: it changes
+ * nothing that is drawn, so switching costs no render at all.
  */
 export const TajweedAyah = memo(
   AyahImpl,
@@ -342,4 +402,178 @@ export function marksKeyOf(marks: readonly AnyTajweedMark[]): string {
         }:${m.customLabel}:${partsKeyOf(m.parts)}`,
     )
     .join('|');
+}
+
+/** One mark's parts, as points measured from the rendered text. */
+interface Run {
+  id: string;
+  points: { x: number; y: number }[];
+  color: string;
+  dashed: boolean;
+}
+
+/** Everything the connector layer draws, and the box it is drawn in. */
+interface Drawn {
+  w: number;
+  h: number;
+  runs: Run[];
+}
+
+/**
+ * Whether two measurements would paint the same picture.
+ *
+ * Compared rounded to the pixel: a sub-pixel re-layout is not worth a render,
+ * and this is what keeps measuring and rendering from chasing each other.
+ */
+function sameDrawing(a: Drawn, b: Drawn): boolean {
+  if (Math.round(a.w) !== Math.round(b.w)) return false;
+  if (Math.round(a.h) !== Math.round(b.h)) return false;
+  if (a.runs.length !== b.runs.length) return false;
+  return a.runs.every((run, i) => {
+    const other = b.runs[i];
+    return (
+      run.id === other.id &&
+      run.color === other.color &&
+      run.dashed === other.dashed &&
+      run.points.length === other.points.length &&
+      run.points.every(
+        (p, j) =>
+          Math.round(p.x) === Math.round(other.points[j].x) &&
+          Math.round(p.y) === Math.round(other.points[j].y),
+      )
+    );
+  });
+}
+
+/** A curve from one part of a mark to the next, under the line they sit on. */
+function curve(points: { x: number; y: number }[], color: string, dashed: boolean) {
+  const paths: string[] = [];
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    // Different lines: a curve between them would cross the text between.
+    if (Math.abs(a.y - b.y) > 6) continue;
+    const drop = Math.min(16, Math.max(8, Math.abs(b.x - a.x) / 4));
+    paths.push(
+      `M ${a.x} ${a.y + 2} C ${a.x} ${a.y + drop}, ${b.x} ${b.y + drop}, ${b.x} ${b.y + 2}`,
+    );
+  }
+  return paths.map((d, i) => (
+    <path
+      key={i}
+      d={d}
+      fill="none"
+      stroke={color}
+      strokeWidth={2}
+      strokeLinecap="round"
+      {...(dashed ? { strokeDasharray: '4 4' } : {})}
+    />
+  ));
+}
+
+/**
+ * The letters of one mark, joined by a line under the text.
+ *
+ * A rule that holds a letter here and a letter three words later is one mark,
+ * and nothing in the text says so on its own — the curve is what makes a pair
+ * read as a pair. Positions are measured from the rendered text, because only
+ * the browser knows where a shaped Arabic letter ended up.
+ */
+export function TajweedLinks({
+  containerRef,
+  marks,
+  pointing,
+  colors,
+}: {
+  containerRef: RefObject<HTMLElement | null>;
+  marks: readonly AnyTajweedMark[];
+  pointing: readonly TajweedPart[];
+  colors?: Partial<Record<TajweedRuleGroupKey, string>>;
+}) {
+  const [drawn, setDrawn] = useState<Drawn>({ w: 0, h: 0, runs: [] });
+
+  const joined = useMemo(
+    () => [
+      ...marks
+        .filter((m) => m.parts.length > 1)
+        .map((m) => ({ id: m.id, parts: m.parts, color: markColor(m, colors), dashed: !!m.live })),
+      ...(pointing.length > 1
+        ? [{ id: 'pointing', parts: pointing, color: POINT, dashed: true }]
+        : []),
+    ],
+    [marks, pointing, colors],
+  );
+
+  const measure = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const bounds = container.getBoundingClientRect();
+    const runs: Run[] = joined.map((run) => ({
+      id: run.id,
+      color: run.color,
+      dashed: run.dashed,
+      points: run.parts
+        .map((p) => {
+          const selector =
+            p.wordIndex === null
+              ? `[data-ayah="${p.ayahNumber}"]`
+              : p.letterIndex === null
+                ? `[data-ayah="${p.ayahNumber}"] [data-word="${p.wordIndex}"]`
+                : `[data-ayah="${p.ayahNumber}"] [data-word="${p.wordIndex}"][data-letter="${p.letterIndex}"]`;
+          return container.querySelector(selector);
+        })
+        .filter((el): el is Element => !!el)
+        .map((el) => {
+          const r = el.getBoundingClientRect();
+          return {
+            x: r.left - bounds.left + r.width / 2,
+            y: r.bottom - bounds.top,
+          };
+        }),
+    }));
+    // Only a real change is worth a render. This component watches the very
+    // element it draws into, so handing back a fresh object for an unchanged
+    // measurement would set the observer and the render spinning against each
+    // other — and a wedged tab in the middle of a class is unforgivable.
+    const next = { w: bounds.width, h: bounds.height, runs };
+    setDrawn((prev) => (sameDrawing(prev, next) ? prev : next));
+  }, [containerRef, joined]);
+
+  // After the text has been laid out, and again whenever it could have moved:
+  // the Uthmani webfont swapping in re-flows every line it touches.
+  useLayoutEffect(measure, [measure]);
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    // A burst of layout events costs one measurement, on the next frame.
+    let frame = 0;
+    const schedule = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+      });
+    };
+    void document.fonts?.ready.then(schedule);
+    const observer = new ResizeObserver(schedule);
+    observer.observe(container);
+    return () => {
+      observer.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [containerRef, measure]);
+
+  if (!drawn.runs.some((r) => r.points.length > 1)) return null;
+  return (
+    <svg
+      aria-hidden
+      className="pointer-events-none absolute inset-0 overflow-visible"
+      width={drawn.w}
+      height={drawn.h}
+    >
+      {drawn.runs.map((run) => (
+        <g key={run.id}>{curve(run.points, run.color, run.dashed)}</g>
+      ))}
+    </svg>
+  );
 }

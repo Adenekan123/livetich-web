@@ -338,8 +338,10 @@ test('a mark can hold letters from two different ayahs', async ({ browser }) => 
 
   await teacher.getByRole('button', { name: 'Tajweed', exact: true }).click();
   await toolbar(teacher).getByRole('radio', { name: 'Lesson' }).click();
-  // Letters are a mode, not a place a selection falls into: switch the bar and
-  // every letter in the text is tappable straight away.
+  // Tap a word in ayah 3 first: the class follows to the verse being marked,
+  // and that verse and the ones either side of it are the ones whose letters
+  // become their own elements. Switching to Letters lets the pick go.
+  await word(teacher, 3, 4).click();
   await toolbar(teacher).getByRole('radio', { name: 'Letters' }).click();
   await letter(teacher, 3, 4, 1).click();
   await letter(teacher, 4, 0, 0).click();

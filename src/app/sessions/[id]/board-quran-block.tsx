@@ -144,6 +144,7 @@ export function BoardQuranBlock({
                   marksKey={marksKeyOf(marks)}
                   picked={[]}
                   pointed={[]}
+                  lettersRef={{ current: false }}
                   letters={false}
                   anchor={false}
                   interactive={false}

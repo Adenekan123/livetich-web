@@ -35,6 +35,13 @@ const segmenter =
     : null;
 
 /**
+ * Segmenting is pure, and the same words are asked for on every render of every
+ * ayah, so each distinct word is split once and kept. A surah is a few thousand
+ * words at most; the cache is cleared rather than allowed to grow forever.
+ */
+const graphemeCache = new Map<string, string[]>();
+
+/**
  * A word's letters, each with the marks that belong to it.
  *
  * Intl.Segmenter everywhere it exists. The fallback — only for browsers that
@@ -43,13 +50,40 @@ const segmenter =
  * tatweel seats it keeps separate are not combining marks either.
  */
 export function graphemes(word: string): string[] {
-  if (segmenter) return Array.from(segmenter.segment(word), (s) => s.segment);
-  const out: string[] = [];
-  for (const ch of word) {
-    if (out.length && /\p{M}/u.test(ch)) out[out.length - 1] += ch;
-    else out.push(ch);
+  const hit = graphemeCache.get(word);
+  if (hit) return hit;
+  let out: string[];
+  if (segmenter) {
+    out = Array.from(segmenter.segment(word), (s) => s.segment);
+  } else {
+    out = [];
+    for (const ch of word) {
+      if (out.length && /\p{M}/u.test(ch)) out[out.length - 1] += ch;
+      else out.push(ch);
+    }
   }
+  if (graphemeCache.size > 20_000) graphemeCache.clear();
+  graphemeCache.set(word, out);
   return out;
+}
+
+/**
+ * Which letter a position inside a word falls in.
+ *
+ * The browser can say which character a tap landed on, as an offset into the
+ * text. A letter is one or more of those characters — a base plus its harakat —
+ * so walking the cached split turns the offset into the letter a teacher meant.
+ * This is what lets letters be tappable without splitting the text into one
+ * element per letter, which would break the cursive joining and reflow the page.
+ */
+export function letterAtOffset(word: string, offset: number): number {
+  const letters = graphemes(word);
+  let end = 0;
+  for (let i = 0; i < letters.length; i++) {
+    end += letters[i].length;
+    if (offset < end) return i;
+  }
+  return Math.max(0, letters.length - 1);
 }
 
 /**
