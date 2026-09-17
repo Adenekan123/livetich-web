@@ -25,7 +25,7 @@ import {
 } from '@/lib/tajweed';
 import type { TajweedPart } from '@/lib/realtime-contract';
 import type { Surah } from '@/lib/types';
-import { marksKeyOf, TajweedAyah, TajweedLinks } from './tajweed-ayah';
+import { marksKeyOf, TajweedAyah, TajweedOverlay } from './tajweed-ayah';
 import {
   TajweedLegend,
   TajweedMarkCard,
@@ -221,15 +221,10 @@ export function QuranReader({
   const navRef = useRef(onNavigate);
   const annotatingRef = useRef(annotating);
   const tajweedRef = useRef(tajweed);
-  // Whether a tap means a word or a letter is read when the tap happens, not
-  // rendered: switching between them changes nothing on the page, so it costs
-  // no re-render of the text at all.
-  const lettersRef = useRef(false);
   useEffect(() => {
     navRef.current = onNavigate;
     annotatingRef.current = annotating;
     tajweedRef.current = tajweed;
-    lettersRef.current = tajweed?.selection.letters ?? false;
   });
   // The mushaf is what the connector curves are measured against.
   const mushafRef = useRef<HTMLParagraphElement>(null);
@@ -550,10 +545,11 @@ export function QuranReader({
                 // The letters of one mark, joined under the line: a rule that
                 // holds a letter here and another three words later is one
                 // mark, and only the curve says so.
-                <TajweedLinks
+                <TajweedOverlay
                   containerRef={mushafRef}
                   marks={tajweed.visible}
                   pointing={isInstructor ? tajweed.selection.parts : tajweed.pointing}
+                  textOf={ayahText}
                   colors={tajweed.prefs.colors}
                 />
               )}
@@ -572,15 +568,6 @@ export function QuranReader({
                       marksKey={marksKeyOf(marks)}
                       picked={partsIn({ parts: selected }, surah, n)}
                       pointed={partsIn({ parts: pointed }, surah, n)}
-                      lettersRef={lettersRef}
-                      // The verse the class is on and the ones either side of
-                      // it: a rule that crosses an ayah boundary lives in the
-                      // next verse, so its letters have to be reachable too.
-                      // Everything further off stays unsplit, and is picked by
-                      // where the tap lands instead.
-                      letters={
-                        marking && tajweed.selection.letters && Math.abs(n - ayah) <= 1
-                      }
                       anchor={isAnchor}
                       interactive={marking}
                       numeral={`﴿${toArabicNumerals(n)}﴾`}

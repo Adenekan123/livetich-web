@@ -68,25 +68,6 @@ export function graphemes(word: string): string[] {
 }
 
 /**
- * Which letter a position inside a word falls in.
- *
- * The browser can say which character a tap landed on, as an offset into the
- * text. A letter is one or more of those characters — a base plus its harakat —
- * so walking the cached split turns the offset into the letter a teacher meant.
- * This is what lets letters be tappable without splitting the text into one
- * element per letter, which would break the cursive joining and reflow the page.
- */
-export function letterAtOffset(word: string, offset: number): number {
-  const letters = graphemes(word);
-  let end = 0;
-  for (let i = 0; i < letters.length; i++) {
-    end += letters[i].length;
-    if (offset < end) return i;
-  }
-  return Math.max(0, letters.length - 1);
-}
-
-/**
  * Suggested looks per rule group — a starting point, not a standard.
  *
  * Colour-coded Tajweed mushafs do not share one scheme, so nothing here claims
@@ -293,12 +274,9 @@ export function describeParts(
 /** What the teacher currently has picked, before any rule. */
 export interface TajweedSelectionState {
   parts: TajweedPart[];
-  /** What a tap picks. Words and letters are different things to pick, so
-   *  switching lets go of what was picked under the other setting. */
-  letters: boolean;
 }
 
-export const EMPTY_SELECTION: TajweedSelectionState = { parts: [], letters: false };
+export const EMPTY_SELECTION: TajweedSelectionState = { parts: [] };
 
 /** A fresh client-side id. Chosen here so a create can be resent safely. */
 export function newAnnotationId(): string {

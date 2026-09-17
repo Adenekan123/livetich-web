@@ -220,10 +220,7 @@ export function useTajweed({
    *  which rule — it stays until the next one rather than flashing past. */
   const [announced, setAnnounced] = useState<AnyTajweedMark | null>(null);
   const liveIds = useRef<Set<string>>(new Set());
-  const [selection, setSelection] = useState<TajweedSelectionState>({
-    parts: [],
-    letters: false,
-  });
+  const [selection, setSelection] = useState<TajweedSelectionState>({ parts: [] });
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hiddenRules, setHiddenRules] = useState<ReadonlySet<TajweedRule>>(
@@ -303,15 +300,27 @@ export function useTajweed({
     [socketRef, sessionId, canEdit],
   );
 
-  /** One tap on a word or a letter: it adds what was tapped, or drops it if it
-   *  was already picked. Parts may sit in different ayahs. */
+  /**
+   * One tap: it adds what was tapped, or drops it if it was already picked.
+   * Parts may sit in different ayahs.
+   *
+   * Picking a letter drops the whole-word pick it came from — the word is how
+   * you reach its letters, not something marked alongside them.
+   */
   const pickPart = useCallback(
     (part: TajweedPart) => {
       setSelection((prev) => {
-        // A letter tapped anywhere means letters are what is being picked, so
-        // the bar above the text never says otherwise.
-        const letters = part.letterIndex !== null ? true : prev.letters;
-        const next = { parts: togglePart(prev.parts, part), letters };
+        const without =
+          part.letterIndex === null
+            ? prev.parts
+            : prev.parts.filter(
+                (p) =>
+                  p.letterIndex !== null ||
+                  p.surahNumber !== part.surahNumber ||
+                  p.ayahNumber !== part.ayahNumber ||
+                  p.wordIndex !== part.wordIndex,
+              );
+        const next = { parts: togglePart(without, part) };
         broadcastPointing(next.parts);
         return next;
       });
@@ -320,21 +329,9 @@ export function useTajweed({
   );
 
   const clearSelection = useCallback(() => {
-    setSelection((prev) => ({ parts: [], letters: prev.letters }));
+    setSelection({ parts: [] });
     broadcastPointing([]);
   }, [broadcastPointing]);
-
-  /** Words and letters are different things to pick, so switching lets go of
-   *  what was picked under the other setting rather than half-keeping it. */
-  const setLetters = useCallback(
-    (letters: boolean) => {
-      setSelection((prev) =>
-        prev.letters === letters ? prev : { parts: [], letters },
-      );
-      broadcastPointing([]);
-    },
-    [broadcastPointing],
-  );
 
   // ---- saving --------------------------------------------------------------
 
@@ -670,7 +667,6 @@ export function useTajweed({
     selection,
     pickPart,
     clearSelection,
-    setLetters,
     pointing,
     announced,
     dismissAnnounced: () => setAnnounced(null),

@@ -28,6 +28,8 @@ import {
 import {
   describeParts,
   graphemes,
+  hasPart,
+  oneLetter,
   ruleArabic,
   ruleColor,
   ruleLabel,
@@ -86,6 +88,25 @@ const field =
 
 const isLive = (m: AnyTajweedMark): m is TajweedTemporaryAnnotation & { live: true } =>
   m.live === true;
+
+/** One word picked brings the words either side of it into the strip, so the
+ *  letter beside it is a tap away rather than a fresh pick in the text. */
+function withNeighbours(
+  spot: { surahNumber: number; ayahNumber: number; wordIndex: number },
+  ayahText: (surah: number, ayah: number) => string | null,
+) {
+  const verse = ayahText(spot.surahNumber, spot.ayahNumber);
+  const count = verse ? splitWords(verse).length : 0;
+  const out: typeof spot[] = [];
+  for (
+    let w = Math.max(0, spot.wordIndex - 1);
+    w <= Math.min(count - 1, spot.wordIndex + 1);
+    w++
+  ) {
+    out.push({ ...spot, wordIndex: w });
+  }
+  return out.length ? out : [spot];
+}
 
 /**
  * The instructor's Tajweed controls, under the mushaf.
@@ -146,8 +167,35 @@ export function TajweedToolbar({
       );
   };
 
-  const { parts, letters } = api.selection;
+  const { parts } = api.selection;
   const ready = parts.length > 0;
+
+  /**
+   * The words the picks touch, laid out letter by letter below.
+   *
+   * This is where a letter is chosen — never in the Qur'an itself, which stays
+   * one unbroken run of joined letters. One word picked brings its neighbours
+   * along, so reaching into the word beside it is a tap rather than a restart.
+   */
+  const strip = useMemo(() => {
+    const spots = [
+      ...new Map(
+        parts
+          .filter((p) => p.wordIndex !== null)
+          .map((p) => [
+            `${p.surahNumber}:${p.ayahNumber}:${p.wordIndex}`,
+            { surahNumber: p.surahNumber, ayahNumber: p.ayahNumber, wordIndex: p.wordIndex! },
+          ]),
+      ).values(),
+    ];
+    if (!spots.length) return [];
+    const cells = spots.length === 1 ? withNeighbours(spots[0], ayahText) : spots;
+    return cells.map((cell) => {
+      const verse = ayahText(cell.surahNumber, cell.ayahNumber);
+      const word = verse ? (splitWords(verse)[cell.wordIndex] ?? '') : '';
+      return { ...cell, word, letters: graphemes(word) };
+    });
+  }, [parts, ayahText]);
 
   /** The rules this teacher actually reaches for, most recent first. */
   const recent = useMemo(() => {
@@ -296,7 +344,6 @@ export function TajweedToolbar({
   );
 
   const statusMessage = hint ?? api.error;
-  const what = letters ? 'letter' : 'word';
 
   return (
     <div data-tajweed-toolbar className="border-t border-white/10 bg-neutral-950/70 px-3 py-2.5 text-sm">
@@ -467,40 +514,11 @@ export function TajweedToolbar({
         </div>
       )}
 
-      {/* How a tap picks — decided before anything is picked, so the answer to
-          "how do I mark one letter?" is on screen from the start. */}
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <div
-          role="radiogroup"
-          aria-label="What a tap picks"
-          className="flex rounded-lg border border-white/10 bg-white/5 p-0.5"
-        >
-          {([false, true] as const).map((v) => (
-            <button
-              key={String(v)}
-              type="button"
-              role="radio"
-              aria-checked={letters === v}
-              onClick={() => api.setLetters(v)}
-              className={cn(
-                'h-8 rounded-md px-3 text-xs font-semibold transition',
-                letters === v ? 'bg-white text-neutral-900' : 'text-neutral-300 hover:bg-white/10',
-              )}
-            >
-              {v ? 'Letters' : 'Words'}
-            </button>
-          ))}
-        </div>
-        <p className="min-w-0 flex-1 text-[11px] text-neutral-400">
-          Tap each {what} you mean; tap it again to drop it. They may be in different
-          ayahs, and everything you pick becomes one mark.
-        </p>
-      </div>
-
       {!ready ? (
         <p className="mt-2 text-xs text-neutral-400">
-          Nothing picked yet — tap the text above. The class sees what you pick before you
-          choose a rule.
+          Nothing picked yet — tap the words you mean in the text above. They may be in
+          different ayahs, and everything you pick becomes one mark. The class sees your
+          picks before you choose a rule.
         </p>
       ) : (
         <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -536,6 +554,56 @@ export function TajweedToolbar({
             <PiXBold aria-hidden />
             Clear picks
           </button>
+        </div>
+      )}
+
+      {strip.length > 0 && (
+        <div className="mt-2 rounded-lg border border-white/10 bg-white/5 p-2">
+          <p className="text-[11px] text-neutral-400">
+            Tap a letter to mark just that letter instead of the whole word — one here and
+            one in the word beside it, if that is what the rule holds.
+          </p>
+          <div dir="rtl" className="mt-1.5 flex flex-wrap gap-3">
+            {strip.map((cell) => (
+              <div
+                key={`${cell.surahNumber}:${cell.ayahNumber}:${cell.wordIndex}`}
+                className="grid justify-items-center gap-1"
+              >
+                <span dir="rtl" lang="ar" className="font-quran text-base text-neutral-400">
+                  {cell.word}
+                </span>
+                <div className="flex gap-1">
+                  {cell.letters.map((g, i) => {
+                    const part = oneLetter(
+                      cell.surahNumber,
+                      cell.ayahNumber,
+                      cell.wordIndex,
+                      i,
+                    );
+                    const on = hasPart(parts, part);
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        aria-pressed={on}
+                        aria-label={`Ayah ${cell.ayahNumber}, word ${cell.wordIndex + 1}, letter ${i + 1}`}
+                        data-strip-letter
+                        onClick={() => api.pickPart(part)}
+                        className={cn(
+                          'font-quran grid h-12 min-w-11 place-items-center rounded-lg border px-2 text-2xl transition',
+                          on
+                            ? 'border-signal-400 bg-signal-500/25 text-white'
+                            : 'border-white/10 bg-white/5 text-neutral-100 hover:bg-white/10',
+                        )}
+                      >
+                        {g}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
