@@ -35,6 +35,7 @@ interface RecorderContext {
   packs: {
     islamicEducation: boolean;
     codeInstruction: boolean;
+    mathsSciences: boolean;
     testPrep: boolean;
   };
 }
@@ -175,6 +176,7 @@ export function RecorderView({
         dataSaverDefault={false}
         islamicEducation={ctx.packs.islamicEducation}
         codeInstruction={ctx.packs.codeInstruction}
+        mathsSciences={ctx.packs.mathsSciences}
         testPrep={ctx.packs.testPrep}
       />
     </div>

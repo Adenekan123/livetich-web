@@ -547,6 +547,7 @@ export function BoardExcalidraw({
   canDraw,
   teaching = false,
   quran = null,
+  maths = false,
 }: {
   sessionId: string;
   canDraw: boolean;
@@ -556,6 +557,12 @@ export function BoardExcalidraw({
   /** Islamic Education pack on: Qur'an blocks can be put on the board, and
    *  draw the class's Tajweed marks. Null = no Qur'an blocks. */
   quran?: { tajweed: TajweedApi | null } | null;
+  /** Maths & Sciences pack on: the formula tool is available. Off, the button,
+   *  the panel and both ways into the editor are simply not there — and since
+   *  KaTeX renders in this browser with no route behind it, not rendering them
+   *  is the whole gate. Equations already on a board stay visible either way:
+   *  they are images, and a pack going away must not blank a lesson. */
+  maths?: boolean;
 }) {
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
@@ -2308,7 +2315,7 @@ export function BoardExcalidraw({
    */
   useEffect(() => {
     const wrapper = wrapperRef.current;
-    if (!wrapper || !canDraw) return;
+    if (!wrapper || !canDraw || !maths) return;
     const onDoubleClick = (e: MouseEvent) => {
       const editor = apiRef.current;
       if (!editor) return;
@@ -2334,7 +2341,7 @@ export function BoardExcalidraw({
     };
     wrapper.addEventListener('dblclick', onDoubleClick, true);
     return () => wrapper.removeEventListener('dblclick', onDoubleClick, true);
-  }, [canDraw, openMathEditor]);
+  }, [canDraw, maths, openMathEditor]);
 
   // Test hook. Excalidraw draws to a canvas rather than to DOM nodes, so the
   // end-to-end specs have nothing to query for "what is on the board"; they
@@ -2573,7 +2580,7 @@ export function BoardExcalidraw({
           board advertises a double-click — this is what tells the teacher the
           equation is still editable, and it rides along on pans and zooms
           because its position is recomputed with the selection. */}
-      {selectedMath && canDraw && !mathOpen && (
+      {selectedMath && canDraw && maths && !mathOpen && (
         <button
           type="button"
           data-math-edit
@@ -2864,19 +2871,21 @@ export function BoardExcalidraw({
 
             <span aria-hidden className={dividerClass} />
 
-            <button
-              type="button"
-              aria-pressed={mathOpen}
-              onClick={() => {
-                setEditingMath(null);
-                setMathSource('');
-                setMathOpen((v) => !v);
-              }}
-              className={cn(toolClass, mathOpen ? toolActive : toolIdle)}
-            >
-              <PiFunctionBold aria-hidden />
-              Math
-            </button>
+            {maths && (
+              <button
+                type="button"
+                aria-pressed={mathOpen}
+                onClick={() => {
+                  setEditingMath(null);
+                  setMathSource('');
+                  setMathOpen((v) => !v);
+                }}
+                className={cn(toolClass, mathOpen ? toolActive : toolIdle)}
+              >
+                <PiFunctionBold aria-hidden />
+                Math
+              </button>
+            )}
             <button
               type="button"
               aria-pressed={linkOpen}
@@ -3235,7 +3244,7 @@ export function BoardExcalidraw({
         </div>
       )}
 
-      {mathOpen && canDraw && (
+      {mathOpen && canDraw && maths && (
         <div className="pointer-events-auto absolute left-1/2 top-14 z-[403] flex max-h-[calc(100%-5rem)] w-[min(41rem,calc(100%-2rem))] -translate-x-1/2 flex-col rounded-xl bg-white shadow-xl ring-1 ring-neutral-200">
           <div className="flex items-center justify-between border-b border-neutral-200 px-3 py-2">
             <p className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">

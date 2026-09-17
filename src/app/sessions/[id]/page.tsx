@@ -8,6 +8,7 @@ import {
   enabledPluginKeys,
   PLUGIN_CODE_INSTRUCTION,
   PLUGIN_ISLAMIC_EDUCATION,
+  PLUGIN_MATHS_SCIENCES,
   PLUGIN_TEST_PREP,
 } from '@/lib/plugins';
 import type { CourseDetail, LiveSession } from '@/lib/types';
@@ -44,10 +45,12 @@ export default async function SessionPage(props: {
     throw e;
   }
   // Which add-on packs this org has on — gate the pack-specific room surfaces
-  // (mushaf + Hifz for Islamic Education; the shared code editor for Code).
+  // (mushaf + Hifz for Islamic Education; the shared code editor for Code; the
+  // chalkboard's formula tool for Maths & Sciences).
   const packs = await enabledPluginKeys(token);
   const islamicEducation = packs.has(PLUGIN_ISLAMIC_EDUCATION);
   const codeInstruction = packs.has(PLUGIN_CODE_INSTRUCTION);
+  const mathsSciences = packs.has(PLUGIN_MATHS_SCIENCES);
   const testPrep = packs.has(PLUGIN_TEST_PREP);
 
   if (session.status === 'ENDED') {
@@ -94,6 +97,7 @@ export default async function SessionPage(props: {
       teaching={teaching}
       islamicEducation={islamicEducation}
       codeInstruction={codeInstruction}
+      mathsSciences={mathsSciences}
       testPrep={testPrep}
     />
   );

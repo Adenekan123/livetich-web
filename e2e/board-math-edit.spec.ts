@@ -3,6 +3,12 @@ import { test, expect, type Page } from '@playwright/test';
 // Same convention as board-tools.spec.ts: this id goes stale whenever the
 // local seed is rebuilt, so override it rather than editing the spec.
 //   LIVE_SESSION=<id> npx playwright test
+//
+// Prerequisite: the session's org must have the Maths & Sciences pack on. The
+// formula tool is gated on it (see BoardExcalidraw's `maths` prop), and the
+// gate is simply not rendering the button — so without the pack there is no
+// Math button and this spec fails on its first click rather than on anything
+// it means to test. Turn the pack on at /account/add-ons.
 const LIVE_SESSION = process.env.LIVE_SESSION ?? 'cmtu8bru50005vi7gvmrogb4a';
 
 /** Every run writes its own equations, so a shared board that already holds

@@ -219,6 +219,7 @@ export function ClassRoom({
   teaching = false,
   islamicEducation = false,
   codeInstruction = false,
+  mathsSciences = false,
   initialView,
   dataSaverDefault,
 }: {
@@ -234,6 +235,10 @@ export function ClassRoom({
   islamicEducation?: boolean;
   /** Code Instruction pack on for this org — unlocks the shared code editor. */
   codeInstruction?: boolean;
+  /** Maths & Sciences pack on for this org — unlocks the chalkboard's formula
+   *  tool. Off = a chalkboard with pen, shapes, text and imports, which is
+   *  what an instructor who never writes an equation actually wants. */
+  mathsSciences?: boolean;
   /** Test Prep pack on. The classroom reads nothing from it since the board
    *  templates went; still accepted so callers need not change. */
   testPrep?: boolean;
@@ -1201,6 +1206,7 @@ export function ClassRoom({
               canDraw={isInstructor}
               teaching={teaching}
               quran={islamicEducation ? { tajweed } : null}
+              maths={mathsSciences}
             />
           </div>
           {/* Only mounted when the Islamic Education pack is on, so a plain
