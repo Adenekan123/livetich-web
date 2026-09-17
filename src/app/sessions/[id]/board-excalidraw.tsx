@@ -631,6 +631,16 @@ export function BoardExcalidraw({
    *  rather than leaving the instructor looking at a dead button. */
   const [exportPage, setExportPage] = useState<{ page: number; of: number } | null>(null);
   const [shapesOpen, setShapesOpen] = useState(false);
+  /** Clearing wipes the board for the whole class and cannot be undone by
+   *  anyone else, so it asks first. */
+  const [clearOpen, setClearOpen] = useState(false);
+  const clearTriggerRef = useRef<HTMLButtonElement>(null);
+  /** Where to draw the confirm, in board coordinates — for the same reason the
+   *  shapes menu is measured: the tool row scrolls on a phone, and a panel
+   *  inside a scrolling container is clipped by it. */
+  const [clearMenuAt, setClearMenuAt] = useState<{ top: number; left: number } | null>(
+    null,
+  );
   const [linkOpen, setLinkOpen] = useState(false);
   const [quranOpen, setQuranOpen] = useState(false);
   const [quranForm, setQuranForm] = useState({ surah: '1', from: '1', to: '7' });
@@ -2062,6 +2072,30 @@ export function BoardExcalidraw({
   importFilesRef.current = importFiles;
 
   /**
+   * Take everything off the board — drawings, imported pages, embeds, the lot.
+   *
+   * Elements are marked deleted and re-versioned rather than dropped from the
+   * array: that is what the local diff writes into the shared doc, and it is
+   * how the removal reaches every student. Filtering the list instead would
+   * clear the instructor's screen and leave the class looking at the old board.
+   */
+  const clearBoard = useCallback(() => {
+    const editor = apiRef.current;
+    if (!editor) return;
+    const nonce = () => Math.floor(Math.random() * 2 ** 31);
+    const cleared = editor.getSceneElementsIncludingDeleted().map((el) =>
+      el.isDeleted
+        ? el
+        : { ...el, isDeleted: true, version: el.version + 1, versionNonce: nonce() },
+    );
+    editor.updateScene({
+      elements: cleared,
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
+    setClearOpen(false);
+  }, []);
+
+  /**
    * The board as a PDF, one page at a time.
    *
    * The board is a canvas, not a document: it has no pages, and whatever was
@@ -2633,6 +2667,42 @@ export function BoardExcalidraw({
         </svg>
       )}
 
+      {/* Against the board for the same reason as the shapes menu below: the
+          tool row scrolls, and this must not be clipped by it — least of all a
+          confirm for something this final. */}
+      {clearOpen && clearMenuAt && (
+        <div
+          data-clear-board-panel
+          role="dialog"
+          aria-label="Clear the board"
+          style={{ top: clearMenuAt.top, left: clearMenuAt.left }}
+          className="pointer-events-auto absolute z-[404] w-72 rounded-xl bg-white p-3 shadow-lg ring-1 ring-neutral-200"
+        >
+          <p className="text-xs font-semibold text-neutral-900">Clear the board?</p>
+          <p className="mt-1 text-[11px] text-neutral-600">
+            Everything goes — drawings, imported pages and embedded files — for you
+            and for every student. They cannot undo it from their side.
+          </p>
+          <div className="mt-2.5 flex justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={() => setClearOpen(false)}
+              className={cn(toolClass, toolIdle)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={clearBoard}
+              className={cn(toolClass, 'bg-rose-600 text-white hover:bg-rose-700')}
+            >
+              <PiTrashBold aria-hidden />
+              Clear everything
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Rendered against the board, not the toolbar, so neither the phone's
           scrolling tool row nor Excalidraw's own clipping can cut it off. */}
       {shapesOpen && shapesMenuAt && railNode && (
@@ -2849,6 +2919,37 @@ export function BoardExcalidraw({
             </button>
             <button
               type="button"
+              ref={clearTriggerRef}
+              aria-haspopup="dialog"
+              aria-expanded={clearOpen}
+              onClick={() => {
+                const next = !clearOpen;
+                setClearOpen(next);
+                if (!next) return;
+                const btn = clearTriggerRef.current?.getBoundingClientRect();
+                const board = wrapperRef.current?.getBoundingClientRect();
+                if (!btn || !board) return;
+                const W = 288;
+                const H = 148;
+                const GAP = 8;
+                // Below the toolbar, and never past the edge of the board.
+                const left = Math.min(
+                  btn.left - board.left,
+                  board.width - W - GAP,
+                );
+                const top = Math.min(
+                  btn.bottom + GAP - board.top,
+                  board.height - H - GAP,
+                );
+                setClearMenuAt({ top: Math.max(GAP, top), left: Math.max(GAP, left) });
+              }}
+              className={cn(toolClass, clearOpen ? toolActive : toolIdle)}
+            >
+              <PiTrashBold aria-hidden />
+              Clear
+            </button>
+            <button
+              type="button"
               onClick={() => void exportPdf()}
               disabled={exporting}
               className={cn(toolClass, toolIdle)}
@@ -2860,6 +2961,7 @@ export function BoardExcalidraw({
                   : 'Exporting…'
                 : 'Export'}
             </button>
+
           </div>
         ) : (
           <button
