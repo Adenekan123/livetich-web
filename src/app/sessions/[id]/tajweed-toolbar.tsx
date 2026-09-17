@@ -907,14 +907,21 @@ export function TajweedNotice({
   return (
     <div
       data-tajweed-notice
-      className="grid gap-2 border-b border-white/10 bg-neutral-950/60 px-4 py-2"
+      // Sized to what it says and centred: on a wide screen a full-bleed bar
+      // is mostly empty, and every pixel of height here is taken from the text
+      // being taught.
+      className="flex flex-wrap items-start justify-center gap-2 border-b border-white/10 bg-neutral-950/60 px-4 py-2"
     >
       {pointing.length > 0 && (
         <div
           role="status"
-          className="flex items-center gap-3 rounded-xl border-2 border-dashed border-signal-400/60 px-3 py-1.5"
+          className="flex max-w-full items-center gap-3 rounded-xl border-2 border-dashed border-signal-400/60 px-3 py-1.5 sm:max-w-md"
         >
-          <span dir="rtl" lang="ar" className="font-quran shrink-0 text-2xl text-white">
+          <span
+            dir="rtl"
+            lang="ar"
+            className="font-quran min-w-0 max-w-[45%] truncate text-2xl text-white"
+          >
             {textOf(pointing)}
           </span>
           <span className="min-w-0">
@@ -931,7 +938,7 @@ export function TajweedNotice({
         <div
           role="status"
           className={cn(
-            'flex items-stretch gap-3 overflow-hidden rounded-xl border',
+            'flex max-w-full items-stretch gap-3 overflow-hidden rounded-xl border sm:max-w-xl',
             isPrivate ? 'border-amber-400/40 bg-amber-500/10' : 'border-white/10 bg-white/5',
           )}
         >
@@ -943,11 +950,11 @@ export function TajweedNotice({
           <span
             dir="rtl"
             lang="ar"
-            className="font-quran shrink-0 self-center py-1.5 text-2xl text-white"
+            className="font-quran min-w-0 max-w-[45%] self-center truncate py-1.5 text-2xl text-white"
           >
             {textOf(mark.parts)}
           </span>
-          <span className="min-w-0 flex-1 py-1.5">
+          <span className="min-w-0 py-1.5">
             <b className="block text-sm font-semibold text-white">
               {isPrivate
                 ? `Just for you · ${markLabel(mark)}`
