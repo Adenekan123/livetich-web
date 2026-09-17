@@ -627,6 +627,9 @@ export function BoardExcalidraw({
   } | null>(null);
   const importing = importProgress !== null;
   const [exporting, setExporting] = useState(false);
+  /** Which page is being rendered, so a slow export says what it is doing
+   *  rather than leaving the instructor looking at a dead button. */
+  const [exportPage, setExportPage] = useState<{ page: number; of: number } | null>(null);
   const [shapesOpen, setShapesOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [quranOpen, setQuranOpen] = useState(false);
@@ -2058,28 +2061,135 @@ export function BoardExcalidraw({
   // importer through a ref rather than forcing a reorder of the file.
   importFilesRef.current = importFiles;
 
-  const exportPng = useCallback(async () => {
+  /**
+   * The board as a PDF, one page at a time.
+   *
+   * The board is a canvas, not a document: it has no pages, and whatever was
+   * drawn sits wherever it was drawn. Rendering the lot to one image and
+   * slicing it into page-sized strips is what saws a diagram in half, so the
+   * pages are worked out from the elements instead — anything that overlaps
+   * vertically travels together, and a break can then only ever land in the
+   * blank space between things.
+   */
+  const exportPdf = useCallback(async () => {
     const editor = apiRef.current;
     if (!editor) return;
+    const scene = editor.getSceneElements().filter((el) => !el.isDeleted);
+    if (!scene.length) {
+      flash('Nothing on the board to export yet.');
+      return;
+    }
+
     setExporting(true);
+    setExportPage(null);
     try {
-      const blob = await exportToBlob({
-        elements: editor.getSceneElements(),
-        appState: { ...editor.getAppState(), exportBackground: true },
-        files: editor.getFiles(),
-        mimeType: 'image/png',
-        exportPadding: 24,
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `board-${sessionId}.png`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const { jsPDF } = await import('jspdf');
+
+      // A4 landscape: a board is wider than it is tall, and so is a classroom
+      // screen. Margins in points, which is what jsPDF measures in.
+      const margin = 24;
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+      const pageW = doc.internal.pageSize.getWidth() - margin * 2;
+      const pageH = doc.internal.pageSize.getHeight() - margin * 2;
+
+      // Each element with its own box, top to bottom.
+      const boxed = scene
+        .map((el) => {
+          const [x1, y1, x2, y2] = getCommonBounds([el]);
+          return { el, top: y1, bottom: y2, left: x1, right: x2 };
+        })
+        .sort((a, b) => a.top - b.top || a.left - b.left);
+
+      // Bands: elements that overlap vertically cannot be separated without
+      // cutting one of them, so they belong to the same page.
+      const bands: { top: number; bottom: number; els: typeof scene }[] = [];
+      for (const item of boxed) {
+        const band = bands[bands.length - 1];
+        if (band && item.top <= band.bottom) {
+          band.bottom = Math.max(band.bottom, item.bottom);
+          band.els.push(item.el);
+        } else {
+          bands.push({ top: item.top, bottom: item.bottom, els: [item.el] });
+        }
+      }
+
+      // The whole board's width decides the scale, so every page is rendered at
+      // the same size and the drawing does not grow and shrink page to page.
+      const [boardLeft, , boardRight] = getCommonBounds(scene);
+      const boardW = Math.max(1, boardRight - boardLeft);
+      const scale = pageW / boardW;
+      const pageBoardH = pageH / scale;
+
+      // Bands into pages, while they fit. A band taller than a page is a page
+      // of its own and is scaled down to fit — never cut.
+      const pages: (typeof scene)[] = [];
+      let current: typeof scene = [];
+      let currentTop = 0;
+      for (const band of bands) {
+        // Taller than a page on its own: it gets a page to itself and is
+        // scaled down to fit. Whatever had gathered above it goes first, or it
+        // would be dragged onto this page and shrunk along with it.
+        if (band.bottom - band.top > pageBoardH) {
+          if (current.length) pages.push(current);
+          pages.push([...band.els]);
+          current = [];
+          continue;
+        }
+        if (!current.length) {
+          current = [...band.els];
+          currentTop = band.top;
+        } else if (band.bottom - currentTop <= pageBoardH) {
+          current.push(...band.els);
+        } else {
+          pages.push(current);
+          current = [...band.els];
+          currentTop = band.top;
+        }
+      }
+      if (current.length) pages.push(current);
+
+      const appState = { ...editor.getAppState(), exportBackground: true };
+      const files = editor.getFiles();
+
+      for (let i = 0; i < pages.length; i++) {
+        setExportPage({ page: i + 1, of: pages.length });
+        // Exporting only this page's elements crops to exactly them, which is
+        // what keeps a shape whole instead of trimming it at a page edge.
+        const blob = await exportToBlob({
+          elements: pages[i],
+          appState,
+          files,
+          mimeType: 'image/png',
+          exportPadding: 16,
+        });
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error('Could not read the page image'));
+          reader.readAsDataURL(blob);
+        });
+        const size = await new Promise<{ w: number; h: number }>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+          img.onerror = () => reject(new Error('Could not measure the page image'));
+          img.src = dataUrl;
+        });
+
+        // Fit inside the page, keeping the aspect: scaled down if it is too
+        // tall, never stretched up beyond its own size.
+        const fit = Math.min(pageW / size.w, pageH / size.h, 1);
+        const w = size.w * fit;
+        const h = size.h * fit;
+        if (i > 0) doc.addPage();
+        doc.addImage(dataUrl, 'PNG', margin + (pageW - w) / 2, margin, w, h);
+      }
+
+      doc.save(`board-${sessionId}.pdf`);
     } catch {
       flash('Export failed — please try again.');
     } finally {
       setExporting(false);
+      setExportPage(null);
     }
   }, [sessionId, flash]);
 
@@ -2739,12 +2849,16 @@ export function BoardExcalidraw({
             </button>
             <button
               type="button"
-              onClick={() => void exportPng()}
+              onClick={() => void exportPdf()}
               disabled={exporting}
               className={cn(toolClass, toolIdle)}
             >
               <PiDownloadSimpleBold aria-hidden />
-              {exporting ? 'Exporting…' : 'Export'}
+              {exporting
+                ? exportPage
+                  ? `Page ${exportPage.page} of ${exportPage.of}…`
+                  : 'Exporting…'
+                : 'Export'}
             </button>
           </div>
         ) : (
