@@ -1,0 +1,68 @@
+# Push to `staging` → staging box. Push to `main` → production.
+# The server only pulls the image CI built; the stack itself (compose file,
+# Caddy) lives in livetich-api — see its deploy/CICD.md.
+name: deploy
+
+on:
+  push:
+    branches: [staging, main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/adenekan123/livetich-web
+  TAG: ${{ github.ref_name == 'main' && 'prod' || 'staging' }}
+  ENVIRONMENT: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Bound to the environment so it can read NEXT_PUBLIC_API_URL: Next.js
+    # inlines it at build time, so staging and prod are different images.
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # `next build` type-checks, so a failing build is the gate here.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
+          tags: |
+            ${{ env.IMAGE }}:${{ env.TAG }}
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ env.TAG }}
+          cache-to: type=gha,mode=max,scope=${{ env.TAG }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    steps:
+      - uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          command_timeout: 15m
+          script: |
+            set -e
+            cd "${{ vars.APP_DIR }}/livetich-api"
+            C="docker compose --env-file deploy/.env.prod -f docker-compose.prod.yml"
+            $C pull web
+            $C up -d --no-build --wait --wait-timeout 300 web
+            docker image prune -f >/dev/null
+            echo "Deployed ${{ github.sha }} to ${{ env.ENVIRONMENT }}"
