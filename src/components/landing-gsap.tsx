@@ -43,12 +43,14 @@ export function LandingGsap() {
       const nav = document.getElementById('landing-nav');
       const hero = document.querySelector<HTMLElement>('[data-hero]');
 
-    // 1) Nav: solid once the hero is behind us. Not motion-gated.
+    // 1) Nav: transparent while the page sits at the top (the hero runs under
+    // it), solid as soon as it scrolls so content never shows through the
+    // links. Not motion-gated.
     let navTrigger: ScrollTrigger | undefined;
     if (nav && hero) {
       navTrigger = ScrollTrigger.create({
         trigger: hero,
-        start: 'bottom top+=72',
+        start: 'top+=8 top',
         onEnter: () => nav.classList.add('is-solid'),
         onLeaveBack: () => nav.classList.remove('is-solid'),
       });

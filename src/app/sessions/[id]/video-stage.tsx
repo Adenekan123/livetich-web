@@ -17,6 +17,7 @@ import {
 } from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
 import { clearRealtimeToken, getRealtimeToken } from '@/lib/client-token';
+import { readMediaPrefs } from '@/lib/media-prefs';
 import { avatarColor, cn, initials } from '@/lib/ui';
 
 /** Media controls lifted up to the classroom's bottom bar. */
@@ -265,6 +266,12 @@ export function VideoStage({
   canSpeak?: boolean;
 }) {
   const roomRef = useRef<Room | null>(null);
+  // Read inside the connect effect, which must not re-run — and so reconnect
+  // the whole room — every time the instructor grants or revokes the mic.
+  const canSpeakRef = useRef(canSpeak);
+  useEffect(() => {
+    canSpeakRef.current = canSpeak;
+  }, [canSpeak]);
   // How many times we've silently auto-reconnected since the last good connect.
   // Reset once we're live again; capped so a truly dead room still surfaces.
   const autoRetryRef = useRef(0);
@@ -351,7 +358,23 @@ export function VideoStage({
         return;
       }
 
-      room = new Room({ adaptiveStream: true, dynacast: true });
+      // What the prejoin screen settled, honoured here. Without this the room
+      // would open on whatever device the browser calls default, and the
+      // headset the student just chose and tested would be ignored.
+      const prefs = readMediaPrefs();
+      room = new Room({
+        adaptiveStream: true,
+        dynacast: true,
+        ...(prefs.cameraDeviceId
+          ? { videoCaptureDefaults: { deviceId: prefs.cameraDeviceId } }
+          : {}),
+        ...(prefs.micDeviceId
+          ? { audioCaptureDefaults: { deviceId: prefs.micDeviceId } }
+          : {}),
+        ...(prefs.speakerDeviceId
+          ? { audioOutput: { deviceId: prefs.speakerDeviceId } }
+          : {}),
+      });
       room
         .on(RoomEvent.TrackSubscribed, sync)
         .on(RoomEvent.TrackUnsubscribed, sync)
@@ -483,6 +506,23 @@ export function VideoStage({
       setReconnecting(false);
       setError(null);
       setStatus('live');
+
+      // Enter the way the prejoin screen said you would. A student who left the
+      // mic off arrives muted; one who turned the camera on is already on
+      // camera, rather than landing in the room and having to find the control.
+      // `canSpeak` still wins — a student who has not been granted the mic
+      // cannot grant it to themselves here.
+      try {
+        if (prefs.cameraOn) await room.localParticipant.setCameraEnabled(true);
+        if (prefs.micOn && canSpeakRef.current) {
+          await room.localParticipant.setMicrophoneEnabled(true);
+        }
+      } catch {
+        // The device was taken between the prejoin screen and here (another
+        // call grabbed it, or it was unplugged). The room is up and the
+        // controls work; nothing is gained by failing the connect over it.
+      }
+
       sync();
     })();
 

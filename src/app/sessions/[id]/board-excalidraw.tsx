@@ -259,6 +259,10 @@ const SYNC_INTERVAL_MS = 50;
 /** The presenter's camera is broadcast less often than strokes — it only needs
  *  to feel attached, not be frame-accurate. */
 const PRESENTER_INTERVAL_MS = 100;
+/** The least of the presenter's own screen-share the writing may take up on a
+ *  follower's screen before mirroring is abandoned for framing the writing
+ *  itself. Half means "at worst, half as prominent as they see it". */
+const MIRROR_FLOOR = 0.5;
 /** Hydration retries per file, and the base of their exponential backoff. */
 const MAX_FILE_RETRIES = 3;
 const FILE_RETRY_BASE_MS = 500;
@@ -836,18 +840,39 @@ export function BoardExcalidraw({
     const appState = editor.getAppState();
     if (!appState.width || !appState.height) return;
 
-    let { x, y, w, h } = bounds;
-    // Follow the part of the presenter's view that actually has something in
-    // it, by intersecting their visible rectangle with the content bounds.
-    //
-    // Fitting their raw viewport is what leaves a shared page tiny on a phone:
-    // a wide desktop viewport is mostly empty margin around a portrait page, and
-    // scaling all that emptiness to a narrow screen shrinks the page itself. The
-    // intersection handles every case with one rule — zoomed into part of a
-    // page, it is their view; viewport larger than the content, it is the
-    // content; panned off to one side, it is whatever overlaps. Only when they
-    // are looking at genuinely empty canvas is there nothing to intersect, and
-    // then their framing is the best signal we have.
+    const { x, y, w, h } = bounds;
+
+    /** Fit one scene rectangle to this viewport. Both candidates below go
+     *  through it, so each carries a camera that frames the rectangle it was
+     *  measured from — zoom and position always describing the same region. */
+    const fit = (rect: { x: number; y: number; w: number; h: number }) =>
+      zoomToFitBounds({
+        bounds: [
+          rect.x,
+          rect.y,
+          rect.x + rect.w,
+          rect.y + rect.h,
+        ] as SceneBounds,
+        appState,
+        fitToViewport: true,
+        viewportZoomFactor: 0.95,
+        // Guard rails so a degenerate region can't leave a follower at 4000%
+        // or at a zoom too small to read on a phone.
+        minZoom: 0.1,
+        maxZoom: 4,
+      }).appState;
+
+    // Candidate 1: their whole visible rectangle. On a screen the same shape
+    // as theirs this reproduces their framing, which is what following is
+    // supposed to mean.
+    const mirror = fit(bounds);
+
+    // Candidate 2: the part of their view that actually has something in it.
+    // A viewport that is mostly empty margin around the writing scales that
+    // emptiness along with it, so where mirroring wastes the screen this
+    // frames the writing alone instead.
+    let content: typeof mirror | null = null;
+    let region: { w: number; h: number } | null = null;
     const elements = editor.getSceneElements();
     if (elements.length) {
       const [cx0, cy0, cx1, cy1] = getCommonBounds(elements);
@@ -856,45 +881,60 @@ export function BoardExcalidraw({
       const ix1 = Math.min(x + w, cx1);
       const iy1 = Math.min(y + h, cy1);
       if (ix1 - ix0 > 1 && iy1 - iy0 > 1) {
-        x = ix0;
-        y = iy0;
-        w = ix1 - ix0;
-        h = iy1 - iy0;
+        region = { w: ix1 - ix0, h: iy1 - iy0 };
+        content = fit({ x: ix0, y: iy0, w: region.w, h: region.h });
       }
     }
 
-    const { appState: fitted } = zoomToFitBounds({
-      bounds: [x, y, x + w, y + h] as SceneBounds,
-      appState,
-      // Scale the presenter's region to whatever screen this is — the whole
-      // point of following bounds rather than copying their raw camera.
-      fitToViewport: true,
-      viewportZoomFactor: 0.95,
-      // Guard rails so a degenerate region can't leave a follower at 4000% or
-      // at a zoom too small to read on a phone.
-      minZoom: 0.1,
-      maxZoom: 4,
-    });
-    // Zoom from the fitted region, but centre on the presenter's own view.
+    // Mirror them unless mirroring would not actually reproduce what they see.
     //
-    // Letting the fit choose the position too is what made following drift:
-    // the region is the presenter's viewport clipped to the content, so
-    // scrolling towards an edge shrinks it, and a follower centred on a
-    // shrinking rectangle travels at a fraction of the presenter's speed —
-    // measured at half, with the gap widening on every scroll. The zoom still
-    // comes from the region, which is what keeps a lone page filling a phone.
-    const z = fitted.zoom.value;
-    const centreX = bounds.x + bounds.w / 2;
-    const centreY = bounds.y + bounds.h / 2;
-    const scrollX = appState.width / (2 * z) - centreX;
-    const scrollY = appState.height / (2 * z) - centreY;
+    // Zooming to the content on *every* screen is what cut the board up. The
+    // content region is smaller than their viewport almost whenever they are
+    // writing in a corner, so a desktop follower was magnified ~2.8x past the
+    // instructor; and because the old code took the zoom from that region but
+    // the centre from the unclipped one, it then pointed that magnified view
+    // at the middle of their viewport rather than at the writing. Anything the
+    // instructor did not happen to write dead centre fell off the screen —
+    // measured at 2% of the strokes still visible, 0% once they panned.
+    //
+    // So the test is not "is my screen smaller than theirs", which is one-way
+    // and says nothing when the *instructor* is the one on a phone. It is:
+    // does the writing end up taking about as much of my screen as it does of
+    // theirs? Both shares are computable from the packet alone — their
+    // viewport and the region are both scene rectangles, so their share is
+    // just the ratio of the two areas, no pixel sizes needed.
+    //
+    // That catches the case a zoom comparison misses. Fitting a portrait phone
+    // viewport onto a landscape laptop matches on height and leaves the width
+    // as empty board: the writing is still legible, at ~105% of the size the
+    // instructor sees, but it falls from a third of their screen to a
+    // twelfth of the follower's. Framing the region is the better answer
+    // there, and on identical screens the two shares agree and we mirror.
+    //
+    // The region cancels out of that comparison — it reduces to the two
+    // viewports and the mirror zoom — so which branch we take cannot change
+    // while somebody is drawing. It moves only when a viewport or a zoom does,
+    // which is what keeps the choice from flickering mid-stroke.
+    const theirShare = region ? (region.w * region.h) / (w * h) : 0;
+    const ourShare =
+      region && appState.width && appState.height
+        ? (region.w * mirror.zoom.value * region.h * mirror.zoom.value) /
+          (appState.width * appState.height)
+        : 0;
+    const mirrorWastesTheScreen =
+      content !== null && ourShare < theirShare * MIRROR_FLOOR;
+    const view = mirrorWastesTheScreen && content ? content : mirror;
 
-    lastAppliedViewRef.current = { scrollX, scrollY, zoom: z };
+    lastAppliedViewRef.current = {
+      scrollX: view.scrollX,
+      scrollY: view.scrollY,
+      zoom: view.zoom.value,
+    };
     editor.updateScene({
       appState: {
-        scrollX,
-        scrollY,
-        zoom: fitted.zoom,
+        scrollX: view.scrollX,
+        scrollY: view.scrollY,
+        zoom: view.zoom,
       },
       captureUpdate: CaptureUpdateAction.NEVER,
     });

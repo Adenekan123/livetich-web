@@ -47,16 +47,16 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      data-theme="dark"
+      data-theme="light"
       suppressHydrationWarning
       className={`${lexend.variable} ${sourceSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-white text-foreground">
         {/* Set the landing theme before first paint to avoid a flash. Stored
-            choice wins; otherwise dark is the default. */}
+            choice wins; otherwise light is the default. */}
         <Script id="lp-theme-init" strategy="beforeInteractive">
           {
-            "(function(){try{var t=localStorage.getItem('lp-theme');if(t!=='light'&&t!=='dark'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();"
+            "(function(){try{var t=localStorage.getItem('lp-theme');if(t!=='light'&&t!=='dark'){t='light';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();"
           }
         </Script>
         <RouteProgress />
