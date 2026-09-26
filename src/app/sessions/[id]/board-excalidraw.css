@@ -1,0 +1,256 @@
+/**
+ * Classroom layout overrides for Excalidraw's own chrome.
+ *
+ * Excalidraw ships its tool palette as a horizontal island across the top
+ * centre. In a live class that lands right where the instructor is writing and
+ * competes with our own board controls, so the tools move to a vertical strip
+ * down the left edge and the top centre is left for the classroom pills
+ * (board lock, math, docs & video, import/export).
+ *
+ * These are Excalidraw's internal class names, so treat this file as a
+ * pinned-version dependency: re-check it when bumping @excalidraw/excalidraw.
+ * Everything is scoped under .livetich-board so it can never leak into another
+ * Excalidraw instance on the page.
+ *
+ * Only applied above Excalidraw's own mobile breakpoint. Below it Excalidraw
+ * collapses the toolbar into a bottom bar, which is already the right shape for
+ * a phone — we leave that alone.
+ */
+@media (min-width: 730px) {
+  /* Lift the tool palette out of the top grid and park it against the left
+     edge, vertically centred so it clears the menu button above it. */
+  .livetich-board .shapes-section {
+    position: absolute;
+    left: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    justify-content: flex-start;
+  }
+
+  /* Excalidraw's Stack components are CSS grids with `grid-auto-flow: column`,
+     not flexboxes — flex-direction does nothing to them. Turning the flow to
+     `row` is what actually stacks the tools. The explicit column track has to
+     be reset too, or the generated 36px columns keep the old width. */
+  .livetich-board .App-toolbar-container {
+    grid-auto-flow: row;
+    justify-items: start;
+  }
+
+  .livetich-board .App-toolbar {
+    width: auto;
+  }
+
+  .livetich-board .App-toolbar .Stack_horizontal {
+    grid-auto-flow: row;
+    grid-template-columns: auto;
+    grid-template-rows: none;
+    justify-items: center;
+  }
+
+  /* A vertical stack needs horizontal rules, not vertical ones. */
+  .livetich-board .App-toolbar__divider {
+    width: 100%;
+    height: 1px;
+    margin: 0.25rem 0;
+  }
+
+  /* The laser button sits in its own island, spaced by an inline margin-left
+     that only makes sense in a row. */
+  .livetich-board .App-toolbar-container > .Island + .Island {
+    margin-left: 0 !important;
+    margin-top: 0.5rem !important;
+    align-self: start !important;
+  }
+
+  /* Excalidraw's hint line is laid out for a wide top bar; inside a narrow left
+     rail it wraps to a column of single words on top of the tools. */
+  .livetich-board .HintViewer {
+    display: none;
+  }
+
+  /* The library is an excalidraw.com surface (and its own brand surface); a
+     classroom board has no use for it, and it collided with our pills. */
+  .livetich-board .layer-ui__wrapper__top-right .sidebar-trigger__label-element {
+    display: none;
+  }
+
+  /* The shape-properties panel (stroke, background, width, opacity...) is
+     Excalidraw's top-left island. With the tools now down the left edge the two
+     sat on top of each other, so the panel moves to the right side, below the
+     classroom pills. It is the tallest thing on the board, so it scrolls rather
+     than running off the bottom. */
+  .livetich-board .App-menu__left {
+    position: absolute;
+    right: 0.5rem;
+    left: auto;
+    top: 3.25rem;
+    max-height: calc(100% - 8rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* "More tools" hangs off the bottom of the rail, where the board's rounded
+     overflow clip cuts it off. Open it to the right of the rail instead. */
+  .livetich-board .App-toolbar__extra-tools-dropdown {
+    left: calc(100% + 0.5rem);
+    right: auto;
+    top: auto;
+    bottom: 0;
+  }
+
+
+}
+
+/* ---- Every screen -------------------------------------------------------
+   The shapes control replaces Excalidraw's separate square/diamond/circle on
+   phones too. Leaving the natives visible there cost three slots in a row that
+   only fits about eight, which pushed our button off the edge entirely. */
+
+/* Square, diamond and circle live in the shapes menu, which also carries the
+   six shapes Excalidraw has no tool for. Their toolbar buttons are hidden so
+   each shape has exactly one home instead of two. The tools themselves are
+   untouched — they are still armed from the menu, and their number keys
+   (2, 3, 4) still work. */
+.livetich-board label:has(> input[data-testid='toolbar-rectangle']),
+.livetich-board label:has(> input[data-testid='toolbar-diamond']),
+.livetich-board label:has(> input[data-testid='toolbar-ellipse']) {
+  display: none;
+}
+
+/* Place the shapes control immediately after the selection tool. The row is a
+   grid, and our button is appended last in the DOM, so `order` does the
+   positioning: everything that should follow it is pushed to order 2. */
+.livetich-board [data-board-shapes] {
+  order: 1;
+}
+
+.livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-arrow']),
+.livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-line']),
+.livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-freedraw']),
+.livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-text']),
+.livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-image']),
+.livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-eraser']),
+.livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-frame']) {
+  order: 2;
+}
+
+/* ---- Phones -------------------------------------------------------------
+   Excalidraw lays its mobile toolbar out as a single row and lets it overflow
+   when there are more tools than fit. With the shape tools back it runs about
+   405px into a 382px island, so the last tools were simply unreachable. Let it
+   scroll instead of clipping. */
+@media (max-width: 729px) {
+  .livetich-board .App-toolbar .Stack_horizontal {
+    overflow-x: auto;
+    scrollbar-width: none;
+    max-width: 100%;
+  }
+
+  .livetich-board .App-toolbar .Stack_horizontal::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/**
+ * The recorder's frame.
+ *
+ * Everything here is chrome for someone who can act on it — menus, zoom
+ * buttons, the follow pill, the help badge. A recording has no such person:
+ * it is watched later, by someone who can only look. So the frame keeps the
+ * lesson and drops the controls, and the board fills the whole picture.
+ *
+ * Scoped under .livetich-recorder, which only the recorder route sets, so the
+ * live classroom is untouched.
+ */
+.livetich-recorder .excalidraw .layer-ui__wrapper__top-right,
+.livetich-recorder .excalidraw .App-menu__left,
+.livetich-recorder .excalidraw .App-toolbar,
+.livetich-recorder .excalidraw .footer-center,
+.livetich-recorder .excalidraw .zoom-actions,
+.livetich-recorder .excalidraw .undo-redo-buttons,
+.livetich-recorder .excalidraw .help-icon,
+.livetich-recorder .excalidraw .scroll-back-to-content,
+.livetich-recorder .excalidraw .dropdown-menu-button,
+.livetich-recorder .excalidraw .Stats,
+/* The recorder joins as a hidden observer, so the classroom quite correctly
+   badges it "Shadowing · hidden". That is a fact about the recorder, not about
+   the lesson, and it has no business sitting in the top bar of every frame of
+   the recording. */
+.livetich-recorder [data-shadow-badge] {
+  display: none !important;
+}
+
+/* Chat belongs to the room, not to the work.
+   On the board and the mushaf the lesson is the whole point of the frame, and a
+   chat column down the side steals a fifth of the width from the handwriting
+   and the ayah — the two things the recording exists to preserve. So it is kept
+   on the room view, where faces are already the subject, and dropped on every
+   other surface. Live classes are untouched: this is scoped to the recorder. */
+.livetich-recorder
+  [data-stage-view]:not([data-stage-view='video'])
+  [data-chat-panel] {
+  display: none !important;
+}
+
+.livetich-recorder [data-board-shapes],
+.livetich-recorder [data-board-pills] {
+  display: none !important;
+}
+
+/* Whatever Excalidraw still paints as a floating island, hide it — the list
+   above is version-specific, this is the catch-all. */
+.livetich-recorder .excalidraw .layer-ui__wrapper .Island {
+  display: none !important;
+}
+
+/* The canvas itself must stay, and fill the frame. */
+.livetich-recorder .excalidraw .excalidraw__canvas {
+  display: block !important;
+}
+
+/**
+ * Nothing in a recording can be pressed, so nothing that looks pressable
+ * belongs in one. This catches our own board pills and buttons as well as
+ * Excalidraw's, and survives either of them growing a new control — which the
+ * hand-listed selectors above would not.
+ *
+ * Safe for the mushaf: its ayat are spans, and only its surah picker is a
+ * button.
+ */
+.livetich-recorder button,
+.livetich-recorder [role='button'],
+.livetich-recorder .collab-avatars,
+.livetich-recorder .excalidraw [class*='avatar'] {
+  display: none !important;
+}
+
+/* Next's dev-mode badge sits in the bottom-left corner. It does not exist in a
+   production build, but recording against a dev server would otherwise film
+   it. */
+.livetich-recorder nextjs-portal {
+  display: none !important;
+}
+
+/* Import progress. Before a size is known (fetching from Google, opening the
+   PDF) the bar slides rather than sitting at 0%, which reads as stuck. */
+@keyframes board-import-slide {
+  from {
+    left: -35%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+.board-import-indeterminate {
+  animation: board-import-slide 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-import-indeterminate {
+    animation: none;
+    left: 0;
+    width: 100%;
+    opacity: 0.5;
+  }
+}

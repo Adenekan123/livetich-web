@@ -2,6 +2,7 @@ import Link from 'next/link';
 import type { ManagedAssignment, StudentAssignment } from '@/lib/types';
 import { AddAssignmentForm } from './add-assignment-form';
 import { SubmitAssignmentForm } from './submit-assignment-form';
+import { RichText } from '@/components/rich-text';
 
 type Row = StudentAssignment | ManagedAssignment;
 
@@ -82,9 +83,7 @@ export function AssignmentsSection({
                 </div>
 
                 {a.instructions && (
-                  <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-600">
-                    {a.instructions}
-                  </p>
+                  <RichText className="mt-2 text-sm text-neutral-600">{a.instructions}</RichText>
                 )}
 
                 {!canManage &&

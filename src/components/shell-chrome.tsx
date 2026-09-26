@@ -16,6 +16,7 @@ import {
   PiSignOutBold,
   PiSquaresFourBold,
   PiStudentBold,
+  PiVideoCameraBold,
   PiXBold,
 } from 'react-icons/pi';
 import { avatarColor, cn, initials } from '@/lib/ui';
@@ -40,12 +41,14 @@ const NAV: Record<string, NavItem[]> = {
     { href: '/courses', label: 'Programs', icon: PiBooksBold },
     { href: '/account/instructors', label: 'Instructors', icon: PiChalkboardTeacherBold },
     { href: '/account/students', label: 'Students', icon: PiStudentBold },
+    { href: '/recordings', label: 'Recordings', icon: PiVideoCameraBold },
     { href: '/account/plugins', label: 'Plugins', icon: PiPuzzlePieceBold },
     { href: '/account', label: 'Account', icon: PiGearBold, group: 'Settings' },
   ],
   INSTRUCTOR: [
     { href: '/dashboard', label: 'Dashboard', icon: PiSquaresFourBold },
     { href: '/courses', label: 'My programs', icon: PiBooksBold },
+    { href: '/recordings', label: 'Recordings', icon: PiVideoCameraBold },
     { href: '/account', label: 'Account', icon: PiGearBold, group: 'You' },
   ],
   STUDENT: [

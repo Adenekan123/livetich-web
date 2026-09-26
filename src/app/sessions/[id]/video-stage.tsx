@@ -144,7 +144,37 @@ function AudioSink({ track }: { track?: LKTrack }) {
     const el = ref.current;
     if (!track || !el) return;
     track.attach(el);
+    // attach() starts playback, but play() is a promise and it rejects whenever
+    // the browser has not yet decided this page may make noise. Nothing retried
+    // that, and a rejected play is silent in every sense: no error surfaces and
+    // the element simply sits paused with a live track attached. In a classroom
+    // the next click fixes it invisibly. A recorder is never clicked, so the
+    // recording came out with a perfect picture and an audio track of digital
+    // silence — measured at exactly zero against LiveKit's own template
+    // recording the same room at the same moment.
+    let stop = false;
+    const nudge = () => {
+      if (stop || !el.paused) return;
+      void el.play().catch(() => {});
+    };
+    nudge();
+    // For the life of the sink, not a fixed window.
+    //
+    // This was capped at ten seconds, on the assumption that a rejected play()
+    // early on was the whole problem. It is not: the element does not stay
+    // playing. Recording the same room twice, minutes apart, with nothing
+    // different but a timer that kept calling play(), gave an audio track at
+    // RMS 0.09 with it and digital silence without it — and play() was never
+    // once seen to reject, so nothing is being blocked. Something pauses the
+    // element again after it has started, which is what a headless browser
+    // nobody is looking at will do to media it thinks no one can hear.
+    //
+    // Calling play() on an element that is already playing is a no-op, so this
+    // costs a comparison a second and is invisible in a real classroom.
+    const t = setInterval(nudge, 1000);
     return () => {
+      stop = true;
+      clearInterval(t);
       track.detach(el);
     };
   }, [track]);
@@ -238,6 +268,10 @@ export function VideoStage({
   // How many times we've silently auto-reconnected since the last good connect.
   // Reset once we're live again; capped so a truly dead room still surfaces.
   const autoRetryRef = useRef(0);
+  // Duplicate-identity evictions get exactly one silent retry of their own.
+  // Kept separate from autoRetryRef so a genuine second tab still surfaces
+  // quickly instead of burning the general budget.
+  const dupRetryRef = useRef(0);
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [screen, setScreen] = useState<LKTrack | undefined>();
   const [status, setStatus] = useState<'connecting' | 'live' | 'error'>(
@@ -348,6 +382,30 @@ export function VideoStage({
           // Recoverable drops (the "fails a few seconds after joining" case)
           // reconnect on their own a few times before we make the user act —
           // the LiveKit auto-reconnect having already given up by this point.
+          // A duplicate-identity eviction is not necessarily a second tab.
+          // LiveKit permits one connection per identity and evicts the older
+          // one, so a reload whose previous socket has not finished closing
+          // server-side can evict the page that just loaded. That is why Try
+          // again always works: by the time it is clicked the stale connection
+          // is gone, and the reconnect is unopposed.
+          //
+          // So take that click automatically — once. If something really is
+          // holding the identity (a second tab, another device), the retry is
+          // evicted just as fast and the message appears anyway, a second
+          // later. Only one attempt, so two live tabs cannot sit evicting each
+          // other in a loop.
+          if (
+            reason === DisconnectReason.DUPLICATE_IDENTITY &&
+            dupRetryRef.current < 1
+          ) {
+            dupRetryRef.current += 1;
+            setReconnecting(true);
+            setTimeout(() => {
+              if (!cancelled) setRetryKey((k) => k + 1);
+            }, 1000);
+            return;
+          }
+
           const permanent =
             reason === DisconnectReason.DUPLICATE_IDENTITY ||
             reason === DisconnectReason.PARTICIPANT_REMOVED ||
@@ -367,8 +425,47 @@ export function VideoStage({
           setStatus('error');
         });
 
+      // Browsers refuse to play audio until the page has seen a real user
+      // gesture, and LiveKit parks every remote <audio> behind that rule rather
+      // than letting it fail silently. A person in a classroom clears it
+      // without noticing — they clicked something to get here. The recorder
+      // never clicks anything, so nothing ever cleared it and the recording
+      // came out with picture and no sound. Asking explicitly is the documented
+      // remedy and is a no-op wherever playback is already permitted.
+      const lkRoom = room;
+      // Deliberately not gated on `canPlaybackAudio`. That flag reports whether
+      // the browser would *allow* playback, not whether the elements are
+      // actually playing — and when it reads true while an element sits paused
+      // from a rejected play(), gating on it means never retrying the one thing
+      // that fixes it. startAudio() replays every attached element and is cheap
+      // when there is nothing to do.
+      const unblockAudio = () => {
+        void lkRoom.startAudio().catch(() => {
+          // Genuinely blocked: a real user will clear it with their next click.
+        });
+      };
+      lkRoom.on(RoomEvent.AudioPlaybackStatusChanged, unblockAudio);
+
+      // Torn down while the token was still in flight.
+      //
+      // `room` is only assigned a few lines above, after two awaits. If the
+      // effect was cleaned up before that — which React's StrictMode guarantees
+      // on every mount in development, and any quick remount can do in
+      // production — then cleanup's `room?.disconnect()` ran against a null and
+      // did nothing, and this run would carry on and connect anyway. Two live
+      // connections under one identity is precisely what LiveKit refuses: it
+      // evicts one with DUPLICATE_IDENTITY, which surfaces as "You joined from
+      // another tab or device" on a user who did nothing of the kind. Clicking
+      // Try again appeared to fix it only because a retry runs the effect once.
+      //
+      // The guard after connect() is kept as well: it catches a teardown that
+      // lands during the connect itself, by which point there is a real
+      // connection to close.
+      if (cancelled) return;
+
       try {
         await room.connect(url, token);
+        unblockAudio();
       } catch (e) {
         if (!cancelled) {
           setStatus('error');
@@ -382,6 +479,7 @@ export function VideoStage({
       }
       roomRef.current = room;
       autoRetryRef.current = 0;
+      dupRetryRef.current = 0;
       setReconnecting(false);
       setError(null);
       setStatus('live');

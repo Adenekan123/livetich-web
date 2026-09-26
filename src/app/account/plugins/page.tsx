@@ -6,6 +6,7 @@ import {
   PiCheckBold,
   PiCodeBold,
   PiExamBold,
+  PiFunctionBold,
   PiMoonStarsBold,
   PiPuzzlePieceBold,
   PiSlidersHorizontalBold,
@@ -62,6 +63,21 @@ const PLUGINS: readonly StorePlugin[] = [
     ],
     priceMonthly: null,
     icon: PiCodeBold,
+  },
+  {
+    key: 'maths-sciences',
+    name: 'Maths & Sciences',
+    summary:
+      'Tools for maths and science instructors — typeset equations on the ' +
+      'chalkboard, from a palette rather than from LaTeX the teacher has to ' +
+      'know by heart.',
+    features: [
+      'Formula palette: fractions, roots, powers, integrals, matrices',
+      'Equations land on the chalkboard properly typeset',
+      'Every formula stays editable, not flattened into a picture',
+    ],
+    priceMonthly: null,
+    icon: PiFunctionBold,
   },
   {
     key: 'test-prep',

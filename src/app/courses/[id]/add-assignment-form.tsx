@@ -8,6 +8,7 @@ import {
 import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
 import { btn, inputClass, labelClass } from '@/lib/ui';
+import { MarkdownEditor } from '@/components/markdown-editor';
 
 const initial: AssignmentActionState = { error: null };
 
@@ -113,12 +114,11 @@ export function AddAssignmentForm({
                   <label htmlFor="a-instructions" className={labelClass}>
                     Instructions
                   </label>
-                  <textarea
+                  <MarkdownEditor
                     id="a-instructions"
                     name="instructions"
-                    rows={3}
-                    placeholder="What should students do and submit?"
-                    className={`${inputClass} resize-none`}
+                    rows={4}
+                    placeholder="What should students do and submit? Use the toolbar for headings, lists and links."
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">

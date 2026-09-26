@@ -47,9 +47,15 @@ export async function login(
   }
   await setToken(result.accessToken);
   // Honour a safe internal `next` (e.g. returning to a /join/<token> invite the
-  // user opened while logged out), else land on the dashboard.
+  // user opened while logged out) — someone following a deep link has already
+  // said where they are going, so don't interrupt them with a picker.
+  //
+  // Otherwise go via /choose-workspace, which asks only when the account has
+  // more than one and redirects straight to the dashboard when it doesn't. The
+  // rule lives there rather than here so there is one place that decides.
   const next = String(formData.get('next') ?? '');
-  const dest = next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard';
+  const dest =
+    next.startsWith('/') && !next.startsWith('//') ? next : '/choose-workspace';
   redirect(result.user.emailVerified ? dest : '/verify-email');
 }
 

@@ -7,11 +7,36 @@ import {
   PiCaretDown,
   PiCheck,
   PiBookOpenText,
+  PiEyeBold,
+  PiEyeSlashBold,
+  PiListBulletsBold,
+  PiPencilLineBold,
 } from 'react-icons/pi';
 import { API_URL } from '@/lib/api';
 import { getRealtimeToken } from '@/lib/client-token';
 import { cn } from '@/lib/ui';
+import {
+  ayahKey,
+  graphemes,
+  partsIn,
+  splitWords,
+  type AnyTajweedMark,
+} from '@/lib/tajweed';
+import type { TajweedPart } from '@/lib/realtime-contract';
 import type { Surah } from '@/lib/types';
+import { marksKeyOf, TajweedAyah, TajweedOverlay } from './tajweed-ayah';
+import {
+  TajweedLegend,
+  TajweedMarkCard,
+  TajweedNotice,
+  TajweedToolbar,
+} from './tajweed-toolbar';
+import type { TajweedApi } from './use-tajweed';
+
+const NO_MARKS: readonly AnyTajweedMark[] = [];
+/** Nothing picked, as one stable value: a fresh [] every render would make the
+ *  overlay re-measure for no reason. */
+const NO_PARTS: readonly TajweedPart[] = [];
 
 /** Standard basmalah, shown as a surah header (every surah opens with it
  *  except At-Tawbah; Al-Fatihah already carries it as ayah 1). */
@@ -171,13 +196,36 @@ export function QuranReader({
   ayah,
   isInstructor,
   onNavigate,
+  tajweed = null,
+  startAnnotating = false,
 }: {
   surah: number;
   ayah: number;
   isInstructor: boolean;
   /** Instructor-only: turn the shared page for everyone. */
   onNavigate: (surah: number, ayah: number) => void;
+  /** Tajweed annotations on the text. Absent = the plain mushaf. */
+  tajweed?: TajweedApi | null;
+  /* The students in the room and the modes on offer come back with Lesson and
+     Correction: a live mark is shown to the whole class, so it needs neither. */
+  /** Open already marking — for preparing a lesson, where that is the point. */
+  startAnnotating?: boolean;
 }) {
+  const [annotating, setAnnotating] = useState(startAnnotating);
+  const [openMark, setOpenMark] = useState<AnyTajweedMark | null>(null);
+  const [legendOpen, setLegendOpen] = useState(false);
+  // Handlers handed to every ayah must stay the same function across renders,
+  // or memoising the ayahs saves nothing; they read the latest values here.
+  const navRef = useRef(onNavigate);
+  const annotatingRef = useRef(annotating);
+  const tajweedRef = useRef(tajweed);
+  useEffect(() => {
+    navRef.current = onNavigate;
+    annotatingRef.current = annotating;
+    tajweedRef.current = tajweed;
+  });
+  // The mushaf is what the connector curves are measured against.
+  const mushafRef = useRef<HTMLParagraphElement>(null);
   const [text, setText] = useState<SurahText | null>(null);
   const [catalog, setCatalog] = useState<Surah[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -220,10 +268,29 @@ export function QuranReader({
   }, [surah]);
 
   // Follow the instructor: scroll the anchored ayah into view when it changes.
+  //
+  // Twice, on purpose. The Uthmani face is a large webfont, and every line it
+  // reflows when it swaps in moves the page under whatever we just scrolled to
+  // — so the first scroll lands on roughly the right ayah and then drifts off
+  // by several. The second one, once the fonts have settled, is the one that
+  // actually holds.
   useEffect(() => {
     if (!text || text.number !== surah) return;
-    const el = ayahRefs.current.get(ayah);
-    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    let live = true;
+    const anchor = (behavior: ScrollBehavior) => {
+      if (!live) return;
+      // Annotated ayahs are memoised components without a ref of their own;
+      // they carry data-ayah instead.
+      (
+        ayahRefs.current.get(ayah) ??
+        scrollRef.current?.querySelector<HTMLElement>(`[data-ayah="${ayah}"]`)
+      )?.scrollIntoView({ behavior, block: 'center' });
+    };
+    anchor('smooth');
+    void document.fonts?.ready.then(() => anchor('auto'));
+    return () => {
+      live = false;
+    };
   }, [surah, ayah, text]);
 
   const ayahCount = text?.ayahs.length ?? 0;
@@ -241,6 +308,69 @@ export function QuranReader({
     () => new Map(catalog.map((s) => [s.number, s.ayahCount])),
     [catalog],
   );
+
+  const canAnnotate = !!tajweed && isInstructor;
+  const marking = canAnnotate && annotating;
+  const selected = tajweed?.selection.parts ?? [];
+  // The teacher's own pick is already drawn as `picked`; the outline is for
+  // everyone else's screen, so it is never drawn twice for the one pointing.
+  const pointed = tajweed && !isInstructor ? tajweed.pointing : [];
+
+  /**
+   * A tap on a word or a letter while annotating: it adds what was tapped, or
+   * drops it if it was already picked — in any ayah. The shared page follows to
+   * the ayah being marked, so the class is looking where the teacher points.
+   */
+  const onPart = useCallback(
+    (part: TajweedPart) => {
+      setOpenMark(null);
+      tajweedRef.current?.pickPart(part);
+      navRef.current(surah, part.ayahNumber);
+    },
+    [surah],
+  );
+
+  /** Names a surah, for saying where a mark sits. */
+  const surahName = useCallback(
+    (n: number) =>
+      (n === surah ? text?.transliteration : catalog.find((s) => s.number === n)?.transliteration) ??
+      `Surah ${n}`,
+    [surah, text, catalog],
+  );
+
+  /** The text of one ayah, for showing what is picked. Only the surah on
+   *  screen is loaded, and it is the only one that can be picked in. */
+  const ayahText = useCallback(
+    (n: number, a: number) => (n === surah ? (text?.ayahs[a - 1] ?? null) : null),
+    [surah, text],
+  );
+
+  /** The Arabic some parts point at, read back off the mushaf — so the class
+   *  is told what was marked in the words themselves, not a reference. */
+  const partsText = useCallback(
+    (parts: readonly TajweedPart[]) =>
+      parts
+        .map((p) => {
+          const verse = p.surahNumber === surah ? text?.ayahs[p.ayahNumber - 1] : null;
+          if (!verse || p.wordIndex === null) return '';
+          const word = splitWords(verse)[p.wordIndex] ?? '';
+          return p.letterIndex === null ? word : (graphemes(word)[p.letterIndex] ?? '');
+        })
+        .filter(Boolean)
+        .join(' '),
+    [surah, text],
+  );
+
+  const onAyahTap = useCallback(
+    (n: number) => {
+      if (isInstructor) navRef.current(surah, n);
+    },
+    [isInstructor, surah],
+  );
+
+  const onMark = useCallback((mark: AnyTajweedMark) => {
+    setOpenMark(mark);
+  }, []);
 
   const step = (dir: -1 | 1) => {
     const next = ayah + dir;
@@ -271,6 +401,60 @@ export function QuranReader({
             'Mushaf'
           )}
         </span>
+
+        {tajweed && (
+          <div className="flex items-center gap-1">
+            {canAnnotate && (
+              <button
+                type="button"
+                aria-pressed={annotating}
+                onClick={() => {
+                  setAnnotating((v) => !v);
+                  tajweed.clearSelection();
+                  setOpenMark(null);
+                }}
+                className={cn(
+                  'flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition',
+                  annotating
+                    ? 'border-signal-500/60 bg-signal-600 text-white'
+                    : 'border-white/10 bg-white/5 text-neutral-200 hover:bg-white/10',
+                )}
+              >
+                <PiPencilLineBold className="h-3.5 w-3.5" aria-hidden />
+                Tajweed
+              </button>
+            )}
+            {tajweed.legend.length > 0 && (
+              <button
+                type="button"
+                aria-pressed={legendOpen}
+                aria-label="Tajweed legend"
+                title="Legend"
+                onClick={() => setLegendOpen((v) => !v)}
+                className={cn(
+                  'grid h-8 w-8 place-items-center rounded-lg border border-white/10 text-neutral-300 transition hover:bg-white/10',
+                  legendOpen && 'bg-white/10 text-white',
+                )}
+              >
+                <PiListBulletsBold className="h-4 w-4" />
+              </button>
+            )}
+            <button
+              type="button"
+              aria-pressed={tajweed.hideAll}
+              aria-label={tajweed.hideAll ? 'Show Tajweed marks' : 'Hide Tajweed marks'}
+              title={tajweed.hideAll ? 'Show marks' : 'Hide marks'}
+              onClick={() => (tajweed.hideAll ? tajweed.showAll() : tajweed.setHideAll(true))}
+              className="grid h-8 w-8 place-items-center rounded-lg border border-white/10 text-neutral-300 transition hover:bg-white/10"
+            >
+              {tajweed.hideAll ? (
+                <PiEyeSlashBold className="h-4 w-4" />
+              ) : (
+                <PiEyeBold className="h-4 w-4" />
+              )}
+            </button>
+          </div>
+        )}
 
         {isInstructor ? (
           <div className="ml-auto flex items-center gap-1.5">
@@ -308,8 +492,34 @@ export function QuranReader({
         )}
       </div>
 
+      {/* What the class is told: the instructor pointing, then the rule they
+          chose. Only for the people being taught — the instructor already
+          knows what they just marked. */}
+      {tajweed && !tajweed.canEdit && !tajweed.hideAll && (
+        <TajweedNotice
+          pointing={tajweed.pointing}
+          mark={tajweed.announced}
+          textOf={partsText}
+          surahName={surahName}
+          colors={tajweed.prefs.colors}
+          onDismiss={tajweed.dismissAnnounced}
+        />
+      )}
+
       {/* The page */}
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
+      <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto px-5 py-6">
+        {tajweed && legendOpen && (
+          <div className="pointer-events-none sticky top-0 z-10 flex justify-end">
+            <div className="pointer-events-auto">
+              <TajweedLegend entries={tajweed.legend} />
+            </div>
+          </div>
+        )}
+        {tajweed?.loadError && (
+          <p className="mx-auto mb-4 max-w-md rounded-lg bg-amber-500/10 px-4 py-2 text-center text-xs text-amber-300">
+            {tajweed.loadError}
+          </p>
+        )}
         {error && (
           <p className="mx-auto max-w-md rounded-lg bg-rose-500/10 px-4 py-3 text-center text-sm text-rose-300">
             {error}
@@ -325,10 +535,55 @@ export function QuranReader({
                 {BISMILLAH}
               </p>
             )}
-            <p className="font-quran text-right text-3xl leading-[2.6] text-neutral-50 sm:text-[2.6rem] sm:leading-[2.4]">
+            <p
+              ref={mushafRef}
+              className="font-quran relative text-right text-3xl leading-[2.6] text-neutral-50 sm:text-[2.6rem] sm:leading-[2.4]"
+            >
+              {tajweed && (
+                // The letters of one mark, joined under the line: a rule that
+                // holds a letter here and another three words later is one
+                // mark, and only the curve says so.
+                <TajweedOverlay
+                  containerRef={mushafRef}
+                  marks={tajweed.visible}
+                  // Hiding marks hides everything Tajweed draws, the pick and
+                  // its joining curve included — a teal underline left behind
+                  // reads as the button not working.
+                  pointing={
+                    tajweed.hideAll
+                      ? NO_PARTS
+                      : isInstructor
+                        ? tajweed.selection.parts
+                        : tajweed.pointing
+                  }
+                  textOf={ayahText}
+                  colors={tajweed.prefs.colors}
+                />
+              )}
               {text.ayahs.map((verse, i) => {
                 const n = i + 1;
                 const isAnchor = n === ayah;
+                if (tajweed) {
+                  const marks = tajweed.index.get(ayahKey(surah, n)) ?? NO_MARKS;
+                  return (
+                    <TajweedAyah
+                      key={n}
+                      surah={surah}
+                      ayah={n}
+                      text={verse}
+                      marks={marks}
+                      marksKey={marksKeyOf(marks)}
+                      picked={partsIn({ parts: selected }, surah, n)}
+                      pointed={partsIn({ parts: pointed }, surah, n)}
+                      anchor={isAnchor}
+                      interactive={marking}
+                      numeral={`﴿${toArabicNumerals(n)}﴾`}
+                      onPart={onPart}
+                      onAyah={isInstructor ? onAyahTap : null}
+                      onMark={onMark}
+                    />
+                  );
+                }
                 return (
                   <span
                     key={n}
@@ -356,6 +611,21 @@ export function QuranReader({
           </div>
         )}
       </div>
+
+      {marking && tajweed && (
+        // Capped and scrolling on its own, so on a phone the text being taught
+        // keeps at least half the reader instead of two lines of it.
+        <div className="max-h-[55%] shrink-0 overflow-y-auto">
+          <TajweedToolbar api={tajweed} surahName={surahName} ayahText={ayahText} />
+        </div>
+      )}
+      {openMark && (
+        <TajweedMarkCard
+          mark={openMark}
+          surahName={surahName}
+          onClose={() => setOpenMark(null)}
+        />
+      )}
     </div>
   );
 }
