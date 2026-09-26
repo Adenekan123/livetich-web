@@ -20,10 +20,15 @@ import type {
   ExamResults,
 } from '@/lib/types';
 import { Rich } from './rich-text';
+import { YearPicker } from './year-picker';
 
 // ALOC v1 exam types (exact slugs the API expects).
-// Only the exam types ALOC actually serves. `neco` and `wassce` 404 on the
-// provider, so offering them guaranteed a failed import.
+//
+// Coverage is per subject AND exam type, not per exam type: ALOC carries WAEC
+// mathematics but not WAEC biology, and Post-UTME physics but not Post-UTME
+// chemistry. There is no combinations endpoint to drive this from, so the list
+// stays static and the API surfaces ALOC's own hint text when a pair 404s.
+// JAMB is the only type that covers every subject below.
 const EXAM_TYPES = [
   { value: 'jamb', label: 'JAMB' },
   { value: 'waec', label: 'WAEC' },
@@ -364,6 +369,9 @@ function Builder({
   const [title, setTitle] = useState(existing?.title ?? '');
   const [duration, setDuration] = useState(existing?.durationMinutes ?? 30);
   const [questions, setQuestions] = useState<Draft[]>(existing?.questions ?? []);
+  /** Question positions currently switched to their rendered form. */
+  const [previewing, setPreviewing] = useState<Set<number>>(new Set());
+
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -415,6 +423,26 @@ function Builder({
   }
   function remove(i: number) {
     setQuestions((prev) => prev.filter((_, j) => j !== i));
+    // Questions are tracked by position, so deleting one shifts every question
+    // after it down a slot. Without moving the flags to match, removing
+    // question 2 would leave question 3 showing question 4's preview state.
+    setPreviewing((prev) => {
+      const next = new Set<number>();
+      for (const p of prev) {
+        if (p < i) next.add(p);
+        else if (p > i) next.add(p - 1);
+      }
+      return next;
+    });
+  }
+
+  /** Which questions are showing their rendered form instead of their inputs. */
+  function togglePreview(i: number) {
+    setPreviewing((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(i)) next.add(i);
+      return next;
+    });
   }
 
   function save() {
@@ -520,15 +548,15 @@ function Builder({
               ))}
             </select>
           </label>
-          <label className="block">
+          <div className="block">
             <span className="text-xs font-medium text-neutral-500">Year</span>
-            <input
+            <YearPicker
               value={year}
-              onChange={(e) => setYear(e.target.value)}
-              placeholder="any"
-              className={cn(inputClass, 'mt-1 w-20')}
+              onChange={setYear}
+              subject={subject}
+              examType={examType}
             />
-          </label>
+          </div>
           <label className="block">
             <span className="text-xs font-medium text-neutral-500">Count</span>
             <input
@@ -566,19 +594,46 @@ function Builder({
             <li key={i} className={cn(cardClass, 'p-4')}>
               <div className="flex items-start gap-2">
                 <span className="mt-2 text-xs font-semibold text-neutral-400">{i + 1}</span>
-                <textarea
-                  value={q.body}
-                  onChange={(e) => update(i, { body: e.target.value })}
-                  rows={2}
-                  placeholder="Question text"
-                  className={cn(inputClass, 'flex-1 resize-y')}
-                />
-                <button
-                  onClick={() => remove(i)}
-                  className="mt-1 text-xs font-medium text-neutral-400 hover:text-red-600"
-                >
-                  Remove
-                </button>
+                {/* Preview swaps the box for what the student will see, in the
+                    same place — markup like <sup> is unreadable as source, and
+                    a separate preview line below made you read the question
+                    twice to compare them. */}
+                {previewing.has(i) ? (
+                  <div
+                    className={cn(
+                      inputClass,
+                      'flex-1 whitespace-pre-wrap bg-neutral-50 text-neutral-900',
+                    )}
+                  >
+                    {q.body.trim() ? (
+                      <Rich text={q.body} />
+                    ) : (
+                      <span className="text-neutral-400">Question text</span>
+                    )}
+                  </div>
+                ) : (
+                  <textarea
+                    value={q.body}
+                    onChange={(e) => update(i, { body: e.target.value })}
+                    rows={2}
+                    placeholder="Question text"
+                    className={cn(inputClass, 'flex-1 resize-y')}
+                  />
+                )}
+                <div className="flex flex-col items-end gap-1">
+                  <button
+                    onClick={() => togglePreview(i)}
+                    className="mt-1 text-xs font-medium text-neutral-500 hover:text-neutral-900"
+                  >
+                    {previewing.has(i) ? 'Write' : 'Preview'}
+                  </button>
+                  <button
+                    onClick={() => remove(i)}
+                    className="text-xs font-medium text-neutral-400 hover:text-red-600"
+                  >
+                    Remove
+                  </button>
+                </div>
               </div>
               <div className="mt-2 space-y-1.5 pl-6">
                 {q.options.map((opt, oi) => (
@@ -591,17 +646,32 @@ function Builder({
                       className="h-4 w-4 text-neutral-900"
                       title="Mark correct"
                     />
-                    <input
-                      value={opt}
-                      onChange={(e) =>
-                        update(i, {
-                          options: q.options.map((o, j) => (j === oi ? e.target.value : o)),
-                        })
-                      }
-                      placeholder={`Option ${oi + 1}`}
-                      className={cn(inputClass, 'flex-1 py-1.5 text-sm')}
-                    />
-                    {q.options.length > 2 && (
+                    {previewing.has(i) ? (
+                      <div
+                        className={cn(
+                          inputClass,
+                          'flex-1 bg-neutral-50 py-1.5 text-sm text-neutral-900',
+                        )}
+                      >
+                        {opt.trim() ? (
+                          <Rich text={opt} />
+                        ) : (
+                          <span className="text-neutral-400">{`Option ${oi + 1}`}</span>
+                        )}
+                      </div>
+                    ) : (
+                      <input
+                        value={opt}
+                        onChange={(e) =>
+                          update(i, {
+                            options: q.options.map((o, j) => (j === oi ? e.target.value : o)),
+                          })
+                        }
+                        placeholder={`Option ${oi + 1}`}
+                        className={cn(inputClass, 'flex-1 py-1.5 text-sm')}
+                      />
+                    )}
+                    {!previewing.has(i) && q.options.length > 2 && (
                       <button
                         onClick={() =>
                           update(i, { options: q.options.filter((_, j) => j !== oi) })
@@ -613,29 +683,15 @@ function Builder({
                     )}
                   </label>
                 ))}
-                <button
-                  onClick={() => update(i, { options: [...q.options, ''] })}
-                  className="text-xs font-medium text-neutral-500 hover:text-neutral-900"
-                >
-                  + option
-                </button>
+                {!previewing.has(i) && (
+                  <button
+                    onClick={() => update(i, { options: [...q.options, ''] })}
+                    className="text-xs font-medium text-neutral-500 hover:text-neutral-900"
+                  >
+                    + option
+                  </button>
+                )}
               </div>
-              {/* Rendered preview — sup/sub etc. show as they will to students,
-                  so imported markup isn't just raw text in the editor. */}
-              {/<[a-z]/i.test(q.body + q.options.join('')) && (
-                <div className="mt-2 rounded-lg bg-neutral-50 px-3 py-2 pl-6 text-xs text-neutral-500">
-                  <span className="font-semibold text-neutral-400">Preview: </span>
-                  <Rich text={q.body} />
-                  {q.options.some((o) => o.trim()) && (
-                    <span> — {q.options.filter(Boolean).map((o, k) => (
-                      <span key={k}>
-                        {k > 0 && ' · '}
-                        <Rich text={o} />
-                      </span>
-                    ))}</span>
-                  )}
-                </div>
-              )}
             </li>
           ))}
         </ol>
