@@ -5,6 +5,7 @@ import { getToken } from '@/lib/auth';
 import { avatarColor, cardClass, cn, initials } from '@/lib/ui';
 import type { Assignment, Submission } from '@/lib/types';
 import { GradeForm } from '../../grade-form';
+import { RichText } from '@/components/rich-text';
 
 export const metadata = { title: 'Submissions — livetich' };
 
@@ -59,9 +60,7 @@ export default async function AssignmentSubmissionsPage(props: {
           {submissions.length}/{enrolledCount} submitted · {graded} graded
         </p>
         {assignment.instructions && (
-          <p className="mt-3 whitespace-pre-wrap rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">
-            {assignment.instructions}
-          </p>
+          <RichText className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">{assignment.instructions}</RichText>
         )}
 
         <div className="mt-8 space-y-4">

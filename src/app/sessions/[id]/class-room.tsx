@@ -65,10 +65,18 @@ import {
   type LiveCodingTask,
 } from './live-coding-panel';
 import { QuranReader } from './quran-reader';
+import { useTajweed } from './use-tajweed';
+import { RecordButton } from './record-button';
+import {
+  primeTones,
+  startToneLoop,
+  stopAllToneLoops,
+  stopToneLoop,
+} from './tone-player';
 
-// tldraw touches browser-only APIs, so it must not render on the server.
-const BoardTldraw = dynamic(
-  () => import('./board-tldraw').then((m) => m.BoardTldraw),
+// Excalidraw touches browser-only APIs, so it must not render on the server.
+const BoardExcalidraw = dynamic(
+  () => import('./board-excalidraw').then((m) => m.BoardExcalidraw),
   {
     ssr: false,
     loading: () => (
@@ -211,8 +219,9 @@ export function ClassRoom({
   teaching = false,
   islamicEducation = false,
   codeInstruction = false,
-  testPrep = false,
-  tldrawLicenseKey,
+  mathsSciences = false,
+  initialView,
+  dataSaverDefault,
 }: {
   sessionId: string;
   courseId: string;
@@ -226,10 +235,20 @@ export function ClassRoom({
   islamicEducation?: boolean;
   /** Code Instruction pack on for this org — unlocks the shared code editor. */
   codeInstruction?: boolean;
-  /** Test Prep pack on — adds exam-style chalkboard templates (axes). */
+  /** Maths & Sciences pack on for this org — unlocks the chalkboard's formula
+   *  tool. Off = a chalkboard with pen, shapes, text and imports, which is
+   *  what an instructor who never writes an equation actually wants. */
+  mathsSciences?: boolean;
+  /** Test Prep pack on. The classroom reads nothing from it since the board
+   *  templates went; still accepted so callers need not change. */
   testPrep?: boolean;
-  /** tldraw license key (from the server env) for the shared chalkboard. */
-  tldrawLicenseKey?: string;
+  /** The surface the class is already on, when the caller knows it up front. */
+  initialView?: StageView;
+  /** Override the automatic data-saver decision. The recorder pins this off:
+   *  its connection hints are whatever LiveKit's container reports, and a
+   *  recording that quietly drops every camera to save someone's bandwidth is
+   *  not a saving, it is a broken recording. */
+  dataSaverDefault?: boolean;
 }) {
   const router = useRouter();
   const [ending, startEnding] = useTransition();
@@ -269,7 +288,11 @@ export function ClassRoom({
   const [notice, setNotice] = useState<string | null>(null);
   // Counter bumped on every `submission:new`; drives the grading panel reload.
   const [submissionPing, setSubmissionPing] = useState(0);
-  const [view, setView] = useState<StageView>('video');
+  // Defaults to the room, but a caller that already knows better says so. The
+  // recorder does: it is handed the class's current surface with its context,
+  // so a recording never opens on the wrong one while waiting for the socket to
+  // replay the real value.
+  const [view, setView] = useState<StageView>(initialView ?? 'video');
   // Instructor-driven room colour scheme, synced to everyone via the gateway.
   const [scheme, setScheme] = useState<RoomScheme>('teal');
   const [schemePicker, setSchemePicker] = useState(false);
@@ -283,6 +306,7 @@ export function ClassRoom({
   const [hifzDraft, setHifzDraft] = useState<HifzDraft | null>(null);
   // Default data-saver on when the browser/OS signals a metered or slow network.
   const [dataSaver, setDataSaver] = useState(() => {
+    if (dataSaverDefault !== undefined) return dataSaverDefault;
     if (typeof navigator === 'undefined') return false;
     const c = (
       navigator as Navigator & {
@@ -326,6 +350,10 @@ export function ClassRoom({
   const buzzerDismissRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cue = (kind: 'open' | 'timeout' | 'win') =>
     playBuzzerCue(audioCtxRef, kind);
+  // The question tone runs for as long as the question does, so every path out
+  // of an open round has to switch it off — answered, timed out, dismissed,
+  // or the room closing under it. Centralised here so none of them can forget.
+  const stopBuzzerTone = () => stopToneLoop('buzzerQuestion');
   // Voice-note recording (chat).
   const [recording, setRecording] = useState(false);
   const [uploadingVoice, setUploadingVoice] = useState(false);
@@ -334,15 +362,30 @@ export function ClassRoom({
 
   // A teach-mode admin acts as the instructor (host UI, publishes, controls).
   const isInstructor = me.role === 'INSTRUCTOR' || teaching;
+  // Tajweed annotations on the shared mushaf. Always created (it is a hook),
+  // inert unless the Islamic Education pack is on.
+  const tajweed = useTajweed({
+    courseId,
+    sessionId,
+    canEdit: isInstructor,
+    enabled: islamicEducation,
+    socketRef,
+  });
+  // Socket handlers are bound once per connection; they reach the latest hook
+  // through this ref rather than re-binding every time an annotation changes.
+  const tajweedRef = useRef(tajweed);
+  useEffect(() => {
+    tajweedRef.current = tajweed;
+  });
   // Admins otherwise shadow-join: hidden from everyone, read-only. They watch
   // and listen but never publish, raise a hand, or post — presence stays unseen.
   const isShadow = me.role === 'ORG_ADMIN' && !teaching;
 
-  // Warm the heavy tldraw board chunk shortly after mount so opening the
+  // Warm the heavy Excalidraw board chunk shortly after mount so opening the
   // chalkboard is near-instant instead of a multi-second first-load download.
   // Delayed so the download doesn't compete with the join's connection requests.
   useEffect(() => {
-    const t = setTimeout(() => void import('./board-tldraw'), 1500);
+    const t = setTimeout(() => void import('./board-excalidraw'), 1500);
     return () => clearTimeout(t);
   }, []);
   // Pack-gated surfaces: the mushaf needs Islamic Education, the code editor
@@ -392,6 +435,9 @@ export function ClassRoom({
     // looping. Reset once a connect succeeds.
     let authRetries = 0;
     const MAX_AUTH_RETRIES = 2;
+    // The first connect loads Tajweed annotations on mount already; every later
+    // one is a reconnect, which may have missed events while offline.
+    let tajweedConnectedBefore = false;
 
     const pushWave = (name: string) => {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -402,6 +448,8 @@ export function ClassRoom({
     socket.on('connect', () => {
       authRetries = 0;
       setConnected(true);
+      if (tajweedConnectedBefore) tajweedRef.current.resync();
+      tajweedConnectedBefore = true;
       socket.emit('room:join', {
         sessionId,
         ...(teaching ? { as: 'teach' as const } : {}),
@@ -423,6 +471,23 @@ export function ClassRoom({
     socket.on('theme:changed', (p) => setScheme(p.scheme));
     socket.on('quran:position', (p) =>
       setQuranPos({ surah: p.surah, ayah: p.ayah }),
+    );
+    socket.on('tajweed:annotation:created', (p) =>
+      tajweedRef.current.receiveSaved(p.annotation),
+    );
+    socket.on('tajweed:annotation:updated', (p) =>
+      tajweedRef.current.receiveSaved(p.annotation),
+    );
+    socket.on('tajweed:annotation:deleted', (p) =>
+      tajweedRef.current.receiveDeleted(p.id),
+    );
+    socket.on('tajweed:temporary', (p) =>
+      tajweedRef.current.receiveLive(p.annotations),
+    );
+    // What the instructor has picked but not yet marked: the class sees the
+    // same letters outlined while they decide which rule it is.
+    socket.on('tajweed:pointing', (p) =>
+      tajweedRef.current.receivePointing(p.parts),
     );
     // Staff-only: a student just submitted coursework. Nudge the grading panel
     // to reload and flag it to the instructor.
@@ -497,16 +562,27 @@ export function ClassRoom({
           setBuzzerDeadline(
             Date.now() + (p.state.question?.timeLimitSec ?? 0) * 1000,
           );
-          cue('open'); // buzz on a new round
+          // A round is a countdown, so the cue is a countdown too: the tone
+          // repeats under the question and stops the moment it is resolved,
+          // rather than a single buzz at the top that says nothing about the
+          // time draining away.
+          void startToneLoop('buzzerQuestion');
         }
       } else if (p.state.phase === 'WINNER' || p.state.phase === 'TIMEOUT') {
         setBuzzerDeadline(null);
+        // Silence the question before the verdict, so the two never overlap.
+        // 'timeout' is the descending "dying" tone that closes a round nobody
+        // won — deliberately untouched.
+        stopBuzzerTone();
         cue(p.state.phase === 'WINNER' ? 'win' : 'timeout');
         // Show the outcome briefly, then close the card for everyone.
         buzzerDismissRef.current = setTimeout(() => {
           setBuzzer(null);
           buzzerDismissRef.current = null;
         }, 3500);
+      } else {
+        // Any other phase — idle, or a round cleared out from under us.
+        stopBuzzerTone();
       }
     });
     socket.on('quiz:answer-result', (p) => setAnswerResult(p.isCorrect));
@@ -644,6 +720,10 @@ export function ClassRoom({
       } catch {
         /* audio unavailable — ignore */
       }
+      // The recorded tones need the same gesture, and the buzzer one is 300KB:
+      // fetching and decoding it now means the first round of the lesson starts
+      // on the beat instead of after a download.
+      primeTones();
       window.removeEventListener('pointerdown', unlock);
       window.removeEventListener('touchstart', unlock);
       window.removeEventListener('keydown', unlock);
@@ -657,6 +737,11 @@ export function ClassRoom({
       window.removeEventListener('keydown', unlock);
     };
   }, []);
+
+  // Last line of defence for the question tone: leaving the room, or the class
+  // ending, while a round is still open. Without this the loop would outlive
+  // the classroom it belongs to and keep playing over whatever came next.
+  useEffect(() => stopAllToneLoops, []);
 
   // Tear down the audio context + any pending auto-close on unmount.
   useEffect(
@@ -941,6 +1026,7 @@ export function ClassRoom({
 
   return (
     <div
+      data-stage-view={view}
       className="room-shell fixed inset-0 z-40 flex flex-col bg-[var(--room-bg)] text-neutral-100"
       data-room-scheme={scheme}
     >
@@ -978,7 +1064,10 @@ export function ClassRoom({
             </span>
           </span>
           {isShadow && (
-            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-accent-500/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-accent-300">
+            <span
+              data-shadow-badge
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-accent-500/15 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-accent-300"
+            >
               Shadowing · hidden
             </span>
           )}
@@ -987,8 +1076,11 @@ export function ClassRoom({
           </h1>
         </div>
 
-        {/* Right: instructor colour-scheme picker + participant count. */}
+        {/* Right: record, colour scheme, participant count. */}
         <div className="flex shrink-0 items-center gap-2">
+          {/* Instructor only, by request: nobody else in the room is shown that
+              the class is being recorded. The API enforces the same rule. */}
+          {isInstructor && <RecordButton sessionId={sessionId} />}
           {isInstructor && (
             <div>
               <button
@@ -1022,7 +1114,7 @@ export function ClassRoom({
                   />
                   {/* Anchored to the header (not the button) and pushed left of
                       the board's top-right style panel (~180px) so the two never
-                      collide; elevated above tldraw so it can't be clipped. On a
+                      collide; elevated above the board so it can't be clipped. On a
                       narrow viewport it clamps to the right edge instead. */}
                   <div
                     role="menu"
@@ -1109,15 +1201,12 @@ export function ClassRoom({
             />
           </div>
           <div className={cn('absolute inset-3', view === 'board' ? '' : 'hidden')}>
-            <BoardTldraw
+            <BoardExcalidraw
               sessionId={sessionId}
               canDraw={isInstructor}
               teaching={teaching}
-              licenseKey={tldrawLicenseKey}
-              templates={[
-                'lined',
-                ...(testPrep ? ['axes'] : []),
-              ]}
+              quran={islamicEducation ? { tajweed } : null}
+              maths={mathsSciences}
             />
           </div>
           {/* Only mounted when the Islamic Education pack is on, so a plain
@@ -1129,6 +1218,7 @@ export function ClassRoom({
                 ayah={quranPos.ayah}
                 isInstructor={isInstructor}
                 onNavigate={navigateQuran}
+                tajweed={tajweed}
               />
             </div>
           )}
@@ -1323,7 +1413,10 @@ export function ClassRoom({
           />
         )}
         {panel && (
-          <aside className="absolute inset-y-0 right-0 z-30 flex w-[86%] max-w-[22rem] flex-col border-l border-white/10 bg-[var(--room-panel)] shadow-2xl md:static md:z-auto md:w-full md:max-w-[360px] md:shrink-0 md:shadow-none">
+          <aside
+            data-chat-panel
+            className="absolute inset-y-0 right-0 z-30 flex w-[86%] max-w-[22rem] flex-col border-l border-white/10 bg-[var(--room-panel)] shadow-2xl md:static md:z-auto md:w-full md:max-w-[360px] md:shrink-0 md:shadow-none"
+          >
             <div className="flex items-center gap-1 border-b border-white/10 p-2">
               {(['chat', 'people', 'points'] as const).map((t) => (
                 <button

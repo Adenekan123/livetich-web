@@ -88,7 +88,7 @@
 }
 
 :root[data-theme='light'] {
-  --lp-bg: #eef2ea;
+  --lp-bg: #ffffff;
   --lp-alt: rgba(15, 46, 42, 0.035);
   --lp-surface: rgba(255, 255, 255, 0.72);
   --lp-surface-2: rgba(255, 255, 255, 0.55);
@@ -109,6 +109,25 @@
   --lp-nav-fg-hover: #0f2e2a;
   --lp-nav-solid-bg: rgba(255, 255, 255, 0.8);
   --lp-nav-solid-border: rgba(15, 46, 42, 0.1);
+}
+
+/*
+ * The hero and the header always wear the dark palette, whatever the landing
+ * theme; the toggle only flips the content below. Set on the element (not
+ * :root) so it wins over the theme for everything inside it.
+ */
+.hero-dark {
+  --hero-bg: #05130f;
+  --hero-ink: #ffffff;
+  --hero-green: #4ade80;
+  --hero-dot: #4ade80;
+  --hero-muted: #a8b3ae;
+  --hero-muted-2: #8e9994;
+  --hero-chip: rgba(74, 222, 128, 0.12);
+  --hero-solid-bg: #05130f;
+  --hero-solid-border: rgba(255, 255, 255, 0.1);
+  --hero-pattern: rgba(74, 222, 128, 0.16);
+  --hero-glow: rgba(255, 255, 255, 0.07);
 }
 
 /*
@@ -153,6 +172,13 @@
   --color-lp-accent-strong: var(--lp-accent-strong);
   --color-lp-lime: var(--lp-lime);
   --color-lp-ink: var(--lp-ink);
+  --color-hero-bg: var(--hero-bg);
+  --color-hero-ink: var(--hero-ink);
+  --color-hero-green: var(--hero-green);
+  --color-hero-dot: var(--hero-dot);
+  --color-hero-muted: var(--hero-muted);
+  --color-hero-muted-2: var(--hero-muted-2);
+  --color-hero-chip: var(--hero-chip);
 }
 
 /*
@@ -348,55 +374,51 @@ h4 {
   opacity: 0;
 }
 
-/* The landing header: transparent over the dark hero, solid once scrolled past
- * (the .is-solid class is toggled by GSAP — a legibility state, not motion). */
+/* The landing header shares the hero's ground (--hero-* tokens, pinned dark
+ * by .hero-dark). Transparent over the hero at the top of the page; once the
+ * page scrolls, GSAP adds .is-solid (a legibility state, not motion). */
+/* The divider is an inset shadow, not a border, so the bar stays exactly as
+ * tall as the hero's negative top margin (a border left a 1px gap above it). */
 #landing-nav {
-  transition:
-    background-color 0.35s ease,
-    border-color 0.35s ease,
-    box-shadow 0.35s ease;
-  border-bottom: 1px solid transparent;
-}
-#landing-nav .nav-brand {
-  color: var(--lp-nav-fg-hover);
-  transition: color 0.35s ease;
+  background: transparent;
+  transition: box-shadow 0.35s ease;
+  box-shadow: inset 0 -1px 0 transparent;
 }
 #landing-nav .nav-link {
-  color: var(--lp-nav-fg);
-  transition:
-    color 0.2s ease,
-    background-color 0.2s ease;
+  color: var(--hero-ink);
+  transition: color 0.2s ease;
 }
 #landing-nav .nav-link:hover {
-  color: var(--lp-nav-fg-hover);
-  background: var(--lp-surface-2);
+  color: var(--hero-green);
 }
 #landing-nav .nav-cta {
-  background: var(--lp-accent);
-  color: var(--lp-ink);
+  background: #9fef84;
+  color: #0a0a0a;
   transition: background-color 0.2s ease;
 }
 #landing-nav .nav-cta:hover {
-  background: var(--lp-accent-strong);
+  background: #8fe26a;
+}
+/* Hero backdrop: a faint brand-green dot grid that fades out toward the edges
+ * (so it never meets the header or the next band with a hard line), and a
+ * soft glow behind the classroom image that lifts it off the dark ground.
+ * Static — no motion. */
+.hero-glow {
+  background: radial-gradient(closest-side, var(--hero-glow) 35%, transparent);
+}
+.hero-dots {
+  background-image: radial-gradient(var(--hero-pattern) 1.2px, transparent 1.6px);
+  background-size: 24px 24px;
+  background-position: center top;
+  -webkit-mask-image: radial-gradient(ellipse 75% 62% at 50% 56%, #000 30%, transparent 100%);
+  mask-image: radial-gradient(ellipse 75% 62% at 50% 56%, #000 30%, transparent 100%);
 }
 
 #landing-nav.is-solid {
-  background: var(--lp-nav-solid-bg);
+  background: var(--hero-solid-bg);
   backdrop-filter: blur(16px) saturate(1.5);
   -webkit-backdrop-filter: blur(16px) saturate(1.5);
-  border-bottom-color: var(--lp-nav-solid-border);
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
-}
-#landing-nav.is-solid .nav-brand,
-#landing-nav.is-solid .nav-link {
-  color: var(--lp-text);
-}
-#landing-nav.is-solid .nav-link {
-  color: var(--lp-text-2);
-}
-#landing-nav.is-solid .nav-link:hover {
-  color: var(--lp-lime);
-  background: var(--lp-surface-2);
+  box-shadow: inset 0 -1px 0 var(--hero-solid-border);
 }
 
 @media (prefers-reduced-motion: reduce) {

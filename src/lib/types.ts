@@ -43,8 +43,31 @@ export interface InviteResolution {
   valid: boolean;
   role?: Exclude<Role, 'ORG_ADMIN'>;
   organization?: Organization;
-  /** Set when the link is scoped to one program (join straight into it). */
-  course?: { id: string; title: string } | null;
+  /**
+   * Set when the link is scoped to one program: opening it enrols the student
+   * as well as adding them to the workspace, so the page has to describe the
+   * program rather than only name the school.
+   */
+  course?: InviteCourse | null;
+}
+
+/** The program an invite link enrols into, as the join page needs it. */
+export interface InviteCourse {
+  id: string;
+  /** The intake, e.g. "September 2026". */
+  title: string;
+  description?: string | null;
+  category?: string | null;
+  level?: string | null;
+  startDate?: string | null;
+  durationWeeks?: number | null;
+  meetingDays?: number[] | null;
+  meetingTime?: string | null;
+  meetingTimesByDay?: Record<string, string> | null;
+  timezone?: string | null;
+  /** The program above the intake, e.g. "Frontend Development". */
+  parentCourse?: { id: string; title: string } | null;
+  instructor?: { name: string } | null;
 }
 
 export type InviteStatus = 'ACTIVE' | 'EXPIRED' | 'USED_UP' | 'REVOKED';
@@ -410,6 +433,10 @@ export interface Enrollment {
     description: string | null;
     createdAt: string;
     instructor: { id: string; name: string };
+    /** Set while a class of this program is actually running. */
+    liveSessionId?: string | null;
+    /** Start of the next scheduled class, if there is one. */
+    nextSessionAt?: string | null;
   } & Partial<CohortFields>;
 }
 
@@ -533,6 +560,19 @@ export interface HifzEntry {
   notes: string | null;
   sessionId: string | null; // set = logged during this live session
   recordedAt: string;
+  /** Tajweed corrections the teacher marked while hearing this recitation. */
+  tajweedCorrections?: HifzTajweedCorrection[];
+}
+
+/** A Tajweed correction as it appears on the recitation it was heard in. */
+export interface HifzTajweedCorrection {
+  id: string;
+  surahNumber: number;
+  ayahNumber: number;
+  rule: string | null;
+  customLabel: string | null;
+  outcome: string | null;
+  note: string | null;
 }
 
 /** Distinct-ayah progress summary derived from a student's NEW_HIFZ entries. */

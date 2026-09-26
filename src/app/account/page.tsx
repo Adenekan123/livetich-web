@@ -4,6 +4,7 @@ import type { IconType } from 'react-icons';
 import {
   PiCaretRightBold,
   PiChalkboardTeacherBold,
+  PiDeviceMobileBold,
   PiKeyBold,
   PiPaletteBold,
   PiPuzzlePieceBold,
@@ -82,6 +83,15 @@ export default async function AccountPage() {
             icon={PiKeyBold}
             title="Password"
             subtitle="Change your account password"
+          />
+          {/* Everyone can have one, but it earns its place for students: they
+              are the ones joining from a phone, in a hurry, several times a
+              week. */}
+          <SettingsRow
+            href="/account/shortcut"
+            icon={PiDeviceMobileBold}
+            title="Quick access"
+            subtitle="A home-screen shortcut and a 6-digit code, instead of logging in"
           />
           {isAdmin && (
             <SettingsRow

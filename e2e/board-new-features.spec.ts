@@ -1,11 +1,16 @@
 import { test, expect, type Page } from '@playwright/test';
+import { tool } from './board-tools-helper';
 
 // Verifies the three new chalkboard features against the real stack:
 //  1. Full-screen toggle (CSS overlay) enters/exits.
 //  2. Export menu offers this-page / all-pages PDF + PNG, and a PDF actually
 //     downloads (the A4 export path runs end-to-end without throwing).
 //  3. "Start buzzer" opens a modal (picker when questions exist, else create).
-const LIVE_SESSION = 'cmtfiqi9y0001vilcs0gefpq4';
+// The live session these specs drive. Sessions are per-class rows, so this id
+// goes stale whenever the local seed is rebuilt — override it without editing
+// every spec:  LIVE_SESSION=<id> npx playwright test
+const LIVE_SESSION =
+  process.env.LIVE_SESSION ?? 'cmtu8bru50005vi7gvmrogb4a';
 const INSTRUCTOR_STATE = 'e2e/.auth/instructor.json';
 
 test.use({ storageState: INSTRUCTOR_STATE });
@@ -13,16 +18,16 @@ test.use({ storageState: INSTRUCTOR_STATE });
 async function openBoard(page: Page) {
   await page.goto(`/sessions/${LIVE_SESSION}`);
   await page.getByRole('button', { name: /^chalkboard$/i }).click();
-  await expect(page.locator('.tl-container').first()).toBeVisible({ timeout: 20_000 });
-  await expect(page.locator('.tl-container canvas').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.excalidraw-container').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.excalidraw-container canvas').first()).toBeVisible({ timeout: 20_000 });
 }
 
 async function drawStroke(page: Page) {
-  const box = await page.locator('.tl-container').first().boundingBox();
+  const box = await page.locator('.excalidraw-container').first().boundingBox();
   if (!box) throw new Error('no board bounds');
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
-  await page.getByTestId('tools.draw').click();
+  await tool(page, 'freedraw').click();
   await page.mouse.move(cx - 60, cy);
   await page.mouse.down();
   await page.mouse.move(cx, cy - 30, { steps: 4 });

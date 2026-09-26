@@ -41,6 +41,23 @@ export async function importAlocQuestions(params: {
   }
 }
 
+/** Years this subject + exam type can be imported for, newest first. Empty for
+ *  a pair ALOC does not carry — the picker then just takes a typed year. */
+export async function alocYears(
+  subject: string,
+  examType: string,
+): Promise<number[]> {
+  const token = await tokenOrLogin();
+  const qs = new URLSearchParams({ subject, examType });
+  try {
+    return await api<number[]>(`/exams/import/aloc/years?${qs}`, { token });
+  } catch {
+    // Suggestions are a convenience, never a gate: if we cannot reach them the
+    // instructor can still type the year they want.
+    return [];
+  }
+}
+
 export async function createExam(
   courseId: string,
   payload: { title: string; durationMinutes: number; questions: ExamQuestionInput[] },

@@ -13,9 +13,14 @@ const initial: AuthFormState = { error: null };
 export function JoinForm({
   inviteToken,
   orgName,
+  courseId = null,
+  enrolling = false,
 }: {
   inviteToken: string;
   orgName: string;
+  /** The program this link enrols into, carried through signup. */
+  courseId?: string | null;
+  enrolling?: boolean;
 }) {
   const [state, action] = useActionState(register, initial);
   const loginHref = `/login?next=${encodeURIComponent(`/join/${inviteToken}`)}`;
@@ -27,13 +32,16 @@ export function JoinForm({
         <div className="rounded-xl border border-signal-200 bg-signal-50 px-4 py-3 text-sm text-signal-800">
           That email is already registered.{' '}
           <Link href={loginHref} className="font-semibold underline hover:text-signal-600">
-            Log in to join {orgName} →
+            {enrolling ? `Log in to enrol with ${orgName}` : `Log in to join ${orgName}`} →
           </Link>
         </div>
       ) : (
         <FormError message={state.error} />
       )}
       <input type="hidden" name="inviteToken" value={inviteToken} />
+      {courseId && (
+        <input type="hidden" name="courseId" value={courseId} />
+      )}
 
       <div className="space-y-1.5">
         <label htmlFor="name" className={labelClass}>

@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import type { StudentAssignment } from '@/lib/types';
 import { cardClass, cn } from '@/lib/ui';
 import { SubmitAssignmentForm } from './submit-assignment-form';
+import { RichText } from '@/components/rich-text';
 
 type Tab = 'current' | 'past';
 
@@ -180,9 +181,7 @@ export function StudentAssignments({
                 </div>
 
                 {a.instructions && (
-                  <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-600">
-                    {a.instructions}
-                  </p>
+                  <RichText className="mt-2 text-sm text-neutral-600">{a.instructions}</RichText>
                 )}
 
                 {isEnrolled ? (

@@ -8,10 +8,11 @@ import {
   enabledPluginKeys,
   PLUGIN_CODE_INSTRUCTION,
   PLUGIN_ISLAMIC_EDUCATION,
+  PLUGIN_MATHS_SCIENCES,
   PLUGIN_TEST_PREP,
 } from '@/lib/plugins';
 import type { CourseDetail, LiveSession } from '@/lib/types';
-import { ClassRoom } from './class-room';
+import { RoomEntry } from './room-entry';
 
 export default async function SessionPage(props: {
   params: Promise<{ id: string }>;
@@ -44,10 +45,12 @@ export default async function SessionPage(props: {
     throw e;
   }
   // Which add-on packs this org has on — gate the pack-specific room surfaces
-  // (mushaf + Hifz for Islamic Education; the shared code editor for Code).
+  // (mushaf + Hifz for Islamic Education; the shared code editor for Code; the
+  // chalkboard's formula tool for Maths & Sciences).
   const packs = await enabledPluginKeys(token);
   const islamicEducation = packs.has(PLUGIN_ISLAMIC_EDUCATION);
   const codeInstruction = packs.has(PLUGIN_CODE_INSTRUCTION);
+  const mathsSciences = packs.has(PLUGIN_MATHS_SCIENCES);
   const testPrep = packs.has(PLUGIN_TEST_PREP);
 
   if (session.status === 'ENDED') {
@@ -84,18 +87,20 @@ export default async function SessionPage(props: {
     );
   }
 
-  // The classroom renders full-screen (fixed inset-0) with its own top bar.
+  // The prejoin screen comes first; past it the classroom renders full-screen
+  // (fixed inset-0) with its own top bar.
   return (
-    <ClassRoom
+    <RoomEntry
       sessionId={id}
       courseId={session.courseId}
       courseTitle={course.title}
       me={{ userId: user.sub, name: user.name, role: user.role }}
       teaching={teaching}
+      live={session.status === 'LIVE'}
       islamicEducation={islamicEducation}
       codeInstruction={codeInstruction}
+      mathsSciences={mathsSciences}
       testPrep={testPrep}
-      tldrawLicenseKey={process.env.TLDRAW_LICENSE_KEY}
     />
   );
 }

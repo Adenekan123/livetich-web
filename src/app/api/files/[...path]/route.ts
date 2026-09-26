@@ -1,5 +1,7 @@
+import { cookies } from 'next/headers';
 import { baseUrl } from '@/lib/api';
 import { getToken } from '@/lib/auth';
+import { RECORDER_COOKIE } from '@/lib/recorder-cookie';
 
 /**
  * Authenticated proxy for uploaded submission blobs (recitation audio, images,
@@ -13,7 +15,15 @@ export async function GET(
   ctx: { params: Promise<{ path: string[] }> },
 ) {
   const { path } = await ctx.params;
-  const token = await getToken();
+  // The recording browser has no session cookie — it holds one recorder token,
+  // and an <img> or <embed> cannot send a header. The recorder page therefore
+  // parks that token in a cookie of its own, which is the only thing this
+  // proxy will accept in place of a session. The API still decides what a
+  // recorder token may read.
+  const token =
+    (await getToken()) ??
+    (await cookies()).get(RECORDER_COOKIE)?.value ??
+    null;
   if (!token) return new Response('Unauthorized', { status: 401 });
 
   // Use the server-side base URL (internal Docker network when set) — reaching

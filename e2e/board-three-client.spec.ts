@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Browser, devices } from '@playwright/test';
+import { tool } from './board-tools-helper';
 
 // Regression cover for: "board works with instructor + a mobile student, but when
 // another (desktop) user joins, everything stops — though 'Let students draw'
@@ -11,11 +12,16 @@ import { test, expect, type Page, type Browser, devices } from '@playwright/test
 //
 // Before the fix the escaping throw also surfaces as an uncaught pageerror, so we
 // assert BOTH: sync keeps flowing after the desktop joins, AND no page errors.
-const LIVE_SESSION = 'cmtfiqi9y0001vilcs0gefpq4';
+// The live session these specs drive. Sessions are per-class rows, so this id
+// goes stale whenever the local seed is rebuilt — override it without editing
+// every spec:  LIVE_SESSION=<id> npx playwright test
+const LIVE_SESSION =
+  process.env.LIVE_SESSION ?? 'cmtu8bru50005vi7gvmrogb4a';
 const INSTRUCTOR_STATE = 'e2e/.auth/instructor.json';
 const STUDENT_STATE = 'e2e/.auth/student.json';
 
-const shapeCount = (p: Page) => p.locator('.tl-shape').count();
+const shapeCount = (p: Page) =>
+  p.evaluate(() => window.__livetichBoard?.getSceneElements().length ?? 0);
 
 // The #8 freeze surfaces as an UNCAUGHT exception (a throw escaping the Yjs
 // observer) — that's the signal we assert on. Console.error is deliberately NOT
@@ -29,8 +35,8 @@ function trackErrors(page: Page, label: string, sink: string[]) {
 async function openBoardInstructor(page: Page) {
   await page.goto(`/sessions/${LIVE_SESSION}`);
   await page.getByRole('button', { name: /^chalkboard$/i }).click();
-  await expect(page.locator('.tl-container').first()).toBeVisible({ timeout: 20_000 });
-  await expect(page.locator('.tl-container canvas').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.excalidraw-container').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.excalidraw-container canvas').first()).toBeVisible({ timeout: 20_000 });
 }
 
 // A student follows the presenter onto the board automatically; just wait for the
@@ -40,23 +46,23 @@ async function openBoardStudent(page: Page) {
   await expect(page.getByRole('button', { name: /^leave$/i })).toBeVisible({ timeout: 20_000 });
   const closeChat = page.getByRole('button', { name: /close panel/i });
   if (await closeChat.isVisible().catch(() => false)) await closeChat.click();
-  await expect(page.locator('.tl-container').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.excalidraw-container').first()).toBeVisible({ timeout: 20_000 });
 }
 
 async function clearBoard(page: Page) {
-  await page.getByTestId('tools.select').click();
+  await tool(page, 'selection').click();
   await page.keyboard.press('Escape');
-  await page.locator('.tl-container').first().click({ position: { x: 120, y: 260 } });
+  await page.locator('.excalidraw-container').first().click({ position: { x: 120, y: 260 } });
   await page.keyboard.press('Control+a');
   await page.keyboard.press('Delete');
 }
 
 async function drawStroke(page: Page, dx = 0) {
-  const box = await page.locator('.tl-container').first().boundingBox();
+  const box = await page.locator('.excalidraw-container').first().boundingBox();
   if (!box) throw new Error('no board bounds');
   const cx = box.x + box.width / 2 + dx;
   const cy = box.y + box.height / 2;
-  await page.getByTestId('tools.draw').click();
+  await tool(page, 'freedraw').click();
   await page.mouse.move(cx - 80, cy);
   await page.mouse.down();
   await page.mouse.move(cx - 30, cy - 30, { steps: 5 });
@@ -162,7 +168,7 @@ test.describe('live board — three-client sync (desktop joins mid-session)', ()
 
     // The DESKTOP student draws — it must sync to the instructor and the mobile
     // student (student-originated edits still flow with three clients present).
-    await expect(desktop.page.getByTestId('tools.draw')).toBeVisible({ timeout: 15_000 });
+    await expect(tool(desktop.page, 'freedraw')).toBeVisible({ timeout: 15_000 });
     await drawStroke(desktop.page, 40);
     await expect.poll(() => shapeCount(desktop.page), { timeout: 8_000 }).toBeGreaterThan(0);
     await expect.poll(() => shapeCount(teacher), { timeout: 20_000 }).toBeGreaterThan(0);

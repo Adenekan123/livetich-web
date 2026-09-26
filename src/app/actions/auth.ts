@@ -47,9 +47,15 @@ export async function login(
   }
   await setToken(result.accessToken);
   // Honour a safe internal `next` (e.g. returning to a /join/<token> invite the
-  // user opened while logged out), else land on the dashboard.
+  // user opened while logged out) — someone following a deep link has already
+  // said where they are going, so don't interrupt them with a picker.
+  //
+  // Otherwise go via /choose-workspace, which asks only when the account has
+  // more than one and redirects straight to the dashboard when it doesn't. The
+  // rule lives there rather than here so there is one place that decides.
   const next = String(formData.get('next') ?? '');
-  const dest = next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard';
+  const dest =
+    next.startsWith('/') && !next.startsWith('//') ? next : '/choose-workspace';
   redirect(result.user.emailVerified ? dest : '/verify-email');
 }
 
@@ -76,7 +82,12 @@ export async function register(
     throw e;
   }
   await setToken(result.accessToken);
-  redirect(result.user.emailVerified ? '/dashboard' : '/verify-email');
+  // Verification still comes first — that gate is not this feature's to
+  // open. Past it, someone who signed up through a program link lands on
+  // the class rather than a dashboard they have to search.
+  if (!result.user.emailVerified) redirect('/verify-email');
+  const courseId = String(formData.get('courseId') ?? '');
+  redirect(courseId ? `/c/${courseId}` : `/dashboard`);
 }
 
 /** Company signup — creates the organization and its first admin together. */
@@ -126,6 +137,8 @@ export interface WorkspaceActionState {
  *  account). Redirects into the joined workspace on success. */
 export async function joinWorkspace(
   inviteToken: string,
+  /** The program this link enrols into, when it is course-scoped. */
+  courseId?: string | null,
 ): Promise<WorkspaceActionState> {
   const token = (await cookies()).get(TOKEN_COOKIE)?.value;
   if (!token) redirect('/login');
@@ -141,7 +154,10 @@ export async function joinWorkspace(
     throw e;
   }
   await setToken(res.accessToken);
-  redirect('/dashboard');
+  // Enrolled through a program link: the useful next screen is the class
+  // itself, which is also how they get the link worth keeping. A dashboard
+  // makes them go looking for what they just joined.
+  redirect(courseId ? `/c/${courseId}` : `/dashboard`);
 }
 
 /** Create a new teaching space on the CURRENT account (become its admin). */

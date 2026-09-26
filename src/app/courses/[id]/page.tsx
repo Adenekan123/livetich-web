@@ -8,6 +8,7 @@ import {
   PiExam,
   PiLightning,
   PiNotePencil,
+  PiPencilLine,
   PiUsers,
 } from 'react-icons/pi';
 import { api, ApiError } from '@/lib/api';
@@ -383,6 +384,14 @@ export default async function CoursePage(props: {
         icon: PiBookOpenText,
         title: 'Hifz & memorization',
         desc: canManage ? 'Set targets, log recitations, track progress' : 'Your memorization targets and recitation log',
+      });
+      teachTools.push({
+        href: `/courses/${id}/tajweed`,
+        icon: PiPencilLine,
+        title: 'Tajweed',
+        desc: canManage
+          ? 'Prepare lesson marks, see what you recorded per student'
+          : 'The Tajweed corrections from your recitations',
       });
     }
   }

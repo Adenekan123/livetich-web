@@ -6,7 +6,7 @@ import { useSyncExternalStore } from 'react';
  * Landing theme switch. The source of truth is the data-theme attribute on
  * <html> (which the lp-* CSS tokens read); the pre-paint script in the layout
  * sets its initial value. We read it reactively with useSyncExternalStore —
- * no effect, no hydration mismatch (server snapshot is "dark", the client
+ * no effect, no hydration mismatch (server snapshot is "light", the client
  * re-syncs to the real attribute) — and flip it on click.
  */
 function subscribe(onChange: () => void) {
@@ -19,7 +19,7 @@ function subscribe(onChange: () => void) {
 }
 const getSnapshot = () =>
   document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
-const getServerSnapshot = () => 'dark' as const;
+const getServerSnapshot = () => 'light' as const;
 
 export function ThemeToggle({ className = '' }: { className?: string }) {
   const theme = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);

@@ -178,13 +178,8 @@ async function live(page, { caption, goto }) {
     await page.waitForTimeout(900);
   }
 
-  // Templates / import.
-  const axes = page.getByRole('button', { name: /^axes$/i });
-  if (await axes.isVisible().catch(() => false)) {
-    await axes.click().catch(() => {});
-    await page.waitForTimeout(900);
-  }
-  await caption('Drop in PDFs, templates and images', 3400, true);
+  // Import.
+  await caption('Drop in PDFs, Google files and images', 3400, true);
 
   // Buzzer.
   const startBz = page.getByRole('button', { name: /start buzzer/i });
