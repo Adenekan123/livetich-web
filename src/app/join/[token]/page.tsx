@@ -5,6 +5,7 @@ import { getCurrentUser } from '@/lib/auth';
 import type { InviteResolution } from '@/lib/types';
 import { JoinForm } from './join-form';
 import { JoinWorkspaceButton } from './join-workspace-button';
+import { ProgramBrief } from './program-brief';
 
 export const metadata = { title: 'Join — livetich' };
 
@@ -51,14 +52,26 @@ export default async function JoinPage(props: {
   const roleLabel = res.role === 'INSTRUCTOR' ? 'instructor' : 'student';
   const user = await getCurrentUser().catch(() => null);
 
+  // A course-scoped link is an enrolment page, not a workspace invite. It
+  // leads with the program, because that is what the person was sold.
+  const program = res.course ?? null;
+  const enrolling = Boolean(program) && res.role === "STUDENT";
+  const heading = program
+    ? (program.parentCourse?.title ?? program.title)
+    : `Join ${res.organization.name}`;
+
   // Signed in already: join this workspace on the existing account — no second
   // signup. (Previously a signed-in visitor was bounced to their dashboard and
   // could never accept the invite.)
   if (user) {
     return (
       <AuthShell
-        title={`Join ${res.organization.name}`}
-        subtitle={`Add this ${roleLabel} workspace to your account — no new signup needed.`}
+        title={heading}
+        subtitle={
+          enrolling
+            ? `Enrol with ${res.organization.name} on your existing account.`
+            : `Add this ${roleLabel} workspace to your account — no new signup needed.`
+        }
         footer={
           <p className="mt-6 text-sm text-neutral-500">
             Signed in as{' '}
@@ -72,10 +85,13 @@ export default async function JoinPage(props: {
           </p>
         }
       >
+        {program && <ProgramBrief course={program} heading={heading} />}
         <JoinWorkspaceButton
           inviteToken={token}
           orgName={res.organization.name}
           roleLabel={roleLabel}
+          courseId={program?.id ?? null}
+          enrolling={enrolling}
         />
       </AuthShell>
     );
@@ -83,10 +99,14 @@ export default async function JoinPage(props: {
 
   return (
     <AuthShell
-      title={`Join ${res.organization.name}`}
-      subtitle={`Create your ${roleLabel} account${
-        res.organization.tagline ? ` — ${res.organization.tagline}` : ''
-      }`}
+      title={heading}
+      subtitle={
+        enrolling
+          ? `Create your account to enrol with ${res.organization.name}.`
+          : `Create your ${roleLabel} account${
+              res.organization.tagline ? ` — ${res.organization.tagline}` : ''
+            }`
+      }
       footer={
         <p className="mt-6 text-sm text-neutral-500">
           Already have an account?{' '}
@@ -94,12 +114,18 @@ export default async function JoinPage(props: {
             href={`/login?next=${encodeURIComponent(`/join/${token}`)}`}
             className="font-semibold text-signal-700 hover:text-signal-600"
           >
-            Log in to join
+            {enrolling ? 'Log in to enrol' : 'Log in to join'}
           </Link>
         </p>
       }
     >
-      <JoinForm inviteToken={token} orgName={res.organization.name} />
+      {program && <ProgramBrief course={program} heading={heading} />}
+      <JoinForm
+        inviteToken={token}
+        orgName={res.organization.name}
+        courseId={program?.id ?? null}
+        enrolling={enrolling}
+      />
     </AuthShell>
   );
 }
