@@ -444,11 +444,18 @@ export function PreJoin({
         </Link>
       </header>
 
-      <div className="mx-auto flex min-h-[calc(100dvh-5.5rem)] w-full max-w-360 flex-col justify-center gap-8 px-4 pt-4 pb-10 sm:px-6 lg:min-h-[calc(100dvh-7rem)] lg:flex-row lg:items-center lg:gap-16 lg:px-10 lg:py-12 xl:gap-20">
-        {/* Preview */}
-        <div className="min-w-0 lg:flex-[1.25]">
+      <div className="mx-auto flex min-h-[calc(100dvh-5.5rem)] w-full max-w-360 flex-col justify-center gap-6 px-4 pt-4 pb-8 sm:gap-8 sm:px-6 sm:pb-10 lg:min-h-[calc(100dvh-7rem)] lg:flex-row lg:items-center lg:gap-16 lg:px-10 lg:py-12 xl:gap-20">
+        {/* Preview. `--level` lives here so both the desktop meter and the
+            phone's mic button can read it. */}
+        <div
+          ref={meterRef}
+          style={{ '--level': 0 } as React.CSSProperties}
+          className="min-w-0 lg:flex-[1.25]"
+        >
           <div className="rounded-[1.4rem] bg-white p-1.5 shadow-[0_18px_40px_-24px_rgba(15,46,42,0.35)] ring-1 ring-neutral-200/80 sm:rounded-[1.6rem]">
-            <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-neutral-900 sm:rounded-[1.2rem]">
+            {/* Portrait on a phone, as a phone camera frames you; capped so
+                the title and Join still fit on a short screen. */}
+            <div className="relative aspect-[4/5] max-h-[52dvh] w-full overflow-hidden rounded-2xl bg-neutral-900 sm:aspect-video sm:max-h-none sm:rounded-[1.2rem]">
               <video
                 ref={videoRef}
                 autoPlay
@@ -462,10 +469,10 @@ export function PreJoin({
 
               {(!ready || !prefs.cameraOn) && (
                 // Bottom padding on phones keeps the message clear of the
-                // name chip, which sits in the same short frame.
-                <div className="absolute inset-0 grid place-items-center pb-9 sm:pb-0">
-                  <div className="flex flex-col items-center gap-2 px-4 text-center sm:gap-4">
-                    <span className="grid h-14 w-14 place-items-center rounded-full bg-signal-700 text-xl font-bold text-white sm:h-24 sm:w-24 sm:text-3xl">
+                // round controls laid over the bottom of the frame.
+                <div className="absolute inset-0 grid place-items-center pb-16 sm:pb-0">
+                  <div className="flex flex-col items-center gap-3 px-4 text-center sm:gap-4">
+                    <span className="grid h-20 w-20 place-items-center rounded-full bg-signal-700 text-2xl font-bold text-white sm:h-24 sm:w-24 sm:text-3xl">
                       {initials(displayName)}
                     </span>
                     <p className="text-sm text-white/90 sm:text-base">
@@ -481,14 +488,36 @@ export function PreJoin({
                 </div>
               )}
 
-              <p className="absolute bottom-3 left-3 max-w-[70%] truncate rounded-full bg-neutral-950/70 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/15 backdrop-blur-sm sm:bottom-4 sm:left-4 sm:px-3.5 sm:py-1.5 sm:text-sm">
+              <p className="absolute top-3 left-3 max-w-[70%] truncate rounded-full bg-neutral-950/70 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/15 backdrop-blur-sm sm:top-auto sm:bottom-4 sm:left-4 sm:px-3.5 sm:py-1.5 sm:text-sm">
                 {displayName}
               </p>
+
+              {/* Phones: the two toggles live on the preview, as in a phone
+                  video call. No device menus — the phone picks those. */}
+              <div className="absolute inset-x-0 bottom-4 flex justify-center gap-4 sm:hidden">
+                <RoundToggle
+                  on={prefs.micOn}
+                  disabled={!ready}
+                  onClick={toggleMic}
+                  label={
+                    prefs.micOn ? 'Turn microphone off' : 'Turn microphone on'
+                  }
+                  icon={<MicIcon off={!prefs.micOn} />}
+                  speaking={prefs.micOn}
+                />
+                <RoundToggle
+                  on={prefs.cameraOn}
+                  disabled={!ready}
+                  onClick={toggleCamera}
+                  label={prefs.cameraOn ? 'Turn camera off' : 'Turn camera on'}
+                  icon={<CameraIcon off={!prefs.cameraOn} />}
+                />
+              </div>
             </div>
           </div>
 
           {/* The two decisions you make with your hands, not a menu. */}
-          <div className="mt-5 flex flex-wrap items-center gap-3 sm:mt-6">
+          <div className="mt-6 hidden flex-wrap items-center gap-3 sm:flex">
             <Toggle
               on={prefs.cameraOn}
               disabled={!ready}
@@ -512,8 +541,6 @@ export function PreJoin({
 
             <div className="flex w-full min-w-40 items-center gap-3 sm:w-auto sm:flex-1 sm:pl-2">
               <div
-                ref={meterRef}
-                style={{ '--level': 0 } as React.CSSProperties}
                 className="h-2 flex-1 overflow-hidden rounded-full bg-neutral-200"
                 role="meter"
                 aria-label="Microphone level"
@@ -548,8 +575,8 @@ export function PreJoin({
           </div>
         </div>
 
-        {/* Class, devices, and the button */}
-        <div className="min-w-0 lg:flex-1">
+        {/* Class, devices, and the button. On a phone: chip, name, Join. */}
+        <div className="min-w-0 text-center sm:text-left lg:flex-1">
           {live ? (
             <span className="inline-flex items-center gap-2 rounded-full bg-rose-50 px-3.5 py-1.5 text-sm font-semibold text-rose-700 ring-1 ring-rose-200">
               <span className="animate-live h-1.5 w-1.5 rounded-full bg-rose-600" />
@@ -562,10 +589,10 @@ export function PreJoin({
             </span>
           )}
 
-          <h1 className="mt-4 font-sans! text-3xl leading-tight font-bold tracking-[-0.02em] text-balance text-neutral-950 sm:mt-5 sm:text-4xl lg:text-5xl">
+          <h1 className="mt-3 font-sans! text-2xl leading-tight font-bold tracking-[-0.02em] text-balance text-neutral-950 sm:mt-5 sm:text-4xl lg:text-5xl">
             {courseTitle}
           </h1>
-          <p className="mt-2 max-w-prose text-base text-pretty text-neutral-500 sm:mt-3 sm:text-lg">
+          <p className="mt-3 hidden max-w-prose text-lg text-pretty text-neutral-500 sm:block">
             {teaching
               ? 'Your class is waiting on you. Check your camera and microphone, then open the room.'
               : live
@@ -573,7 +600,7 @@ export function PreJoin({
                 : 'You can set up now — the room opens when your instructor arrives.'}
           </p>
 
-          <div className="mt-6 space-y-3 sm:mt-8 sm:space-y-4">
+          <div className="mt-8 hidden space-y-4 sm:block">
             <DeviceRow
               label="Camera"
               value={prefs.cameraDeviceId}
@@ -610,14 +637,14 @@ export function PreJoin({
           </div>
 
           {phase === 'denied' && (
-            <p className="mt-5 rounded-xl bg-accent-50 px-4 py-3 text-sm text-accent-800 ring-1 ring-accent-200">
+            <p className="mt-5 rounded-xl bg-accent-50 px-4 py-3 text-left text-sm text-accent-800 ring-1 ring-accent-200">
               Your browser is blocking the camera and microphone. Open the
               padlock beside the web address, allow them, then reload this page.
               You can still join and turn them on later.
             </p>
           )}
           {phase === 'unavailable' && (
-            <p className="mt-5 rounded-xl bg-white px-4 py-3 text-sm text-neutral-600 ring-1 ring-neutral-200">
+            <p className="mt-5 rounded-xl bg-white px-4 py-3 text-left text-sm text-neutral-600 ring-1 ring-neutral-200">
               {problem ?? explain('NotFoundError')}
             </p>
           )}
@@ -625,7 +652,7 @@ export function PreJoin({
           <button
             type="button"
             onClick={join}
-            className="group mt-7 inline-flex h-14 w-full items-center justify-center gap-2.5 rounded-full bg-signal-700 px-6 text-base font-semibold text-white shadow-[0_12px_24px_-14px_rgba(15,118,110,0.7)] transition duration-150 ease-out hover:bg-signal-800 focus-visible:ring-2 focus-visible:ring-signal-600 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-50 focus-visible:outline-none active:translate-y-px sm:mt-8 sm:h-15 sm:text-lg"
+            className="group mt-6 inline-flex h-14 w-full items-center justify-center gap-2.5 rounded-full bg-signal-700 px-6 text-base font-semibold text-white shadow-[0_12px_24px_-14px_rgba(15,118,110,0.7)] transition duration-150 ease-out hover:bg-signal-800 focus-visible:ring-2 focus-visible:ring-signal-600 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-50 focus-visible:outline-none active:translate-y-px sm:mt-8 sm:h-15 sm:text-lg"
           >
             {teaching ? 'Open the room' : 'Join class'}
             <ArrowIcon />
@@ -709,6 +736,57 @@ function Toggle({
         <ChevronIcon className="h-4 w-4 opacity-80" />
       </button>
     </div>
+  );
+}
+
+/**
+ * The phone's toggle: a round button on the preview. Off is solid red so it
+ * reads at a glance, as in any phone call. With `speaking`, the outline swells
+ * with the mic level — the page's "we can hear you" on a screen too small for
+ * a meter.
+ */
+function RoundToggle({
+  on,
+  disabled,
+  onClick,
+  label,
+  icon,
+  speaking = false,
+}: {
+  on: boolean;
+  disabled: boolean;
+  onClick: () => void;
+  label: string;
+  icon: React.ReactNode;
+  speaking?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-pressed={on}
+      aria-label={label}
+      style={
+        speaking && on
+          ? {
+              boxShadow:
+                '0 0 0 calc(var(--level, 0) * 7px) rgba(52, 211, 153, 0.55)',
+              transition: 'box-shadow 60ms linear',
+            }
+          : undefined
+      }
+      className={cn(
+        'grid h-14 w-14 place-items-center rounded-full text-white [&>svg]:h-6 [&>svg]:w-6',
+        'focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-900 focus-visible:outline-none',
+        'active:scale-95 disabled:opacity-50',
+        on
+          ? 'border border-white/50 bg-neutral-950/35 backdrop-blur-md'
+          : 'bg-rose-600',
+      )}
+    >
+      {icon}
+    </button>
   );
 }
 
