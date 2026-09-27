@@ -68,10 +68,12 @@ import { QuranReader } from './quran-reader';
 import { useTajweed } from './use-tajweed';
 import { RecordButton } from './record-button';
 import {
+  playClassEndTone,
+  playJoinTone,
   primeTones,
-  startToneLoop,
+  startQuestionTone,
   stopAllToneLoops,
-  stopToneLoop,
+  stopQuestionTone,
 } from './tone-player';
 
 // Excalidraw touches browser-only APIs, so it must not render on the server.
@@ -353,7 +355,13 @@ export function ClassRoom({
   // The question tone runs for as long as the question does, so every path out
   // of an open round has to switch it off — answered, timed out, dismissed,
   // or the room closing under it. Centralised here so none of them can forget.
-  const stopBuzzerTone = () => stopToneLoop('buzzerQuestion');
+  const stopBuzzerTone = () => stopQuestionTone();
+  // Who was in the room at the last presence update, so the instructor's join
+  // sound fires for arrivals only. Null until the first list, which is who was
+  // already here rather than anyone arriving.
+  const presentRef = useRef<Set<string> | null>(null);
+  // When the join sound last played: a burst of arrivals gets one sound.
+  const joinToneAtRef = useRef(0);
   // Voice-note recording (chat).
   const [recording, setRecording] = useState(false);
   const [uploadingVoice, setUploadingVoice] = useState(false);
@@ -456,7 +464,22 @@ export function ClassRoom({
       });
     });
     socket.on('disconnect', () => setConnected(false));
-    socket.on('room:presence', (p) => setUsers(p.users));
+    socket.on('room:presence', (p) => {
+      setUsers(p.users);
+      const before = presentRef.current;
+      presentRef.current = new Set(p.users.map((u) => u.userId));
+      // Only the instructor hears arrivals — a class of thirty arriving should
+      // not be thirty sounds for everyone.
+      if (!before || !isInstructor) return;
+      const arrived = p.users.some(
+        (u) =>
+          u.role === 'STUDENT' && u.userId !== me.userId && !before.has(u.userId),
+      );
+      if (arrived && Date.now() - joinToneAtRef.current > 2000) {
+        joinToneAtRef.current = Date.now();
+        playJoinTone();
+      }
+    });
     socket.on('chat:history', (p) => setMessages(p.messages));
     socket.on('chat:message', (m) => {
       setMessages((prev) => [...prev, m]);
@@ -562,11 +585,11 @@ export function ClassRoom({
           setBuzzerDeadline(
             Date.now() + (p.state.question?.timeLimitSec ?? 0) * 1000,
           );
-          // A round is a countdown, so the cue is a countdown too: the tone
-          // repeats under the question and stops the moment it is resolved,
-          // rather than a single buzz at the top that says nothing about the
-          // time draining away.
-          void startToneLoop('buzzerQuestion');
+          // A round is a countdown, so the cue is a countdown too: a chime as
+          // the question appears, then ticks timed to this round's limit that
+          // quicken for the last five seconds, stopping the moment it is
+          // resolved.
+          startQuestionTone(p.state.question?.timeLimitSec ?? 0);
         }
       } else if (p.state.phase === 'WINNER' || p.state.phase === 'TIMEOUT') {
         setBuzzerDeadline(null);
@@ -605,6 +628,12 @@ export function ClassRoom({
       }
       setNotice(e.message);
       setTimeout(() => setNotice(null), 4000);
+    });
+    // Class is over, in every org. The instructor already heard the class-end
+    // sound from their own End action, so only students play it here.
+    socket.on('room:ended', () => {
+      stopBuzzerTone();
+      if (!isInstructor) playClassEndTone();
     });
     // The instructor ended class and this org removes students on end. The
     // instructor navigates from their own End action, so only students act here.
@@ -720,9 +749,9 @@ export function ClassRoom({
       } catch {
         /* audio unavailable — ignore */
       }
-      // The recorded tones need the same gesture, and the buzzer one is 300KB:
-      // fetching and decoding it now means the first round of the lesson starts
-      // on the beat instead of after a download.
+      // The tone player's context needs the same gesture — the buzzer question
+      // tone plays through it — and warming the recorded tones now means the
+      // first one plays on time instead of after a download.
       primeTones();
       window.removeEventListener('pointerdown', unlock);
       window.removeEventListener('touchstart', unlock);
@@ -892,6 +921,9 @@ export function ClassRoom({
           }
         }
         await endSession(sessionId, courseId);
+        // Played here rather than on `room:ended`: this client navigates away
+        // straight after, before that event could reach it.
+        playClassEndTone();
       }
       router.push(`/courses/${courseId}`);
     });
