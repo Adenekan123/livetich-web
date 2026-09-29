@@ -327,6 +327,18 @@ export function playJoinTone(): void {
   });
 }
 
+/** The class has started: a bright rising C major arpeggio up to the octave
+ *  (C5 E5 G5 C6). Four notes and a longer last one keep it from being taken
+ *  for the buzzer's three-note question chime. */
+export function playClassStartTone(): void {
+  playCue(1.6, (out, t) => {
+    [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+      note(out, t + i * 0.13, i === 3 ? 1.0 : 0.35, freq, 'triangle', 0.18);
+      note(out, t + i * 0.13, 0.25, freq * 2, 'sine', 0.04);
+    });
+  });
+}
+
 /** The class has ended: the question chime played downwards (G5 E5 C5), so
  *  the lesson closes on the sound that opened its rounds, resolved. */
 export function playClassEndTone(): void {

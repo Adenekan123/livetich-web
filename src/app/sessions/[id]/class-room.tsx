@@ -69,6 +69,7 @@ import { useTajweed } from './use-tajweed';
 import { RecordButton } from './record-button';
 import {
   playClassEndTone,
+  playClassStartTone,
   playJoinTone,
   primeTones,
   startQuestionTone,
@@ -172,6 +173,11 @@ interface Wave {
   id: string;
   name: string;
 }
+
+/** A student must have waited this long for the instructor before their arrival
+ *  counts as the class starting. Shorter gaps are a join racing the first
+ *  presence list, or a reconnect — neither is a start. */
+const START_TONE_MIN_WAIT_MS = 3000;
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
@@ -416,6 +422,37 @@ export function ClassRoom({
   // the room, they wait rather than staring at an empty call.
   const instructorPresent = users.some((u) => u.role === 'INSTRUCTOR');
   const waitingForInstructor = !isInstructor && connected && !instructorPresent;
+
+  // The class starts when the instructor arrives, and that is when the start
+  // chime plays. A student hears it only if they were actually waiting — not
+  // on joining a class already under way (the first presence list briefly has
+  // no one in it), and not when a dropped connection hands the instructor
+  // straight back. The instructor hears it once, on going live.
+  const waitingSinceRef = useRef<number | null>(null);
+  const startToneDoneRef = useRef(false);
+  useEffect(() => {
+    if (isInstructor) {
+      if (connected && !startToneDoneRef.current) {
+        startToneDoneRef.current = true;
+        playClassStartTone();
+      }
+      return;
+    }
+    if (waitingForInstructor) {
+      waitingSinceRef.current ??= Date.now();
+      return;
+    }
+    const since = waitingSinceRef.current;
+    waitingSinceRef.current = null;
+    if (
+      connected &&
+      instructorPresent &&
+      since !== null &&
+      Date.now() - since > START_TONE_MIN_WAIT_MS
+    ) {
+      playClassStartTone();
+    }
+  }, [isInstructor, connected, instructorPresent, waitingForInstructor]);
 
   // Keyboard: Escape dismisses the leave/end-class confirmation, matching the
   // standard modal contract (the overlay also closes on backdrop click).
