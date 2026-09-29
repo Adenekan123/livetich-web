@@ -38,6 +38,14 @@ export interface Organization {
   tagline: string | null;
 }
 
+/** GET /invites/:token/standing — is the signed-in viewer already enrolled
+ *  in the program this link is for? */
+export interface InviteStanding {
+  enrolled: boolean;
+  courseId: string | null;
+  organizationId: string | null;
+}
+
 /** GET /invites/:token — resolves a join link for the register page. */
 export interface InviteResolution {
   valid: boolean;

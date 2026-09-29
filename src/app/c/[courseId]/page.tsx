@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { BroadcastRings } from '@/components/broadcast-rings';
 import { Wordmark } from '@/components/logo';
 import { api, ApiError } from '@/lib/api';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser, getToken } from '@/lib/auth';
 import { btn } from '@/lib/ui';
 import { JoinPanel } from './join-panel';
 
@@ -97,6 +97,21 @@ export default async function ClassLinkPage(props: {
   ]);
   if (!card) notFound();
 
+  // A signed-in student with the room open has nothing to decide here — the
+  // program was on the enrol page they just came from, and the camera check
+  // is the next screen anyway. Straight into today's room. Only students:
+  // an admin arriving would shadow-join unannounced, and the instructor has
+  // their own way in. If it fails, the page below still offers the button and
+  // shows the reason when pressed.
+  if (user?.role === 'STUDENT' && card.joinableNow) {
+    const token = await getToken();
+    const joined = await api<{ sessionId: string }>(
+      `/sessions/course/${courseId}/join`,
+      { method: 'POST', token },
+    ).catch(() => null);
+    if (joined) redirect(`/sessions/${joined.sessionId}`);
+  }
+
   const when = formatNext(card.nextAt, card.timezone);
   const title = card.programTitle ?? card.courseTitle;
   const subtitle = card.programTitle ? card.courseTitle : null;
@@ -149,6 +164,7 @@ export default async function ClassLinkPage(props: {
                 joinableNow={card.joinableNow}
                 isLive={card.isLive}
                 when={when}
+                nextAt={card.nextAt}
                 name={user.name}
               />
             ) : (

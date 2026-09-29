@@ -259,6 +259,10 @@ const SYNC_INTERVAL_MS = 50;
 /** The presenter's camera is broadcast less often than strokes — it only needs
  *  to feel attached, not be frame-accurate. */
 const PRESENTER_INTERVAL_MS = 100;
+/** Clearance the tool rail keeps above it (the menu button — matches `top` on
+ *  .shapes-section in board-excalidraw.css) and below it (the zoom bar). */
+const RAIL_TOP_REM = 3.5;
+const RAIL_BOTTOM_REM = 4.5;
 /** The least of the presenter's own screen-share the writing may take up on a
  *  follower's screen before mirroring is abandoned for framing the writing
  *  itself. Half means "at worst, half as prominent as they see it". */
@@ -2326,6 +2330,30 @@ export function BoardExcalidraw({
     mo.observe(wrapper, { childList: true, subtree: true });
     return () => mo.disconnect();
   }, [api, canEdit]);
+
+  // Fit the tool rail between the menu button above it and the zoom bar below.
+  // It is taller than an inline (not full-screen) board has room for, and it
+  // used to be centred, so it ran up over the menu button and its last tool —
+  // the laser — sank under the zoom bar. It shrinks instead, to --rail-scale,
+  // which board-excalidraw.css applies. Scaling rather than scrolling keeps the
+  // menus that hang off the rail from being clipped.
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    const rail = railNode?.closest<HTMLElement>('.shapes-section');
+    if (!wrapper || !rail) return;
+    const fit = () => {
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+      // Keep in step with the rail's top and bottom clearance in the CSS.
+      const room = wrapper.clientHeight - RAIL_TOP_REM * rem - RAIL_BOTTOM_REM * rem;
+      const scale = Math.min(1, Math.max(0.5, room / rail.offsetHeight));
+      wrapper.style.setProperty('--rail-scale', scale.toFixed(3));
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(wrapper);
+    ro.observe(rail);
+    return () => ro.disconnect();
+  }, [railNode]);
 
   // Close the shapes flyout on a click anywhere else, or on Escape.
   useEffect(() => {

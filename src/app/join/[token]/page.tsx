@@ -1,8 +1,10 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { AuthShell } from '@/components/auth-shell';
 import { api } from '@/lib/api';
-import { getCurrentUser } from '@/lib/auth';
-import type { InviteResolution } from '@/lib/types';
+import { getCurrentUser, getToken } from '@/lib/auth';
+import type { InviteResolution, InviteStanding } from '@/lib/types';
+import { GoToClassButton } from './go-to-class-button';
 import { JoinForm } from './join-form';
 import { JoinWorkspaceButton } from './join-workspace-button';
 import { ProgramBrief } from './program-brief';
@@ -13,6 +15,40 @@ export default async function JoinPage(props: {
   params: Promise<{ token: string }>;
 }) {
   const { token } = await props.params;
+
+  // Already enrolled through this link: it leads to the class, not to a second
+  // "Enrol". Asked before the link's own validity on purpose — a student whose
+  // link has since expired or run out of uses is still enrolled.
+  const viewer = await getCurrentUser().catch(() => null);
+  if (viewer) {
+    const authToken = await getToken();
+    const standing = await api<InviteStanding>(`/invites/${token}/standing`, {
+      token: authToken,
+    }).catch(() => null);
+    if (standing?.enrolled && standing.courseId && standing.organizationId) {
+      const classLink = `/c/${standing.courseId}`;
+      // The class reads their role from the workspace they are signed into.
+      if (viewer.organizationId === standing.organizationId) redirect(classLink);
+      return (
+        <AuthShell
+          title="You're already enrolled"
+          subtitle="This program is in another of your workspaces."
+          footer={
+            <p className="mt-6 text-sm text-neutral-500">
+              Signed in as{' '}
+              <span className="font-medium text-neutral-700">{viewer.email}</span>.
+            </p>
+          }
+        >
+          <GoToClassButton
+            organizationId={standing.organizationId}
+            classLink={classLink}
+          />
+        </AuthShell>
+      );
+    }
+  }
+
   // Resolve the invite first — it's shown to both signed-in and signed-out
   // visitors (a signed-in user joins on their existing account rather than
   // being bounced to their dashboard, which is the multi-workspace fix).
