@@ -116,6 +116,8 @@ async function openMushaf(
   const ctx = await browser.newContext({ ...options, storageState: authFile(role) });
   const page = await ctx.newPage();
   await page.goto(`/sessions/${sessionId}`);
+  // Through the pre-join screen: the room itself only mounts past it.
+  await page.getByRole('button', { name: /^(Join class|Open the room)$/ }).click();
   const mushaf = page.locator('[data-ayah="1"]').first();
   if (role === 'instructor') {
     // Switch only once the room has been joined: the join replays the room's
@@ -156,9 +158,14 @@ const letter = (p: Page, ayah: number, w: number, l: number) =>
 const label = (p: Page, ayah: number, text: string) =>
   p.locator(`[data-ayah="${ayah}"] [data-tajweed-label]`, { hasText: text });
 const toolbar = (p: Page) => p.locator('[data-tajweed-toolbar]');
-/** A rule as it is offered: Recent chips carry the rule's name. */
-const rule = (p: Page, name: string | RegExp) =>
-  toolbar(p).getByRole('button', { name, exact: typeof name === 'string' });
+/** The Recent rules dropdown, beside the full rule picker. */
+const recentMenu = (p: Page) => toolbar(p).getByRole('button', { name: 'Recent rules' });
+/** Mark with a rule from Recent: open the dropdown, then choose it. The list
+ *  is drawn outside the toolbar, so the option is looked for on the page. */
+async function pickRecent(p: Page, name: RegExp, how: 'click' | 'tap' = 'click') {
+  await recentMenu(p)[how]();
+  await p.getByRole('option', { name }).first()[how]();
+}
 
 test('a live mark reaches the student, and goes when the teacher clears it', async ({
   browser,
@@ -171,7 +178,7 @@ test('a live mark reaches the student, and goes when the teacher clears it', asy
 
   await teacher.getByRole('button', { name: 'Tajweed', exact: true }).click();
   await word(teacher, 3, 1).click();
-  await rule(teacher, /^Ikhfa haqiqi/).click();
+  await pickRecent(teacher, /^Ikhfa haqiqi/);
 
   const seen = label(student, 3, 'Ikhfa haqiqi');
   await expect(seen).toBeVisible();
@@ -180,7 +187,9 @@ test('a live mark reaches the student, and goes when the teacher clears it', asy
     'dashed',
   );
 
-  await toolbar(teacher).getByRole('button', { name: 'Clear live mark' }).click();
+  // The pick clears once a rule is chosen, so the per-mark clear (which lists
+  // marks on the picked words) is gone; the toolbar's own clear stays.
+  await toolbar(teacher).getByRole('button', { name: 'Clear live (1)', exact: true }).click();
   await expect(seen).toHaveCount(0);
 
   // Live means live: nothing reached the database.
@@ -242,7 +251,7 @@ test.skip('a lesson annotation keeps its note, survives a reload, and goes when 
   await toolbar(teacher)
     .getByPlaceholder('Teacher note (optional)')
     .fill('Keep the sound hidden, with its ghunnah.');
-  await rule(teacher, /^Ikhfa haqiqi/).click();
+  await pickRecent(teacher, /^Ikhfa haqiqi/);
 
   await expect(label(student, 2, 'Ikhfa haqiqi')).toBeVisible();
   await expect.poll(async () => (await listAs(teacherToken)).lesson.length).toBe(1);
@@ -281,7 +290,7 @@ test.skip('a correction is recorded against the student, and only staff and that
   await toolbar(teacher).getByLabel('Student reciting').selectOption(studentId);
   await word(teacher, 1, 0).click();
   await toolbar(teacher).getByRole('button', { name: 'Tajweed issue' }).click();
-  await rule(teacher, /^Qalqalah kubra/).click();
+  await pickRecent(teacher, /^Qalqalah kubra/);
 
   await expect(label(teacher, 1, 'Qalqalah kubra issue')).toBeVisible();
 
@@ -344,7 +353,9 @@ test('a student cannot annotate, and a reference outside the Qur’an is refused
   expect(await offTheText.text()).toContain('has no ayah 9');
 });
 
-test('a mark can hold letters from two different ayahs', async ({ browser }) => {
+// Saved as a Lesson mark, so it waits with the two above: remove the .skip once
+// Lesson is un-commented in tajweed-toolbar.tsx.
+test.skip('a mark can hold letters from two different ayahs', async ({ browser }) => {
   test.setTimeout(180_000);
   const teacher = await openMushaf(browser, 'instructor');
   await turnTo(teacher, 113, 'Al-Falaq');
@@ -360,7 +371,7 @@ test('a mark can hold letters from two different ayahs', async ({ browser }) => 
   await letter(teacher, 3, 4, 1).click();
   await word(teacher, 4, 0).click();
   await letter(teacher, 4, 0, 0).click();
-  await rule(teacher, /^Ikhfa haqiqi/).click();
+  await pickRecent(teacher, /^Ikhfa haqiqi/);
 
   // One mark, named on both ayahs it reaches into.
   await expect(label(student, 3, 'Ikhfa haqiqi')).toBeVisible({ timeout: 20_000 });
@@ -403,7 +414,7 @@ test('on a tablet, a teacher marks single letters by tapping', async ({ browser 
   await firstLetter.tap();
   // Where the next word sits for the student before anything is marked.
   const before = await word(student, 1, 2).boundingBox();
-  await rule(teacher, /^Madd tabi/).tap();
+  await pickRecent(teacher, /^Madd tabi/, 'tap');
 
   await expect(label(student, 1, 'Madd tabi')).toBeVisible();
   // A label floats above its word: the text a student is reading must not
@@ -453,9 +464,8 @@ test('on a phone, the Tajweed controls fit the screen and still mark a word', as
 
   // Every control a teacher reaches for is on the screen, not off its edge.
   const width = teacher.viewportSize()!.width;
-  const ikhfa = rule(teacher, /^Ikhfa haqiqi/);
   for (const control of [
-    ikhfa,
+    recentMenu(teacher),
     toolbar(teacher).getByRole('button', { name: 'Clear picks' }),
     toolbar(teacher).getByRole('button', { name: 'Choose a rule…' }),
     toolbar(teacher).getByRole('button', { name: 'Style' }),
@@ -468,7 +478,7 @@ test('on a phone, the Tajweed controls fit the screen and still mark a word', as
   // …and nothing pushes the page sideways, for either of them.
   expect(await fitsWidth(teacher)).toBe(true);
 
-  await ikhfa.tap();
+  await pickRecent(teacher, /^Ikhfa haqiqi/, 'tap');
   await expect(label(student, 2, 'Ikhfa haqiqi')).toBeVisible();
   expect(await fitsWidth(student)).toBe(true);
 
