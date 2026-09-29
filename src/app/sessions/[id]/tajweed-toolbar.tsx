@@ -1,6 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
 import { createPortal } from 'react-dom';
 import {
   PiCaretDownBold,
@@ -73,8 +81,13 @@ const field =
 const isLive = (m: AnyTajweedMark): m is TajweedTemporaryAnnotation & { live: true } =>
   m.live === true;
 
+/** The narrowest a rule list opens, in px. */
+const MENU_MIN_WIDTH = 288;
+
+type Pickable = { rule: TajweedRule; label: string; arabic: string | null; group: string };
+
 /** Every rule a teacher can choose, with what it can be found by. */
-const PICKABLE: { rule: TajweedRule; label: string; arabic: string | null; group: string }[] =
+const PICKABLE: Pickable[] =
   TAJWEED_RULE_GROUPS.flatMap((g) =>
     g.rules.map((r) => ({
       rule: `${g.key}.${r.key}` as TajweedRule,
@@ -95,9 +108,17 @@ const PICKABLE: { rule: TajweedRule; label: string; arabic: string | null; group
 function RuleCombobox({
   onPick,
   colors,
+  options = PICKABLE,
+  label = 'Choose a rule…',
+  searchable = true,
 }: {
   onPick: (rule: TajweedRule) => void;
   colors: Partial<Record<TajweedRuleGroupKey, string>>;
+  /** The rules on offer — the whole taxonomy unless narrowed (Recent). */
+  options?: readonly Pickable[];
+  label?: string;
+  /** A handful of rules needs no search box; the arrows work on the button. */
+  searchable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -127,19 +148,23 @@ function RuleCombobox({
     const gap = 6;
     const above = r.top - gap;
     const below = window.innerHeight - r.bottom - gap;
+    // At least wide enough for a rule's name and its Arabic — Recent's button
+    // is narrow — but never off the side of the screen.
+    const width = Math.min(Math.max(r.width, MENU_MIN_WIDTH), window.innerWidth - 16);
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8));
     // Upward by preference — the toolbar sits at the bottom of the screen —
     // but downward when there is more room there.
     setPlace(
       above >= Math.min(320, below) || above >= below
         ? {
-            left: r.left,
-            width: r.width,
+            left,
+            width,
             bottom: window.innerHeight - r.top + gap,
             maxHeight: Math.max(180, above - 8),
           }
         : {
-            left: r.left,
-            width: r.width,
+            left,
+            width,
             top: r.bottom + gap,
             maxHeight: Math.max(180, below - 8),
           },
@@ -164,14 +189,14 @@ function RuleCombobox({
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return PICKABLE;
-    return PICKABLE.filter(
+    if (!q) return options;
+    return options.filter(
       (r) =>
         r.label.toLowerCase().includes(q) ||
         r.group.toLowerCase().includes(q) ||
         (r.arabic ?? '').includes(query.trim()),
     );
-  }, [query]);
+  }, [query, options]);
 
   // Close on a click elsewhere, the way a menu is expected to. The list is
   // drawn outside this component's subtree, so it has to be asked separately.
@@ -186,6 +211,22 @@ function RuleCombobox({
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [open]);
+
+  const onListKey = (e: KeyboardEvent) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!open) return setOpen(true);
+      setActive((i) => {
+        const next = e.key === 'ArrowDown' ? i + 1 : i - 1;
+        return (next + matches.length) % Math.max(1, matches.length);
+      });
+    } else if (e.key === 'Enter' && open && matches[active]) {
+      e.preventDefault();
+      choose(matches[active].rule);
+    } else if (e.key === 'Escape') {
+      setOpen(false);
+    }
+  };
 
   const choose = (rule: TajweedRule) => {
     onPick(rule);
@@ -202,6 +243,8 @@ function RuleCombobox({
         aria-expanded={open}
         aria-haspopup="listbox"
         onClick={() => setOpen((v) => !v)}
+        // Without a search box to type in, focus stays here, so the arrows do.
+        onKeyDown={searchable ? undefined : onListKey}
         // The dashboard's card gradient, in the tones that read on a dark
         // panel. Built from the signal tokens rather than a fixed teal, so it
         // follows whatever colour the workspace is themed to.
@@ -210,7 +253,7 @@ function RuleCombobox({
           'h-10 w-full justify-between border-signal-500/30 bg-gradient-to-br from-signal-900/50 to-neutral-900 px-3 text-white hover:from-signal-800/50',
         )}
       >
-        Choose a rule…
+        <span className="truncate">{label}</span>
         <PiCaretDownBold aria-hidden className={cn('transition', open && 'rotate-180')} />
       </button>
 
@@ -230,6 +273,7 @@ function RuleCombobox({
             className="z-50 flex flex-col overflow-hidden rounded-xl border border-signal-500/30 bg-gradient-to-br from-signal-900/60 to-neutral-900 shadow-2xl shadow-black/50 backdrop-blur"
           >
             {/* The search never scrolls away: only the list below it does. */}
+            {searchable && (
             <div className="shrink-0 border-b border-signal-500/20 p-2">
             <input
               autoFocus
@@ -241,24 +285,12 @@ function RuleCombobox({
                 setQuery(e.target.value);
                 setActive(0);
               }}
-              onKeyDown={(e) => {
-                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  setActive((i) => {
-                    const next = e.key === 'ArrowDown' ? i + 1 : i - 1;
-                    return (next + matches.length) % Math.max(1, matches.length);
-                  });
-                } else if (e.key === 'Enter' && matches[active]) {
-                  e.preventDefault();
-                  choose(matches[active].rule);
-                } else if (e.key === 'Escape') {
-                  setOpen(false);
-                }
-              }}
+              onKeyDown={onListKey}
               className={cn(field, 'w-full border-signal-500/25 bg-neutral-950/40')}
             />
           </div>
-          <ul role="listbox" aria-label="Tajweed rules" className="min-h-0 flex-1 overflow-y-auto p-1">
+            )}
+          <ul role="listbox" aria-label={searchable ? 'Tajweed rules' : label} className="min-h-0 flex-1 overflow-y-auto p-1">
             {matches.length === 0 && (
               <li className="px-2.5 py-3 text-center text-xs text-neutral-500">
                 No rule matches “{query}”.
@@ -390,6 +422,13 @@ export function TajweedToolbar({
       .reverse();
     return [...new Set([...used, ...RECENT_FALLBACK])].slice(0, 5);
   }, [api.live]);
+  const recentOptions = useMemo(
+    () =>
+      recent
+        .map((rule) => PICKABLE.find((p) => p.rule === rule))
+        .filter((p): p is Pickable => !!p),
+    [recent],
+  );
 
   /** Marks touching any word the selection touches, so what is already there
    *  is in front of the teacher before they add another. */
@@ -436,27 +475,6 @@ export function TajweedToolbar({
   };
 
   /** A rule as a chip: one tap marks what is picked. */
-  const RuleChip = ({ rule }: { rule: TajweedRule }) => (
-    <button
-      type="button"
-      onClick={() => applyRule(rule)}
-      title={ruleArabic(rule) ?? undefined}
-      className={cn(tool, 'h-10 shrink-0 whitespace-nowrap px-3')}
-    >
-      <span
-        aria-hidden
-        className="h-2.5 w-2.5 rounded-full"
-        style={{ backgroundColor: ruleColor(rule, api.prefs.colors) }}
-      />
-      {ruleLabel(rule, null)}
-      {ruleArabic(rule) && (
-        <span dir="rtl" lang="ar" className="font-quran text-sm text-neutral-400">
-          {ruleArabic(rule)}
-        </span>
-      )}
-    </button>
-  );
-
   const statusMessage = hint ?? api.error;
 
   return (
@@ -739,17 +757,19 @@ export function TajweedToolbar({
           )}
           {/* The teacher note is switched off with Lesson and Correction: a
               live mark is spoken aloud, not read later. */}
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
-            Recent
-          </p>
-          {/* One line that scrolls sideways: a long list of rules never pushes
-              the text off the screen. */}
-          <div className="flex gap-1.5 overflow-x-auto pb-1">
-            {recent.map((rule) => (
-              <RuleChip key={rule} rule={rule} />
-            ))}
-          </div>
+          {/* Recent sits beside the full picker as a dropdown of its own, not
+              a row of chips above it: the line it took came out of the space
+              the text being taught has. */}
           <div className="flex flex-wrap items-center gap-2">
+            <div className="min-w-[10rem] flex-1 sm:max-w-[13rem]">
+              <RuleCombobox
+                onPick={applyRule}
+                colors={api.prefs.colors}
+                options={recentOptions}
+                label="Recent rules"
+                searchable={false}
+              />
+            </div>
             <div className="min-w-[14rem] flex-1">
               <RuleCombobox onPick={applyRule} colors={api.prefs.colors} />
             </div>
