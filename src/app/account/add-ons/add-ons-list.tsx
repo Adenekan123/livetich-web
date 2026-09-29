@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
 import { PiCheckBold } from 'react-icons/pi';
 import { setPluginEnabled } from '@/app/actions/org';
 import { cardClass, cn } from '@/lib/ui';
@@ -11,7 +10,6 @@ export function AddOnsList({ plugins }: { plugins: PluginInfo[] }) {
   const [error, setError] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [pending, start] = useTransition();
-  const router = useRouter();
 
   function toggle(p: PluginInfo) {
     setError(null);
@@ -19,8 +17,9 @@ export function AddOnsList({ plugins }: { plugins: PluginInfo[] }) {
     start(async () => {
       const res = await setPluginEnabled(p.key, !p.enabled);
       setBusyKey(null);
+      // The action revalidates this page itself; a router.refresh() on top
+      // would render it (and hit the API) a second time for nothing.
       if (res.error) setError(res.error);
-      else router.refresh();
     });
   }
 

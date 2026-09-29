@@ -157,7 +157,14 @@ export async function startSessionRecording(
 ): Promise<RecordingActionState> {
   const token = await tokenOrLogin();
   try {
-    await api(`/sessions/${sessionId}/recording/start`, { method: 'POST', token });
+    // Starting is slow by nature: the API first checks the recorder page is
+    // served (allowed 15s), then waits for LiveKit to accept the egress. The
+    // default 10s gave up mid-way and reported a working API as unreachable.
+    await api(`/sessions/${sessionId}/recording/start`, {
+      method: 'POST',
+      token,
+      timeoutMs: 45_000,
+    });
     return { error: null, ok: true };
   } catch (e) {
     return {

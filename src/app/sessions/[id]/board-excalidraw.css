@@ -18,12 +18,17 @@
  */
 @media (min-width: 730px) {
   /* Lift the tool palette out of the top grid and park it against the left
-     edge, vertically centred so it clears the menu button above it. */
+     edge, just under the menu button. Not centred: on an inline board the rail
+     is taller than the room, and centring pushed it up over the menu button
+     and its laser down under the zoom bar. Instead it shrinks to fit —
+     --rail-scale is set by the board (RAIL_TOP_REM / RAIL_BOTTOM_REM there
+     must match the 3.5rem top here and the zoom bar's height). */
   .livetich-board .shapes-section {
     position: absolute;
     left: 0.5rem;
-    top: 50%;
-    transform: translateY(-50%);
+    top: 3.5rem;
+    transform: scale(var(--rail-scale, 1));
+    transform-origin: top left;
     justify-content: flex-start;
   }
 
