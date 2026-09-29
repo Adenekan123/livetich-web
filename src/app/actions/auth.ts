@@ -1,7 +1,7 @@
 'use server';
 
 import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
+import { redirect, RedirectType } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { TOKEN_COOKIE } from '@/lib/auth';
 import type { AuthResult } from '@/lib/types';
@@ -87,7 +87,7 @@ export async function register(
   // the class rather than a dashboard they have to search.
   if (!result.user.emailVerified) redirect('/verify-email');
   const courseId = String(formData.get('courseId') ?? '');
-  redirect(courseId ? `/c/${courseId}` : `/dashboard`);
+  redirect(courseId ? `/c/${courseId}` : `/dashboard`, RedirectType.replace);
 }
 
 /** Company signup — creates the organization and its first admin together. */
@@ -117,7 +117,11 @@ export async function registerOrganization(
 }
 
 /** Switch the active workspace, swap in the fresh (org-scoped) token, reload. */
-export async function switchWorkspace(organizationId: string): Promise<void> {
+export async function switchWorkspace(
+  organizationId: string,
+  /** Where to land after — a path on this site; anything else is ignored. */
+  next?: string,
+): Promise<void> {
   const token = (await cookies()).get(TOKEN_COOKIE)?.value;
   if (!token) redirect('/login');
   const res = await api<AuthResult>('/auth/switch-workspace', {
@@ -126,6 +130,10 @@ export async function switchWorkspace(organizationId: string): Promise<void> {
     body: { organizationId },
   });
   await setToken(res.accessToken);
+  // Same-site paths only, so a crafted call cannot bounce anyone off-site.
+  const safe = next && /^\/(?![/\\])/.test(next);
+  // Replace, so Back from the class does not land on the page that sent them.
+  if (safe) redirect(next, RedirectType.replace);
   redirect('/dashboard');
 }
 
@@ -156,8 +164,10 @@ export async function joinWorkspace(
   await setToken(res.accessToken);
   // Enrolled through a program link: the useful next screen is the class
   // itself, which is also how they get the link worth keeping. A dashboard
-  // makes them go looking for what they just joined.
-  redirect(courseId ? `/c/${courseId}` : `/dashboard`);
+  // makes them go looking for what they just joined. Replace, not push: the
+  // class may forward them on to the room, and Back from there should not
+  // return to an enrol page that now only sends them forward again.
+  redirect(courseId ? `/c/${courseId}` : `/dashboard`, RedirectType.replace);
 }
 
 /** Create a new teaching space on the CURRENT account (become its admin). */
