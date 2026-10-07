@@ -220,17 +220,17 @@ function StatCard({
       )}
     >
       <div className="flex items-center justify-between gap-2">
-        <p className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-neutral-400">{label}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">{label}</p>
         {icon && (
           <span className={cn('grid h-8 w-8 place-items-center rounded-lg', teal ? 'bg-signal-100 text-signal-800' : 'bg-neutral-100 text-neutral-600')}>
             {icon}
           </span>
         )}
       </div>
-      <p className={cn('mt-2 text-3xl font-extrabold leading-none tracking-tight', teal ? 'text-signal-800' : 'text-neutral-950')}>
+      <p className={cn('mt-2 text-3xl font-extrabold leading-none tracking-tight tabular-nums', teal ? 'text-signal-800' : 'text-neutral-950')}>
         {value}
       </p>
-      {desc && <p className="mt-1.5 truncate text-sm text-neutral-500">{desc}</p>}
+      {desc && <p className="mt-1.5 truncate text-xs text-neutral-500">{desc}</p>}
     </Link>
   );
 }
@@ -293,13 +293,13 @@ function SchedulePanel({ rows }: { rows: SessionRow[] }) {
           href={`/courses/${s.id}`}
           className="group flex items-center gap-3 py-3 first:pt-0 last:pb-0"
         >
-          <span className="w-14 shrink-0 font-mono text-sm font-bold text-neutral-700">{s.time}</span>
+          <span className="w-16 shrink-0 text-sm font-semibold tabular-nums text-neutral-700">{s.time}</span>
           <span className={cn('h-9 w-[3px] shrink-0 rounded-full', kindDot[s.kind])} />
           <div className="min-w-0 flex-1">
             <p className="truncate text-base font-semibold text-neutral-950 group-hover:text-signal-700">{s.title}</p>
             <p className="truncate text-sm text-neutral-500">{s.instructor}</p>
           </div>
-          <span className={cn('rounded-full px-2 py-0.5 font-mono text-[11px] font-bold uppercase tracking-wide', kindPill[s.kind])}>
+          <span className={cn('rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider', kindPill[s.kind])}>
             {kindLabel[s.kind]}
           </span>
         </Link>
@@ -380,7 +380,7 @@ function StatusPill({ status, label }: { status: CohortStatus; label: string }) 
     COMPLETED: 'bg-neutral-100 text-neutral-600',
   };
   return (
-    <span className={cn('shrink-0 rounded-full px-2 py-0.5 font-mono text-[13.5px] font-bold uppercase tracking-wide', styles[status])}>
+    <span className={cn('shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide', styles[status])}>
       {label}
     </span>
   );
@@ -432,12 +432,12 @@ function DashHead({
   return (
     <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="text-3xl font-extrabold tracking-tight text-neutral-950 sm:text-[34px]">{title}</h1>
-        <p className="mt-1.5 max-w-2xl text-base text-neutral-600">{subtitle}</p>
+        <h1 className="text-2xl font-extrabold tracking-tight text-neutral-950 sm:text-3xl">{title}</h1>
+        <p className="mt-1 max-w-2xl text-sm text-neutral-500">{subtitle}</p>
       </div>
       <div className="flex items-center gap-2">
         {action}
-        <span className="rounded-full border border-neutral-200 bg-white px-3 py-1.5 font-mono text-xs font-bold text-neutral-500">
+        <span className="rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-wider text-neutral-500">
           {todayPill()}
         </span>
         <RefreshButton title="Refresh dashboard" />
@@ -462,21 +462,21 @@ function FirstRunGuide({
       done: hasProgram,
       title: 'Create your first program',
       desc: 'Set a weekly schedule and how many weeks it runs. This is the class your students join live.',
-      href: '/courses',
+      href: '/courses?new=1',
       cta: 'New program',
     },
     {
       done: hasInstructors,
       title: 'Invite your instructors',
       desc: 'Add anyone else who teaches. Skip this if it’s just you.',
-      href: '/account',
+      href: '/account/instructors',
       cta: 'Invite instructors',
     },
     {
       done: hasStudents,
       title: 'Invite your students',
       desc: 'Share a join link — they land straight in, no signup form.',
-      href: '/account',
+      href: '/account/students',
       cta: 'Invite students',
     },
   ];
@@ -617,13 +617,13 @@ async function AdminConsole({ token, name }: { token: string; name: string }) {
               <PanelHeader title="Quick actions" />
               <div className="space-y-2.5">
                 <Link href="/courses" className="flex items-center gap-3 rounded-xl border border-neutral-200 p-3 transition hover:border-neutral-300 hover:bg-neutral-50/60">
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-signal-700 text-white"><PiPlusBold className="h-4 w-4" /></span>
-                  <span className="min-w-0 flex-1"><span className="block text-base font-bold text-neutral-950">New program</span><span className="block text-sm text-neutral-600">Create a cohort &amp; set its schedule</span></span>
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200/70"><PiPlusBold className="h-4 w-4" /></span>
+                  <span className="min-w-0 flex-1"><span className="block text-base font-bold text-neutral-950">New program</span><span className="block text-sm text-neutral-500">Create a batch &amp; set its schedule</span></span>
                   <PiArrowRightBold className="h-4 w-4 text-neutral-300" />
                 </Link>
                 <Link href="/account" className="flex items-center gap-3 rounded-xl border border-neutral-200 p-3 transition hover:border-neutral-300 hover:bg-neutral-50/60">
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-signal-800 text-white"><PiUsersBold className="h-4 w-4" /></span>
-                  <span className="min-w-0 flex-1"><span className="block text-base font-bold text-neutral-950">Invite people</span><span className="block text-sm text-neutral-600">Instructors &amp; students</span></span>
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-700 border border-blue-200/70"><PiUsersBold className="h-4 w-4" /></span>
+                  <span className="min-w-0 flex-1"><span className="block text-base font-bold text-neutral-950">Invite people</span><span className="block text-sm text-neutral-500">Instructors &amp; students</span></span>
                   <PiArrowRightBold className="h-4 w-4 text-neutral-300" />
                 </Link>
               </div>

@@ -13,10 +13,20 @@ export function AddBatchButton({
   programId,
   defaultWeeks,
   defaultTimezone,
+  defaultTime,
+  defaultDays,
+  trigger,
+  className,
+  children,
 }: {
   programId: string;
   defaultWeeks: number | null;
   defaultTimezone: string | null;
+  defaultTime?: string | null;
+  defaultDays?: number[] | null;
+  trigger?: (openModal: () => void) => React.ReactNode;
+  className?: string;
+  children?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -33,9 +43,16 @@ export function AddBatchButton({
 
   return (
     <>
-      <button onClick={() => setOpen(true)} className={btn('secondary', 'sm')}>
-        + Add batch
-      </button>
+      {trigger ? (
+        trigger(() => setOpen(true))
+      ) : (
+        <button
+          onClick={() => setOpen(true)}
+          className={className ?? btn('secondary', 'sm')}
+        >
+          {children ?? '+ Add batch'}
+        </button>
+      )}
 
       {open && (
         <div
@@ -47,7 +64,7 @@ export function AddBatchButton({
           <div
             role="dialog"
             aria-modal="true"
-            aria-label="Add batch"
+            aria-label="Add a batch"
             className="my-4 w-full max-w-lg rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl sm:my-8"
           >
             <div className="flex items-center justify-between">
@@ -67,6 +84,8 @@ export function AddBatchButton({
                 programId={programId}
                 defaultWeeks={defaultWeeks}
                 defaultTimezone={defaultTimezone}
+                defaultTime={defaultTime}
+                defaultDays={defaultDays}
               />
             </div>
           </div>

@@ -18,9 +18,11 @@ import { btn } from '@/lib/ui';
 export function EnrollActions({
   courseId,
   isEnrolled,
+  cohortLabel,
 }: {
   courseId: string;
   isEnrolled: boolean;
+  cohortLabel?: string;
 }) {
   const router = useRouter();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -30,7 +32,7 @@ export function EnrollActions({
     return (
       <form action={enroll.bind(null, courseId)}>
         <SubmitButton variant="primary" size="lg" pendingLabel="Enrolling…">
-          Enroll in cohort
+          {cohortLabel ? `Enroll in ${cohortLabel}` : 'Enroll in cohort'}
         </SubmitButton>
       </form>
     );

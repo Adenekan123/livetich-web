@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
-import { isPluginEnabled, PLUGIN_ISLAMIC_EDUCATION } from '@/lib/plugins';
+import { isPluginActiveForCourse, PLUGIN_ISLAMIC_EDUCATION } from '@/lib/plugins';
 import { TAJWEED_RULE_KEYS, TAJWEED_RULES, type TajweedAnnotation } from '@/lib/realtime-contract';
 import type { TajweedProgressRow } from '@/lib/tajweed';
 import type { CourseDetail } from '@/lib/types';
@@ -18,7 +18,6 @@ export default async function StudentSheetPage(props: {
   const { id, studentId } = await props.params;
   const [user, token] = await Promise.all([getCurrentUser(), getToken()]);
   if (!user || !token) redirect('/login');
-  if (!(await isPluginEnabled(PLUGIN_ISLAMIC_EDUCATION, token))) notFound();
 
   let course: CourseDetail;
   let corrections: TajweedAnnotation[];
@@ -36,6 +35,8 @@ export default async function StudentSheetPage(props: {
     if (e instanceof ApiError && [403, 404].includes(e.status)) notFound();
     throw e;
   }
+
+  if (!(await isPluginActiveForCourse(course, PLUGIN_ISLAMIC_EDUCATION, token))) notFound();
   const row = progress.find((r) => r.student.id === studentId);
   if (!row) notFound();
 

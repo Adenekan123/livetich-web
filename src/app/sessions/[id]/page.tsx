@@ -6,6 +6,7 @@ import { getCurrentUser, getToken } from '@/lib/auth';
 import { btn } from '@/lib/ui';
 import {
   enabledPluginKeys,
+  isCoursePluginActive,
   PLUGIN_CODE_INSTRUCTION,
   PLUGIN_ISLAMIC_EDUCATION,
   PLUGIN_MATHS_SCIENCES,
@@ -25,7 +26,8 @@ export default async function SessionPage(props: {
   // A solo-teacher admin can enter as the instructor (?as=teach). The API
   // re-validates org ownership when minting the token and on the socket join;
   // this only drives which room UI the admin sees.
-  const teaching = user.role === 'ORG_ADMIN' && as === 'teach';
+  const teaching =
+    user.role === 'INSTRUCTOR' || (user.role === 'ORG_ADMIN' && as === 'teach');
 
   let session: LiveSession;
   try {
@@ -48,10 +50,26 @@ export default async function SessionPage(props: {
   // (mushaf + Hifz for Islamic Education; the shared code editor for Code; the
   // chalkboard's formula tool for Maths & Sciences).
   const packs = await enabledPluginKeys(token);
-  const islamicEducation = packs.has(PLUGIN_ISLAMIC_EDUCATION);
-  const codeInstruction = packs.has(PLUGIN_CODE_INSTRUCTION);
-  const mathsSciences = packs.has(PLUGIN_MATHS_SCIENCES);
-  const testPrep = packs.has(PLUGIN_TEST_PREP);
+  const islamicEducation = isCoursePluginActive(
+    course,
+    PLUGIN_ISLAMIC_EDUCATION,
+    packs.has(PLUGIN_ISLAMIC_EDUCATION),
+  );
+  const codeInstruction = isCoursePluginActive(
+    course,
+    PLUGIN_CODE_INSTRUCTION,
+    packs.has(PLUGIN_CODE_INSTRUCTION),
+  );
+  const mathsSciences = isCoursePluginActive(
+    course,
+    PLUGIN_MATHS_SCIENCES,
+    packs.has(PLUGIN_MATHS_SCIENCES),
+  );
+  const testPrep = isCoursePluginActive(
+    course,
+    PLUGIN_TEST_PREP,
+    packs.has(PLUGIN_TEST_PREP),
+  );
 
   if (session.status === 'ENDED') {
     return (

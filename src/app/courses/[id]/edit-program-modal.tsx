@@ -11,6 +11,7 @@ import type { CourseDetail } from '@/lib/types';
 import { DurationField } from '../duration-field';
 import { MeetingSchedule } from '../meeting-schedule';
 import { COURSE_CATEGORIES } from '../catalog-lib';
+import { ProgramPluginsField } from '../program-plugins-field';
 
 const initial: ActionState = { error: null };
 
@@ -40,17 +41,22 @@ function toDateInput(iso: string | null): string {
  */
 export function EditProgramButton({
   course,
+  parentTitle,
   className,
+  label = 'Edit program',
 }: {
   course: CourseDetail;
+  parentTitle?: string;
   /** Overrides the trigger button style (e.g. a full-width variant in the
    *  details card). Defaults to a small secondary button. */
   className?: string;
+  label?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [state, action] = useActionState(updateCourse, initial);
   const formRef = useRef<HTMLFormElement>(null);
 
+  const isBatch = Boolean(course.parentCourseId);
   const days = course.meetingDays ?? [];
   const tzInList = !course.timezone || TIMEZONES.includes(course.timezone);
 
@@ -72,6 +78,10 @@ export function EditProgramButton({
     };
   }, [open]);
 
+  const cleanBatchTitle = course.title.includes(' — ')
+    ? course.title.slice(course.title.indexOf(' — ') + 3)
+    : course.title;
+
   return (
     <>
       <button
@@ -79,7 +89,7 @@ export function EditProgramButton({
         className={className ?? btn('secondary', 'sm')}
       >
         <PiPencilSimple className="h-4 w-4" aria-hidden />
-        Edit program
+        {label}
       </button>
 
       {open && (
@@ -92,12 +102,12 @@ export function EditProgramButton({
           <div
             role="dialog"
             aria-modal="true"
-            aria-label="Edit program"
+            aria-label={label}
             className="animate-fade-up my-4 w-full max-w-lg rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl sm:my-8 lg:max-w-3xl lg:p-8"
           >
             <div className="flex items-center justify-between">
               <h2 className="font-display text-xl font-extrabold tracking-tight text-neutral-950">
-                Edit program
+                {label}
               </h2>
               <button
                 onClick={() => setOpen(false)}
@@ -111,73 +121,96 @@ export function EditProgramButton({
             <form ref={formRef} action={action} className="mt-4 space-y-4">
               <FormError message={state.error} />
               <input type="hidden" name="courseId" value={course.id} />
+              <input type="hidden" name="parentCourseId" value={course.parentCourseId ?? ''} />
+              {parentTitle && <input type="hidden" name="parentTitle" value={parentTitle} />}
 
-              <div className="space-y-1.5">
-                <label htmlFor="edit-title" className={labelClass}>
-                  Program title
-                </label>
-                <input
-                  id="edit-title"
-                  name="title"
-                  required
-                  defaultValue={course.title}
-                  className={inputClass}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label htmlFor="edit-description" className={labelClass}>
-                  Description
-                </label>
-                <textarea
-                  id="edit-description"
-                  name="description"
-                  rows={3}
-                  defaultValue={course.description ?? ''}
-                  className={`${inputClass} resize-none`}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
+              {isBatch ? (
                 <div className="space-y-1.5">
-                  <label htmlFor="edit-category" className={labelClass}>
-                    Category
+                  <label htmlFor="edit-title" className={labelClass}>
+                    Batch label
                   </label>
                   <input
-                    id="edit-category"
-                    name="category"
-                    list="edit-course-categories"
-                    defaultValue={course.category ?? ''}
+                    id="edit-title"
+                    name="title"
+                    required
+                    defaultValue={cleanBatchTitle}
+                    placeholder="e.g. Morning Batch or Weekend Intake"
                     className={inputClass}
                   />
-                  <datalist id="edit-course-categories">
-                    {COURSE_CATEGORIES.map((c) => (
-                      <option key={c} value={c} />
-                    ))}
-                  </datalist>
+                  <p className="text-xs text-neutral-400">
+                    Students will see this label when choosing between batches.
+                  </p>
                 </div>
-                <div className="space-y-1.5">
-                  <label htmlFor="edit-level" className={labelClass}>
-                    Level
-                  </label>
-                  <select
-                    id="edit-level"
-                    name="level"
-                    defaultValue={course.level ?? ''}
-                    className={inputClass}
-                  >
-                    <option value="">—</option>
-                    <option value="Beginner">Beginner</option>
-                    <option value="Intermediate">Intermediate</option>
-                    <option value="Advanced">Advanced</option>
-                  </select>
-                </div>
-              </div>
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <label htmlFor="edit-title" className={labelClass}>
+                      Program title
+                    </label>
+                    <input
+                      id="edit-title"
+                      name="title"
+                      required
+                      defaultValue={course.title}
+                      className={inputClass}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label htmlFor="edit-description" className={labelClass}>
+                      Description
+                    </label>
+                    <textarea
+                      id="edit-description"
+                      name="description"
+                      rows={3}
+                      defaultValue={course.description ?? ''}
+                      className={`${inputClass} resize-none`}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label htmlFor="edit-category" className={labelClass}>
+                        Category
+                      </label>
+                      <input
+                        id="edit-category"
+                        name="category"
+                        list="edit-course-categories"
+                        defaultValue={course.category ?? ''}
+                        className={inputClass}
+                      />
+                      <datalist id="edit-course-categories">
+                        {COURSE_CATEGORIES.map((c) => (
+                          <option key={c} value={c} />
+                        ))}
+                      </datalist>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label htmlFor="edit-level" className={labelClass}>
+                        Level
+                      </label>
+                      <select
+                        id="edit-level"
+                        name="level"
+                        defaultValue={course.level ?? ''}
+                        className={inputClass}
+                      >
+                        <option value="">—</option>
+                        <option value="Beginner">Beginner</option>
+                        <option value="Intermediate">Intermediate</option>
+                        <option value="Advanced">Advanced</option>
+                      </select>
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* Schedule */}
               <div className="border-t border-neutral-200 pt-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
-                  Cohort schedule
+                  {isBatch ? 'Batch schedule' : 'Program schedule'}
                 </p>
 
                 <div className="mt-3">
@@ -218,10 +251,21 @@ export function EditProgramButton({
                   </select>
                 </div>
                 <p className="mt-2 text-xs text-neutral-400">
-                  Changing the days or time reschedules upcoming sessions and
-                  prompts enrolled students to re-add their reminder.
+                  {isBatch
+                    ? 'Changing the days or time reschedules upcoming sessions for this batch.'
+                    : 'Changing the days or time reschedules upcoming sessions and prompts enrolled students to re-add their reminder.'}
                 </p>
               </div>
+
+              {/* Classroom capabilities (Program-level only) */}
+              {!isBatch && (
+                <div className="border-t border-neutral-200 pt-4">
+                  <ProgramPluginsField
+                    initialSelected={course.pluginKeys ?? []}
+                    includeHiddenMarker={true}
+                  />
+                </div>
+              )}
 
               <SubmitButton className="w-full" pendingLabel="Saving…">
                 Save changes

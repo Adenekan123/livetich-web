@@ -13,7 +13,7 @@ import { inputClass, labelClass } from '@/lib/ui';
 
 const initial: VerifyEmailState = { error: null };
 
-export function VerifyEmailForm() {
+export function VerifyEmailForm({ next }: { next?: string }) {
   const [state, action] = useActionState(verifyEmail, initial);
   const [pending, start] = useTransition();
   const [note, setNote] = useState<string | null>(null);
@@ -29,6 +29,7 @@ export function VerifyEmailForm() {
   return (
     <form action={action} className="mt-8 space-y-5">
       <FormError message={state.error} />
+      {next && <input type="hidden" name="next" value={next} />}
       <div className="space-y-1.5">
         <label htmlFor="code" className={labelClass}>
           Verification code

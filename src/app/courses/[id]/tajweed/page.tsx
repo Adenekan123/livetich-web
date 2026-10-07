@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
-import { isPluginEnabled, PLUGIN_ISLAMIC_EDUCATION } from '@/lib/plugins';
+import { isPluginActiveForCourse, PLUGIN_ISLAMIC_EDUCATION } from '@/lib/plugins';
 import type { CourseDetail } from '@/lib/types';
 import { TajweedWorkspace } from './tajweed-workspace';
 
@@ -15,9 +15,6 @@ export default async function TajweedPage(props: {
   const [user, token] = await Promise.all([getCurrentUser(), getToken()]);
   if (!user || !token) redirect('/login');
 
-  // Tajweed is an Islamic Education pack feature; a deep link 404s when it's off.
-  if (!(await isPluginEnabled(PLUGIN_ISLAMIC_EDUCATION, token))) notFound();
-
   let course: CourseDetail;
   try {
     course = await api<CourseDetail>(`/courses/${id}`, { token });
@@ -25,6 +22,9 @@ export default async function TajweedPage(props: {
     if (e instanceof ApiError && e.status === 404) notFound();
     throw e;
   }
+
+  // Tajweed is an Islamic Education pack feature; a deep link 404s when it's off for this course.
+  if (!(await isPluginActiveForCourse(course, PLUGIN_ISLAMIC_EDUCATION, token))) notFound();
 
   const isOwner = user.role === 'INSTRUCTOR' && user.sub === course.instructorId;
   const canManage = isOwner || user.role === 'ORG_ADMIN';

@@ -66,6 +66,7 @@ import {
 } from './live-coding-panel';
 import { QuranReader } from './quran-reader';
 import { useTajweed } from './use-tajweed';
+import { useClassroomChat } from './use-classroom-chat';
 import { RecordButton } from './record-button';
 import {
   playClassEndTone,
@@ -263,11 +264,6 @@ export function ClassRoom({
   const socketRef = useRef<RoomSocket | null>(null);
   const [connected, setConnected] = useState(false);
   const [users, setUsers] = useState<RoomUser[]>([]);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  // Unread chat count — messages that arrived while the chat tab wasn't open.
-  // Drives the badge on both the chat toggle (bar) and the chat tab (panel).
-  const [unreadChat, setUnreadChat] = useState(0);
-  const [locked, setLocked] = useState(false);
   const [hands, setHands] = useState<RoomUser[]>([]);
   // Student ids the instructor has granted the mic. Students are muted by
   // default and can only unmute once they appear here (or are picked to speak).
@@ -351,7 +347,6 @@ export function ClassRoom({
   const [confirmLeave, setConfirmLeave] = useState(false);
   const handsRef = useRef<RoomUser[]>([]);
   const handsSeededRef = useRef(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
   // Buzzer sound + auto-close plumbing.
   const audioCtxRef = useRef<AudioContext | null>(null);
   const prevBuzzerPhaseRef = useRef<BuzzerState['phase'] | null>(null);
@@ -368,14 +363,33 @@ export function ClassRoom({
   const presentRef = useRef<Set<string> | null>(null);
   // When the join sound last played: a burst of arrivals gets one sound.
   const joinToneAtRef = useRef(0);
-  // Voice-note recording (chat).
-  const [recording, setRecording] = useState(false);
-  const [uploadingVoice, setUploadingVoice] = useState(false);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const voiceChunksRef = useRef<Blob[]>([]);
 
   // A teach-mode admin acts as the instructor (host UI, publishes, controls).
   const isInstructor = me.role === 'INSTRUCTOR' || teaching;
+
+  const {
+    messages,
+    unreadChat,
+    locked,
+    recording,
+    uploadingVoice,
+    chatEndRef,
+    send,
+    startRecording,
+    stopRecording,
+    toggleLock,
+    clearUnread,
+    handleHistory,
+    handleNewMessage,
+    handleLockUpdate,
+  } = useClassroomChat({
+    sessionId,
+    myUserId: me.userId,
+    isInstructor,
+    socketRef,
+    isChatOpen: panel === 'chat',
+    onNotice: setNotice,
+  });
   // Tajweed annotations on the shared mushaf. Always created (it is a hook),
   // inert unless the Islamic Education pack is on.
   const tajweed = useTajweed({
@@ -517,16 +531,9 @@ export function ClassRoom({
         playJoinTone();
       }
     });
-    socket.on('chat:history', (p) => setMessages(p.messages));
-    socket.on('chat:message', (m) => {
-      setMessages((prev) => [...prev, m]);
-      // Count it as unread unless the chat tab is the one on screen (and never
-      // count our own messages).
-      if (panelRef.current !== 'chat' && m.user.userId !== me.userId) {
-        setUnreadChat((n) => n + 1);
-      }
-    });
-    socket.on('chat:locked', (p) => setLocked(p.locked));
+    socket.on('chat:history', handleHistory);
+    socket.on('chat:message', handleNewMessage);
+    socket.on('chat:locked', handleLockUpdate);
     socket.on('view:changed', (p) => setView(p.view));
     socket.on('theme:changed', (p) => setScheme(p.scheme));
     socket.on('quran:position', (p) =>
@@ -674,8 +681,8 @@ export function ClassRoom({
     });
     // The instructor ended class and this org removes students on end. The
     // instructor navigates from their own End action, so only students act here.
-    socket.on('room:closed', () => {
-      if (isInstructor) return;
+    socket.on('room:closed', (payload?: { reason?: string }) => {
+      if (isInstructor && payload?.reason !== 'ACCESS_REVOKED') return;
       socket.emit('room:leave', { sessionId });
       router.push(`/courses/${courseId}`);
     });
@@ -713,7 +720,7 @@ export function ClassRoom({
   // bottom-bar chat toggle and the panel's own Chat tab.
   const openChat = () => {
     setPanel('chat');
-    setUnreadChat(0);
+    clearUnread();
   };
 
   // Grow the active recitation to cover wherever the mushaf goes: same surah →
@@ -818,69 +825,6 @@ export function ClassRoom({
     [],
   );
 
-  const send = (form: HTMLFormElement) => {
-    const input = form.elements.namedItem('body') as HTMLInputElement;
-    const body = input.value.trim();
-    if (!body) return;
-    socketRef.current?.emit('chat:send', { sessionId, body });
-    input.value = '';
-  };
-
-  // Record a chat voice note: capture from the mic, upload the blob, then post
-  // the returned URL over the socket (see chat:voice). A second tap stops + sends.
-  const uploadVoice = async (blob: Blob) => {
-    setUploadingVoice(true);
-    try {
-      const token = await getRealtimeToken();
-      const form = new FormData();
-      form.append('file', blob, 'voice.webm');
-      const res = await fetch(`${API_URL}/sessions/${sessionId}/voice`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token ?? ''}` },
-        body: form,
-      });
-      if (!res.ok) throw new Error(`upload failed (${res.status})`);
-      const { audioUrl } = (await res.json()) as { audioUrl: string };
-      socketRef.current?.emit('chat:voice', { sessionId, audioUrl });
-    } catch {
-      setNotice('Could not send the voice note. Try again.');
-      setTimeout(() => setNotice(null), 4000);
-    } finally {
-      setUploadingVoice(false);
-    }
-  };
-
-  const startRecording = async () => {
-    if (recording || uploadingVoice) return;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const rec = new MediaRecorder(stream);
-      voiceChunksRef.current = [];
-      rec.ondataavailable = (e) => {
-        if (e.data.size > 0) voiceChunksRef.current.push(e.data);
-      };
-      rec.onstop = () => {
-        stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(voiceChunksRef.current, {
-          type: rec.mimeType || 'audio/webm',
-        });
-        if (blob.size > 0) void uploadVoice(blob);
-      };
-      recorderRef.current = rec;
-      rec.start();
-      setRecording(true);
-    } catch {
-      setNotice('Microphone access is needed to record a voice note.');
-      setTimeout(() => setNotice(null), 4000);
-    }
-  };
-
-  const stopRecording = () => {
-    recorderRef.current?.stop();
-    recorderRef.current = null;
-    setRecording(false);
-  };
-
   // Instructor drives the surface for the whole room; students just follow.
   const changeView = (next: StageView) => {
     if (!isInstructor) return;
@@ -945,7 +889,13 @@ export function ClassRoom({
     socketRef.current?.emit('quran:navigate', { sessionId, surah, ayah });
   };
 
-  const leave = () =>
+  const leaveTemporarily = () =>
+    startEnding(async () => {
+      socketRef.current?.disconnect();
+      router.push(`/courses/${courseId}`);
+    });
+
+  const endSessionForAll = () =>
     startEnding(async () => {
       if (isInstructor) {
         // Auto-save any recitation still being logged before the room closes.
@@ -962,8 +912,11 @@ export function ClassRoom({
         // straight after, before that event could reach it.
         playClassEndTone();
       }
+      socketRef.current?.disconnect();
       router.push(`/courses/${courseId}`);
     });
+
+  const leave = isInstructor ? endSessionForAll : leaveTemporarily;
 
   const chatLockedForMe = locked && !isInstructor;
 
@@ -2119,7 +2072,7 @@ export function ClassRoom({
       {/* Confirm before ending / leaving the class */}
       {confirmLeave && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
           onClick={(e) => {
             if (e.target === e.currentTarget) setConfirmLeave(false);
           }}
@@ -2127,38 +2080,91 @@ export function ClassRoom({
           <div
             role="dialog"
             aria-modal="true"
-            aria-label={isInstructor ? 'End class' : 'Leave class'}
-            className="w-full max-w-sm rounded-2xl bg-white p-6 text-neutral-900 shadow-2xl"
+            aria-label={isInstructor ? 'Leave or End Class' : 'Leave class'}
+            className="w-full max-w-md rounded-2xl bg-white p-6 text-neutral-900 shadow-2xl"
           >
             <h2 className="text-lg font-bold text-neutral-950">
-              {isInstructor ? 'End class for everyone?' : 'Leave the class?'}
+              {isInstructor ? 'Leave or end this class?' : 'Leave the class?'}
             </h2>
             <p className="mt-2 text-sm text-neutral-600">
               {isInstructor
-                ? 'This ends the live session for all students and returns everyone to the course page. This cannot be undone.'
+                ? 'You can step out temporarily and rejoin at any time, or wrap up the session and conclude it for all students.'
                 : 'You can rejoin while the class is still live.'}
             </p>
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                onClick={() => setConfirmLeave(false)}
-                className={btn('ghost', 'sm')}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setConfirmLeave(false);
-                  leave();
-                }}
-                disabled={ending}
-                className={cn(
-                  btn('primary', 'sm'),
-                  'bg-rose-600 shadow-rose-600/20 hover:bg-rose-500 focus-visible:ring-rose-500',
-                )}
-              >
-                {isInstructor ? 'End class' : 'Leave'}
-              </button>
-            </div>
+
+            {isInstructor ? (
+              <div className="mt-5 flex flex-col gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmLeave(false);
+                    leaveTemporarily();
+                  }}
+                  disabled={ending}
+                  className="flex items-center justify-between rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-left transition hover:border-neutral-300 hover:bg-neutral-100 disabled:opacity-50"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-neutral-950">
+                      Leave temporarily
+                    </p>
+                    <p className="text-xs text-neutral-500">
+                      Students stay in the room. You can rejoin at any time.
+                    </p>
+                  </div>
+                  <span className="text-sm font-bold text-neutral-700">→</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmLeave(false);
+                    endSessionForAll();
+                  }}
+                  disabled={ending}
+                  className="flex items-center justify-between rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-left transition hover:border-rose-300 hover:bg-rose-100 disabled:opacity-50"
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-rose-800">
+                      End class for everyone
+                    </p>
+                    <p className="text-xs text-rose-600">
+                      Concludes the live session, evicts students, and logs attendance.
+                    </p>
+                  </div>
+                  <span className="text-sm font-bold text-rose-700">→</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setConfirmLeave(false)}
+                  className="mt-2 self-center text-xs font-semibold text-neutral-500 hover:text-neutral-800"
+                >
+                  Stay in class
+                </button>
+              </div>
+            ) : (
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  onClick={() => setConfirmLeave(false)}
+                  className={btn('ghost', 'sm')}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setConfirmLeave(false);
+                    leaveTemporarily();
+                  }}
+                  disabled={ending}
+                  className={cn(
+                    btn('primary', 'sm'),
+                    'bg-rose-600 shadow-rose-600/20 hover:bg-rose-500 focus-visible:ring-rose-500',
+                  )}
+                >
+                  Leave
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

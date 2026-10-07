@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
-import { isPluginEnabled, PLUGIN_TEST_PREP } from '@/lib/plugins';
+import { isPluginActiveForCourse, PLUGIN_TEST_PREP } from '@/lib/plugins';
 import type { CourseDetail, ExamAvailableRow, ExamListRow } from '@/lib/types';
 import { ExamManager } from './exam-manager';
 import { ExamTaker } from './exam-taker';
@@ -16,9 +16,6 @@ export default async function ExamsPage(props: {
   const [user, token] = await Promise.all([getCurrentUser(), getToken()]);
   if (!user || !token) redirect('/login');
 
-  // Test Prep is an add-on pack; a deep link 404s when it's off.
-  if (!(await isPluginEnabled(PLUGIN_TEST_PREP, token))) notFound();
-
   let course: CourseDetail;
   try {
     course = await api<CourseDetail>(`/courses/${id}`, { token });
@@ -26,6 +23,9 @@ export default async function ExamsPage(props: {
     if (e instanceof ApiError && e.status === 404) notFound();
     throw e;
   }
+
+  // Test Prep is an add-on pack; a deep link 404s when it's off for this course.
+  if (!(await isPluginActiveForCourse(course, PLUGIN_TEST_PREP, token))) notFound();
 
   const isOwner = user.role === 'INSTRUCTOR' && user.sub === course.instructorId;
   const canManage = isOwner || user.role === 'ORG_ADMIN';

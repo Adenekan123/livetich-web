@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { BrandLogo } from './brand-logo';
+import { cn } from '@/lib/ui';
 
 /**
  * Live-room preview — a small, honest mock of what a session looks like, so the
@@ -92,11 +93,15 @@ export function AuthShell({
   subtitle,
   children,
   footer,
+  maxWidth = 'max-w-[27rem]',
+  showMobileLogo = true,
 }: {
   title: string;
   subtitle: string;
   children: React.ReactNode;
-  footer: React.ReactNode;
+  footer?: React.ReactNode;
+  maxWidth?: string;
+  showMobileLogo?: boolean;
 }) {
   return (
     <div className="flex min-h-screen bg-white">
@@ -130,13 +135,20 @@ export function AuthShell({
 
       {/* Form pane — light */}
       <main className="flex flex-1 items-start justify-center px-5 py-10 sm:items-center sm:px-6 sm:py-14 lg:px-10">
-        <div className="w-full max-w-[27rem]">
+        <div className={`w-full ${maxWidth}`}>
           {/* The dark wordmark only shows where the desktop side panel (which
               already carries the logo) is absent — i.e. below lg. */}
-          <Link href="/" className="inline-flex lg:hidden" aria-label="livetich home">
-            <BrandLogo className="h-20 w-auto sm:h-24" />
-          </Link>
-          <h1 className="mt-8 font-display text-[1.9rem] font-extrabold leading-[1.1] tracking-[-0.02em] text-neutral-950 sm:text-[2.05rem] lg:mt-0">
+          {showMobileLogo && (
+            <Link href="/" className="inline-flex lg:hidden" aria-label="livetich home">
+              <BrandLogo className="h-20 w-auto sm:h-24" />
+            </Link>
+          )}
+          <h1
+            className={cn(
+              'font-display text-[1.9rem] font-extrabold leading-[1.1] tracking-[-0.02em] text-neutral-950 sm:text-[2.05rem] lg:mt-0',
+              showMobileLogo ? 'mt-8' : 'mt-0',
+            )}
+          >
             {title}
           </h1>
           <p className="mt-2 text-[15px] leading-relaxed text-neutral-500">

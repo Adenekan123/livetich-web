@@ -470,25 +470,41 @@ export function CourseBrowser({
   role,
   currentUserId,
   canCreate = false,
+  autoCreate = false,
 }: {
   classes: ClassItem[];
   role: Role;
   currentUserId: string;
   canCreate?: boolean;
+  autoCreate?: boolean;
 }) {
   if (role === 'STUDENT') return <StudentBrowser classes={classes} />;
   if (role === 'INSTRUCTOR')
     return <InstructorBrowser classes={classes} currentUserId={currentUserId} />;
-  return <AdminBrowser classes={classes} canCreate={canCreate} />;
+  return (
+    <AdminBrowser
+      classes={classes}
+      canCreate={canCreate}
+      autoCreate={autoCreate}
+    />
+  );
 }
 
 /* ---------- Org admin: full catalog, all lifecycle filters (unchanged) ---------- */
 
-function AdminBrowser({ classes, canCreate }: { classes: ClassItem[]; canCreate: boolean }) {
+function AdminBrowser({
+  classes,
+  canCreate,
+  autoCreate = false,
+}: {
+  classes: ClassItem[];
+  canCreate: boolean;
+  autoCreate?: boolean;
+}) {
   const [query, setQuery] = useState('');
   const [cat, setCat] = useState('All');
   const [filter, setFilter] = useState<AdminFilter>('All');
-  const [createOpen, setCreateOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(canCreate && autoCreate);
 
   const categories = useMemo(
     () => ['All', ...Array.from(new Set(classes.map((c) => c.category))).sort()],
