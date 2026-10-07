@@ -34,11 +34,16 @@ export async function login(
 ): Promise<AuthFormState> {
   let result: AuthResult;
   try {
+    const turnstileToken =
+      formData.get('turnstileToken') ||
+      formData.get('cf-turnstile-response') ||
+      undefined;
     result = await api<AuthResult>('/auth/login', {
       method: 'POST',
       body: {
         email: formData.get('email'),
         password: formData.get('password'),
+        ...(turnstileToken ? { turnstileToken: String(turnstileToken) } : {}),
       },
     });
   } catch (e) {
@@ -66,6 +71,10 @@ export async function register(
 ): Promise<AuthFormState> {
   let result: AuthResult;
   try {
+    const turnstileToken =
+      formData.get('turnstileToken') ||
+      formData.get('cf-turnstile-response') ||
+      undefined;
     result = await api<AuthResult>('/auth/register', {
       method: 'POST',
       body: {
@@ -73,6 +82,7 @@ export async function register(
         email: formData.get('email'),
         password: formData.get('password'),
         inviteToken: formData.get('inviteToken'),
+        ...(turnstileToken ? { turnstileToken: String(turnstileToken) } : {}),
       },
     });
   } catch (e) {
@@ -100,6 +110,10 @@ export async function registerOrganization(
 ): Promise<AuthFormState> {
   let result: AuthResult;
   try {
+    const turnstileToken =
+      formData.get('turnstileToken') ||
+      formData.get('cf-turnstile-response') ||
+      undefined;
     result = await api<AuthResult>('/auth/register-organization', {
       method: 'POST',
       body: {
@@ -116,6 +130,7 @@ export async function registerOrganization(
             .filter(Boolean).length > 0
             ? formData.getAll('pluginKeys').map(String).filter(Boolean)
             : undefined,
+        ...(turnstileToken ? { turnstileToken: String(turnstileToken) } : {}),
       },
     });
   } catch (e) {
@@ -292,9 +307,16 @@ export async function forgotPassword(
   formData: FormData,
 ): Promise<ForgotPasswordState> {
   try {
+    const turnstileToken =
+      formData.get('turnstileToken') ||
+      formData.get('cf-turnstile-response') ||
+      undefined;
     await api('/auth/forgot-password', {
       method: 'POST',
-      body: { email: formData.get('email') },
+      body: {
+        email: formData.get('email'),
+        ...(turnstileToken ? { turnstileToken: String(turnstileToken) } : {}),
+      },
     });
   } catch (e) {
     if (e instanceof ApiError) return { error: e.message };

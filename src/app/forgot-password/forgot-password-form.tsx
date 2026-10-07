@@ -7,6 +7,7 @@ import {
 } from '@/app/actions/auth';
 import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
+import { Turnstile } from '@/components/turnstile';
 import { inputClassLg, labelClassLg } from '@/lib/ui';
 
 const initial: ForgotPasswordState = { error: null };
@@ -40,6 +41,7 @@ export function ForgotPasswordForm() {
           className={inputClassLg}
         />
       </div>
+      <Turnstile />
       <SubmitButton size="xl" className="w-full" pendingLabel="Sending…">
         Send reset link
       </SubmitButton>
