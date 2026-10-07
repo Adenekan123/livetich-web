@@ -5,10 +5,17 @@ import { VerifyEmailForm } from './verify-email-form';
 
 export const metadata = { title: 'Verify your email - livetich' };
 
-export default async function VerifyEmailPage() {
+export default async function VerifyEmailPage(props: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  const { next } = await props.searchParams;
   const user = await getCurrentUser().catch(() => null);
   if (!user) redirect('/login');
-  if (user.emailVerified) redirect('/dashboard');
+  const dest =
+    next && next.startsWith('/') && !next.startsWith('//')
+      ? next
+      : '/dashboard';
+  if (user.emailVerified) redirect(dest);
 
   return (
     <AuthShell
@@ -20,7 +27,7 @@ export default async function VerifyEmailPage() {
         </p>
       }
     >
-      <VerifyEmailForm />
+      <VerifyEmailForm next={next} />
     </AuthShell>
   );
 }

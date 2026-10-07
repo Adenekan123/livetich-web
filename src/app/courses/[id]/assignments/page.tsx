@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
-import { isPluginEnabled, PLUGIN_CODE_INSTRUCTION } from '@/lib/plugins';
+import { isPluginActiveForCourse, PLUGIN_CODE_INSTRUCTION } from '@/lib/plugins';
 import type {
   AssignmentTracking,
   CourseDetail,
@@ -68,7 +68,7 @@ export default async function AssignmentsPage(props: {
         {canManage ? (
           <ManagerLab courseId={id} token={token} />
         ) : (
-          <StudentAssignmentsView courseId={id} token={token} />
+          <StudentAssignmentsView course={course} token={token} />
         )}
       </main>
     </>
@@ -132,12 +132,13 @@ async function ManagerLab({
  * `/assignments/mine` is a cross-course picker without per-course grade state.
  */
 async function StudentAssignmentsView({
-  courseId,
+  course,
   token,
 }: {
-  courseId: string;
+  course: CourseDetail;
   token: string;
 }) {
+  const courseId = course.id;
   const enrollments = await api<Enrollment[]>('/courses/enrolled', { token });
   const isEnrolled = enrollments.some((e) => e.courseId === courseId);
   const assignments = await api<StudentAssignment[]>(
@@ -145,7 +146,11 @@ async function StudentAssignmentsView({
     { token },
   );
   // The code-language picker is a Code Instruction surface — off by default.
-  const codeInstruction = await isPluginEnabled(PLUGIN_CODE_INSTRUCTION, token);
+  const codeInstruction = await isPluginActiveForCourse(
+    course,
+    PLUGIN_CODE_INSTRUCTION,
+    token,
+  );
 
   return (
     <StudentAssignments

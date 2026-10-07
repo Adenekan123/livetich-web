@@ -85,9 +85,12 @@ export async function register(
   // Verification still comes first — that gate is not this feature's to
   // open. Past it, someone who signed up through a program link lands on
   // the class rather than a dashboard they have to search.
-  if (!result.user.emailVerified) redirect('/verify-email');
   const courseId = String(formData.get('courseId') ?? '');
-  redirect(courseId ? `/c/${courseId}` : `/dashboard`, RedirectType.replace);
+  const dest = courseId ? `/c/${courseId}` : '/dashboard';
+  if (!result.user.emailVerified) {
+    redirect(`/verify-email?next=${encodeURIComponent(dest)}`);
+  }
+  redirect(dest, RedirectType.replace);
 }
 
 /** Company signup — creates the organization and its first admin together. */
@@ -106,6 +109,13 @@ export async function registerOrganization(
         password: formData.get('password'),
         tagline: formData.get('tagline') || undefined,
         primaryColor: formData.get('primaryColor') || undefined,
+        pluginKeys:
+          formData
+            .getAll('pluginKeys')
+            .map(String)
+            .filter(Boolean).length > 0
+            ? formData.getAll('pluginKeys').map(String).filter(Boolean)
+            : undefined,
       },
     });
   } catch (e) {
@@ -265,7 +275,10 @@ export async function verifyEmail(
     throw e;
   }
   await setToken(result.accessToken);
-  redirect('/dashboard');
+  const next = String(formData.get('next') ?? '');
+  const dest =
+    next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard';
+  redirect(dest);
 }
 
 export interface ForgotPasswordState {

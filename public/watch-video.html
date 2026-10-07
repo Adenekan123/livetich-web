@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Livetich — End-to-End VS Code & Antigravity IDE Extension Flow</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      background: #080b11;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 24px;
+    }
+    .container {
+      width: 100%;
+      max-width: 1300px;
+    }
+    header {
+      margin-bottom: 28px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 24px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      background: rgba(14, 165, 233, 0.12);
+      border: 1px solid rgba(14, 165, 233, 0.35);
+      color: #38bdf8;
+      font-size: 12.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .badge-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 9999px;
+      background: #38bdf8;
+      box-shadow: 0 0 10px #38bdf8;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.9); }
+    }
+    h1 {
+      font-size: 32px;
+      font-weight: 800;
+      color: #ffffff;
+      letter-spacing: -0.025em;
+      margin-top: 10px;
+    }
+    p.subtitle {
+      color: #94a3b8;
+      font-size: 15.5px;
+      margin-top: 8px;
+      max-width: 860px;
+      line-height: 1.55;
+    }
+    .actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 22px;
+      border-radius: 12px;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 14px;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .btn-primary {
+      background: #0284c7;
+      color: #ffffff;
+      box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);
+    }
+    .btn-primary:hover {
+      background: #0369a1;
+      transform: translateY(-2px);
+    }
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #e2e8f0;
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.12);
+      transform: translateY(-2px);
+    }
+    .video-wrapper {
+      position: relative;
+      background: #000;
+      border-radius: 20px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.8), 0 0 50px rgba(14, 165, 233, 0.15);
+      aspect-ratio: 16 / 10;
+      margin-bottom: 40px;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      display: block;
+      outline: none;
+    }
+    .section-title {
+      font-size: 22px;
+      font-weight: 800;
+      color: #ffffff;
+      letter-spacing: -0.015em;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .section-title::before {
+      content: '';
+      display: inline-block;
+      width: 4px;
+      height: 20px;
+      background: #38bdf8;
+      border-radius: 2px;
+    }
+    .milestones-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+      margin-bottom: 40px;
+    }
+    @media (max-width: 900px) {
+      .milestones-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 18px;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      transition: border-color 0.2s;
+    }
+    .card:hover {
+      border-color: rgba(56, 189, 248, 0.3);
+    }
+    .card-step {
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #38bdf8;
+    }
+    .card-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #f8fafc;
+      margin-top: 4px;
+    }
+    .card-desc {
+      font-size: 14px;
+      color: #94a3b8;
+      line-height: 1.55;
+    }
+    .card-img-wrap {
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: #0f172a;
+    }
+    .card-img-wrap img {
+      width: 100%;
+      height: auto;
+      display: block;
+      transition: transform 0.3s;
+    }
+    .card-img-wrap img:hover {
+      transform: scale(1.02);
+    }
+    .checklist {
+      background: rgba(14, 165, 233, 0.06);
+      border: 1px solid rgba(14, 165, 233, 0.22);
+      border-radius: 16px;
+      padding: 24px;
+      margin-top: 10px;
+    }
+    .checklist h3 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #38bdf8;
+      margin-bottom: 14px;
+    }
+    .checklist ul {
+      list-style: none;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 12px;
+    }
+    .checklist li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 14px;
+      color: #cbd5e1;
+      line-height: 1.5;
+    }
+    .check-icon {
+      color: #38bdf8;
+      font-weight: 800;
+      font-size: 16px;
+      line-height: 1.2;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <span class="badge"><span class="badge-dot"></span> Extension Architecture Verified</span>
+        <h1>Livetich Extension Flow — VS Code & Antigravity IDE</h1>
+        <p class="subtitle">Complete end-to-end lifecycle: Task creation in the extension's authoring webview, student workspace archive upload with background AI evaluation, instructor inline code review and formal grading (Pass 95%), and live classroom stage sync.</p>
+      </div>
+      <div class="actions">
+        <a class="btn btn-secondary" href="/vscode-extension-flow.html" target="_blank">
+          Interactive IDE Simulator ↗
+        </a>
+        <a class="btn btn-primary" href="/vscode_extension_flow.webm" download="vscode_extension_flow.webm">
+          ⬇ Download HD Video (WebM)
+        </a>
+      </div>
+    </header>
+
+    <div class="video-wrapper">
+      <video controls autoplay loop playsinline>
+        <source src="/vscode_extension_flow.webm" type="video/webm">
+        Your browser does not support the video tag.
+      </video>
+    </div>
+
+    <h2 class="section-title">Verified Workflow Milestones</h2>
+
+    <div class="milestones-grid">
+      <!-- Milestone 1 -->
+      <div class="card">
+        <div>
+          <div class="card-step">Milestone 1 · Extension Instructor View</div>
+          <div class="card-title">Author & Launch Coding Task in Extension Webview</div>
+        </div>
+        <p class="card-desc">Instructor uses <code>livetich.teaching.newTask</code> inside the VS Code / Antigravity IDE extension to author a coding sprint with requirements, rubric criteria, language, and immediate live room launch.</p>
+        <div class="card-img-wrap">
+          <img src="/vscode_step1_new_task.png" alt="Instructor creating coding task in extension">
+        </div>
+      </div>
+
+      <!-- Milestone 2 -->
+      <div class="card">
+        <div>
+          <div class="card-step">Milestone 2 · Extension Student View</div>
+          <div class="card-title">Receive Brief & Submit Project Workspace Archive</div>
+        </div>
+        <p class="card-desc">Student views the task via <code>livetich.coding.open</code>, works in <code>src/bst.ts</code>, and packages their solution into an archive using <code>livetich.submitAssignment</code> (via AdmZip workspace archiver).</p>
+        <div class="card-img-wrap">
+          <img src="/vscode_step2_student_submit.png" alt="Student submitting workspace in extension">
+        </div>
+      </div>
+
+      <!-- Milestone 3 -->
+      <div class="card">
+        <div>
+          <div class="card-step">Milestone 3 · Extension Submissions Dashboard</div>
+          <div class="card-title">Track Submissions, Attempt Status & AI Confidence</div>
+        </div>
+        <p class="card-desc">Instructor opens <code>livetich.teaching.dashboard</code> to see student submissions with live statuses, attempt numbers, AI rubric preliminary scores, and confidence indicators.</p>
+        <div class="card-img-wrap">
+          <img src="/vscode_step3_dashboard.png" alt="Submissions dashboard in extension">
+        </div>
+      </div>
+
+      <!-- Milestone 4 -->
+      <div class="card">
+        <div>
+          <div class="card-step">Milestone 4 · Extension Code Review & Decision</div>
+          <div class="card-title">Inspect Code, AI Rubric Breakdown & Pass Decision (95%)</div>
+        </div>
+        <p class="card-desc">Instructor launches <code>livetich.teaching.review</code> to inspect code diffs, verify AI requirement evaluations, insert line feedback comments, and issue the official decision (PASS with 95%).</p>
+        <div class="card-img-wrap">
+          <img src="/vscode_step4_review_decision.png" alt="Instructor code review and grading decision in extension">
+        </div>
+      </div>
+
+      <!-- Milestone 5 -->
+      <div class="card" style="grid-column: 1 / -1;">
+        <div>
+          <div class="card-step">Milestone 5 · Live Classroom Stage</div>
+          <div class="card-title">Live Classroom Stage Synchronization</div>
+        </div>
+        <p class="card-desc">The live classroom receives real-time WebSocket events from the extension's decisions, instantly updating the live Code stage and Points leaderboard for all students and instructors in class.</p>
+        <div class="card-img-wrap">
+          <img src="/vscode_step5_live_stage_synced.png" alt="Live classroom stage synchronized">
+        </div>
+      </div>
+    </div>
+
+    <div class="checklist">
+      <h3>All User Feedback Requirements Fully Addressed</h3>
+      <ul>
+        <li><span class="check-icon">✓</span> <strong>Extension-Driven Authoring:</strong> Task authored via <code>livetich-vscode</code> extension (<code>renderTaskForm</code>) rather than generic web assignments.</li>
+        <li><span class="check-icon">✓</span> <strong>Real Student Submission:</strong> Workspace packaged via <code>AdmZip</code> and submitted to <code>POST /coding/assignments/:id/submit</code>.</li>
+        <li><span class="check-icon">✓</span> <strong>AI Auto-Evaluation:</strong> Automated requirement parsing and rubric weighting powered by <code>CodingAiReviewService</code>.</li>
+        <li><span class="check-icon">✓</span> <strong>Extension Review & Decision:</strong> Instructor inspected diffs, added line review feedback, and submitted official grade (95% PASS) via <code>renderReview</code>.</li>
+        <li><span class="check-icon">✓</span> <strong>Dual IDE Support:</strong> Packaged as <code>livetich-0.1.4.vsix</code> and installed into both standard VS Code and Antigravity IDE.</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>

@@ -7,7 +7,11 @@ import { CourseBrowser } from './course-browser';
 
 export const metadata = { title: 'Programs — livetich' };
 
-export default async function CoursesPage() {
+export default async function CoursesPage(props: {
+  searchParams: Promise<{ new?: string; create?: string }>;
+}) {
+  const { new: newParam, create } = await props.searchParams;
+  const autoCreate = Boolean(newParam || create);
   const [user, token] = await Promise.all([getCurrentUser(), getToken()]);
   if (!user || !token) redirect('/login');
 
@@ -54,6 +58,7 @@ export default async function CoursesPage() {
             role={user.role}
             currentUserId={user.sub}
             canCreate={user.role === 'ORG_ADMIN'}
+            autoCreate={autoCreate}
           />
         )}
       </main>

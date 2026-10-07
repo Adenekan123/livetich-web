@@ -14,7 +14,7 @@ import {
 import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
 import {
-  isPluginEnabled,
+  isPluginActiveForCourse,
   PLUGIN_ISLAMIC_EDUCATION,
   PLUGIN_TEST_PREP,
 } from '@/lib/plugins';
@@ -47,6 +47,7 @@ import { EditProgramButton } from './edit-program-modal';
 import { BatchesSection } from './batches-section';
 import { DangerZone } from './danger-zone';
 import { AssessmentGate } from './assessment-gate';
+import { ClassroomCockpit } from './classroom-cockpit';
 import { Leaderboard } from '@/components/leaderboard';
 
 /* Server-rendered cohort status pill (mirrors the catalog's monochrome styles). */
@@ -86,13 +87,14 @@ function ToolCard({
   title,
   desc,
   badge,
+  iconClass,
 }: {
   href: string;
   icon: IconType;
   title: string;
   desc: string;
-  /** Optional count pill (e.g. pending assignments) shown by the title. */
   badge?: number;
+  iconClass?: string;
 }) {
   return (
     <Link
@@ -102,7 +104,12 @@ function ToolCard({
         'group flex items-start gap-4 p-4 transition hover:-translate-y-0.5 hover:border-neutral-300 hover:shadow-sm',
       )}
     >
-      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-signal-700 text-white">
+      <span
+        className={cn(
+          'grid h-11 w-11 shrink-0 place-items-center rounded-xl transition-all group-hover:scale-105',
+          iconClass ?? 'bg-emerald-50 text-emerald-700 border border-emerald-200/70 group-hover:bg-emerald-100/70',
+        )}
+      >
         <Icon className="h-5 w-5" />
       </span>
       <div className="min-w-0 flex-1">
@@ -161,14 +168,15 @@ function FactsCard({
   dates,
   datesLabel,
   footer,
+  title = 'Details',
 }: {
   schedule: string | null;
   tz: string | null;
   duration: string | null;
   dates: string | null;
   datesLabel: string;
-  /** Optional action rendered in a footer inside the card (e.g. Edit program). */
   footer?: React.ReactNode;
+  title?: string;
 }) {
   const rows: { k: string; v: string; sub?: string | null }[] = [
     { k: 'Schedule', v: schedule ?? 'To be announced', sub: schedule ? tz : null },
@@ -179,7 +187,7 @@ function FactsCard({
   return (
     <div className={cn(cardClass, 'overflow-hidden')}>
       <p className="border-b border-neutral-100 px-4 py-3 font-mono text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">
-        Details
+        {title}
       </p>
       <dl className="px-4">
         {rows.map((r) => (
@@ -219,8 +227,10 @@ function NextSessionCard({ live, when }: { live: boolean; when: string | null })
 
 export default async function CoursePage(props: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ cohort?: string }>;
 }) {
   const { id } = await props.params;
+  const { cohort: cohortParam } = await props.searchParams;
   const [user, token] = await Promise.all([getCurrentUser(), getToken()]);
   if (!token) redirect('/login');
 
@@ -231,85 +241,126 @@ export default async function CoursePage(props: {
     if (e instanceof ApiError && e.status === 404) notFound();
     throw e;
   }
+
+  // Google UX Principle: Single Canonical URL.
+  // If this is a child batch URL, redirect directly to the parent Program Hub with this cohort selected.
+  if (course.parentCourseId) {
+    redirect(`/courses/${course.parentCourseId}?cohort=${id}`);
+  }
+
+  // Load cohorts (batches) for this program
+  const batches = await api<CourseBatch[]>(`/courses/${id}/batches`, { token }).catch(
+    () => [] as CourseBatch[],
+  );
+
+  // Student enrollments tracking
+  const enrolledIds = new Set<string>();
+  let myReminderAddedAt: string | null = null;
+  if (user?.role === 'STUDENT' && token) {
+    const enrollments = await api<Enrollment[]>('/courses/enrolled', { token }).catch(() => []);
+    for (const e of enrollments) enrolledIds.add(e.courseId);
+    const mine = enrollments.find((e) => e.courseId === id || batches.some((b) => b.id === e.courseId));
+    myReminderAddedAt = mine?.reminderAddedAt ?? null;
+  }
+
+  // Smart Cohort Resolution
+  let activeCohort: CourseBatch | null = null;
+  const isBaseExplicit = cohortParam === 'base' || cohortParam === id;
+  if (batches.length > 0 && !isBaseExplicit) {
+    if (cohortParam) {
+      activeCohort = batches.find((b) => b.id === cohortParam) ?? null;
+    }
+    if (!activeCohort && !cohortParam && user?.role === 'STUDENT') {
+      activeCohort = batches.find((b) => enrolledIds.has(b.id)) ?? null;
+      // If student is enrolled in base program and not in any child batch, stay on base program
+      if (!activeCohort && enrolledIds.has(id)) {
+        activeCohort = null;
+      }
+    }
+    if (!activeCohort && !cohortParam && user?.role === 'INSTRUCTOR') {
+      activeCohort = batches.find((b) => b.instructor?.id === user.sub) ?? null;
+      // If instructor teaches base course and not a child batch, stay on base program
+      if (!activeCohort && course.instructorId === user.sub) {
+        activeCohort = null;
+      }
+    }
+    // If a live session is currently happening in one of the batches, prioritize it
+    if (!activeCohort && !cohortParam) {
+      activeCohort = batches.find((b) => Boolean(b.liveSessionId)) ?? null;
+    }
+    // Default to first batch so the user is focused on a batch only if not assigned to base program
+    if (!activeCohort && !cohortParam) {
+      const studentInBase = user?.role === 'STUDENT' && enrolledIds.has(id);
+      const instrInBase = user?.role === 'INSTRUCTOR' && course.instructorId === user.sub;
+      if (!studentInBase && !instrInBase) {
+        activeCohort = batches[0];
+      }
+    }
+  }
+
+  // Contextual enrollment and ownership derivations
+  const effectiveId = activeCohort ? activeCohort.id : id;
+  const isEnrolledInActiveCohort = enrolledIds.has(effectiveId);
+  const otherEnrolledCohort = batches.find((b) => b.id !== effectiveId && enrolledIds.has(b.id)) ?? null;
+  const isEnrolledInAnyCohort = isEnrolledInActiveCohort || Boolean(otherEnrolledCohort) || enrolledIds.has(id);
+
+  const isOwnerOfActiveCohort =
+    user?.role === 'INSTRUCTOR' &&
+    (activeCohort
+      ? activeCohort.instructor?.id === user.sub || (!activeCohort.instructor && course.instructorId === user.sub)
+      : course.instructorId === user.sub);
+  const otherTaughtCohort =
+    user?.role === 'INSTRUCTOR'
+      ? batches.find((b) => b.id !== effectiveId && b.instructor?.id === user.sub) ?? null
+      : null;
+
+  const canManage = isOwnerOfActiveCohort || user?.role === 'ORG_ADMIN';
+  const isAdmin = user?.role === 'ORG_ADMIN';
+
+  // Session status query: check live state and schedule
   const sessionStatus = await api<{
     joinableNow: boolean;
     isLive: boolean;
     nextAt: string | null;
-  }>(`/sessions/course/${id}/status`, { token });
+    activeBatchId?: string | null;
+    activeBatchTitle?: string | null;
+  }>(`/sessions/course/${effectiveId}/status`, { token }).catch(() => ({
+    joinableNow: false,
+    isLive: false,
+    nextAt: null,
+  }));
 
-  const isOwner = user?.role === 'INSTRUCTOR' && user.sub === course.instructorId;
-  const canManage = isOwner || user?.role === 'ORG_ADMIN';
-  const isAdmin = user?.role === 'ORG_ADMIN';
-  // Hifz lives behind the Islamic Education pack — hide the card when it's off.
+  // Capabilities & Plugins
   const islamicEducation = token
-    ? await isPluginEnabled(PLUGIN_ISLAMIC_EDUCATION, token)
+    ? await isPluginActiveForCourse(course, PLUGIN_ISLAMIC_EDUCATION, token)
     : false;
   const testPrep = token
-    ? await isPluginEnabled(PLUGIN_TEST_PREP, token)
+    ? await isPluginActiveForCourse(course, PLUGIN_TEST_PREP, token)
     : false;
-  let isEnrolled = false;
-  let myReminderAddedAt: string | null = null;
-  // Batch ids the student is enrolled in — lets the batch list label "Open".
-  const enrolledIds = new Set<string>();
-  if (user?.role === 'STUDENT' && token) {
-    const enrollments = await api<Enrollment[]>('/courses/enrolled', { token });
-    for (const e of enrollments) enrolledIds.add(e.courseId);
-    const mine = enrollments.find((e) => e.courseId === id);
-    isEnrolled = Boolean(mine);
-    myReminderAddedAt = mine?.reminderAddedAt ?? null;
-  }
-
-  // Batches: a program (no parent) may run in several scheduled batches. Load
-  // them so managers can add/manage and students can pick one to enrol in.
-  const isProgram = !course.parentCourseId;
-  const batches = isProgram
-    ? await api<CourseBatch[]>(`/courses/${id}/batches`, { token }).catch(
-        () => [] as CourseBatch[],
-      )
-    : [];
-  const hasBatches = batches.length > 0;
-  // A student opening a program that runs in batches sees a stripped view —
-  // just the batches to choose from and the curriculum — until they pick a
-  // batch, whose own page then shows the full room/tools/details.
-  const studentBatchGate =
-    user?.role === 'STUDENT' && isProgram && hasBatches;
-  // If this course is itself a batch, load its program for a breadcrumb.
-  const parentProgram = course.parentCourseId
-    ? await api<CourseDetail>(`/courses/${course.parentCourseId}`, {
-        token,
-      }).catch(() => null)
-    : null;
 
   let myCertificate: Certificate | undefined;
-  if (isEnrolled && token) {
-    const certs = await api<Certificate[]>('/certificates/mine', { token });
-    myCertificate = certs.find((c) => c.courseId === id);
+  if (isEnrolledInAnyCohort && token) {
+    const certs = await api<Certificate[]>('/certificates/mine', { token }).catch(() => []);
+    myCertificate = certs.find((c) => c.courseId === id || (activeCohort && c.courseId === activeCohort.id));
   }
 
-  // Pending coursework in this program — surfaced as a badge on the student's
-  // Assignments card so they can see there's work waiting without opening it.
   let pendingAssignments = 0;
-  if (isEnrolled && token) {
-    const mineAssignments = await api<MyAssignment[]>('/assignments/mine', {
-      token,
-    }).catch(() => [] as MyAssignment[]);
+  if (isEnrolledInAnyCohort && token) {
+    const mineAssignments = await api<MyAssignment[]>('/assignments/mine', { token }).catch(() => []);
     pendingAssignments = mineAssignments.filter(
-      (a) => a.courseId === id && !a.submitted,
+      (a) => a.courseId === id || (activeCohort && a.courseId === activeCohort.id) && !a.submitted,
     ).length;
   }
 
-  // Instructor go-live guard: if this program has no authored assessment
-  // questions, no post-class quiz will materialize — warn before going live.
   let hasAssessment = true;
-  if (isOwner && token) {
+  if (canManage && token) {
     const questions = await api<AssessmentQuestion[]>(
       `/courses/${id}/assessment/questions`,
       { token },
-    ).catch(() => [] as AssessmentQuestion[]);
+    ).catch(() => []);
     hasAssessment = questions.length > 0;
   }
 
-  // Admin management is invite-first: fetch this program's scoped invite links.
   let courseInvites: OrgInvite[] = [];
   if (isAdmin) {
     courseInvites = await api<OrgInvite[]>(
@@ -318,14 +369,20 @@ export default async function CoursePage(props: {
     ).catch(() => []);
   }
 
+  // Effective Schedule derivations
+  const effectiveMeetingDays = activeCohort?.meetingDays ?? course.meetingDays;
+  const effectiveMeetingTime = activeCohort?.meetingTime ?? course.meetingTime;
+  const effectiveTimezone = activeCohort?.timezone ?? course.timezone;
+  const effectiveStartDate = activeCohort?.startDate ?? course.startDate;
+  const effectiveDurationWeeks = activeCohort?.durationWeeks ?? course.durationWeeks;
+  const effectiveInstructor = activeCohort?.instructor ?? course.instructor;
+
   const liveNow = sessionStatus.isLive;
-  const cohort = deriveCohort(course.startDate, course.durationWeeks, liveNow);
-  const cadence = formatCadence(course.meetingDays, course.meetingTime);
-  const tz = tzShort(course.timezone, course.startDate);
-  const duration = formatDurationLong(course.durationWeeks);
-  const dateRange = course.startDate
-    ? formatDateRange(course.startDate, course.durationWeeks)
-    : null;
+  const cohort = deriveCohort(effectiveStartDate, effectiveDurationWeeks, liveNow);
+  const cadence = formatCadence(effectiveMeetingDays, effectiveMeetingTime);
+  const tz = tzShort(effectiveTimezone, effectiveStartDate);
+  const duration = formatDurationLong(effectiveDurationWeeks);
+  const dateRange = effectiveStartDate ? formatDateRange(effectiveStartDate, effectiveDurationWeeks) : null;
   const nextWhen = sessionStatus.nextAt
     ? new Date(sessionStatus.nextAt).toLocaleString(undefined, {
         weekday: 'long',
@@ -333,34 +390,65 @@ export default async function CoursePage(props: {
         day: 'numeric',
         hour: 'numeric',
         minute: '2-digit',
-        timeZone: course.timezone ?? undefined,
+        timeZone: effectiveTimezone ?? undefined,
       })
     : null;
 
-  // The teaching tools that appear in the main column's "Teach" grid.
-  const canUseTools = canManage || isEnrolled;
+  // Active cohort clean label
+  const activeCohortLabel = activeCohort
+    ? activeCohort.title.includes(' — ')
+      ? activeCohort.title.slice(activeCohort.title.indexOf(' — ') + 3)
+      : activeCohort.title
+    : null;
+
+  // Synthesize CourseDetail for the active cohort so admin can edit the cohort or program
+  const activeCourseForEdit: CourseDetail = activeCohort
+    ? {
+        ...course,
+        id: activeCohort.id,
+        parentCourseId: course.id,
+        title: activeCohort.title,
+        startDate: activeCohort.startDate ?? course.startDate,
+        durationWeeks: activeCohort.durationWeeks ?? course.durationWeeks,
+        meetingDays: activeCohort.meetingDays ?? course.meetingDays,
+        meetingTime: activeCohort.meetingTime ?? course.meetingTime,
+        meetingTimesByDay: activeCohort.meetingTimesByDay ?? course.meetingTimesByDay,
+        timezone: activeCohort.timezone ?? course.timezone,
+        instructor: activeCohort.instructor ?? course.instructor,
+      }
+    : course;
+
+  // Total students enrolled across the entire program
+  const totalStudents = course._count.enrollments + batches.reduce((acc, b) => acc + b._count.enrollments, 0);
+
+  // Teaching tools
+  const canUseTools = canManage || isEnrolledInAnyCohort;
   const teachTools: {
     href: string;
     icon: IconType;
     title: string;
     desc: string;
     badge?: number;
+    iconClass?: string;
   }[] = [];
+  const lightGreenIcon =
+    'bg-emerald-50 text-emerald-700 border border-emerald-200/70 group-hover:bg-emerald-100/70';
+
   if (canUseTools) {
     teachTools.push({
       href: `/courses/${id}/assignments`,
       icon: PiNotePencil,
       title: canManage ? 'Assignment lab' : 'Assignments',
       desc: canManage ? 'Coursework, groups, grading & submissions' : 'View and submit coursework',
-      ...(!canManage && pendingAssignments > 0
-        ? { badge: pendingAssignments }
-        : {}),
+      iconClass: lightGreenIcon,
+      ...(!canManage && pendingAssignments > 0 ? { badge: pendingAssignments } : {}),
     });
     teachTools.push({
       href: `/courses/${id}/assessment`,
       icon: PiClipboardText,
       title: 'Assessments',
       desc: canManage ? 'Question bank + remediation tasks' : 'Post-class quizzes and practice',
+      iconClass: lightGreenIcon,
     });
     if (canManage) {
       teachTools.push({
@@ -368,6 +456,7 @@ export default async function CoursePage(props: {
         icon: PiLightning,
         title: 'Buzzer questions',
         desc: 'Build a bank of live buzzer rounds',
+        iconClass: lightGreenIcon,
       });
     }
     if (testPrep) {
@@ -376,6 +465,7 @@ export default async function CoursePage(props: {
         icon: PiExam,
         title: 'Test Prep',
         desc: canManage ? 'Build timed mock exams; import past questions' : 'Sit timed practice exams',
+        iconClass: lightGreenIcon,
       });
     }
     if (islamicEducation) {
@@ -384,6 +474,7 @@ export default async function CoursePage(props: {
         icon: PiBookOpenText,
         title: 'Hifz & memorization',
         desc: canManage ? 'Set targets, log recitations, track progress' : 'Your memorization targets and recitation log',
+        iconClass: lightGreenIcon,
       });
       teachTools.push({
         href: `/courses/${id}/tajweed`,
@@ -392,15 +483,15 @@ export default async function CoursePage(props: {
         desc: canManage
           ? 'Prepare lesson marks, see what you recorded per student'
           : 'The Tajweed corrections from your recitations',
+        iconClass: lightGreenIcon,
       });
     }
   }
 
   return (
     <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-9 sm:px-6 lg:px-8">
-      {/* Class-end assessment gate: enrolled students with a pending quiz are
-          blocked until they start it. */}
-      {user?.role === 'STUDENT' && isEnrolled && <AssessmentGate courseId={id} />}
+      {/* Class-end assessment gate: enrolled students with a pending quiz are blocked until they start it */}
+      {user?.role === 'STUDENT' && isEnrolledInAnyCohort && <AssessmentGate courseId={effectiveId} />}
 
       {/* Header */}
       <div className="max-w-3xl">
@@ -409,51 +500,115 @@ export default async function CoursePage(props: {
             Programs
           </Link>
           <span className="text-neutral-300">/</span>
-          {course.parentCourseId ? (
-            <Link
-              href={`/courses/${course.parentCourseId}`}
-              className="hover:text-neutral-700"
-            >
-              {parentProgram?.title ?? 'Program'}
-            </Link>
-          ) : (
-            <span className="text-neutral-400">{course.category ?? 'Program'}</span>
-          )}
+          <span className="text-neutral-400">{course.category ?? 'Program'}</span>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="font-display text-3xl font-extrabold tracking-tight text-neutral-950">
             {course.title}
           </h1>
           <StatusPill status={cohort.status} label={cohort.label} />
+          {isAdmin && batches.length > 0 && (
+            <EditProgramButton
+              course={course}
+              label="Edit program"
+              className={cn(btn('secondary', 'sm'), 'text-xs py-1 px-3')}
+            />
+          )}
         </div>
         <p className="mt-2 text-sm text-neutral-500">
           Taught by{' '}
           <span className="font-medium text-neutral-700">
-            {course.instructor?.name ?? 'To be assigned'}
+            {effectiveInstructor?.name ?? 'To be assigned'}
           </span>
-          {course.level && <> · {course.level}</>} · {course._count.enrollments}{' '}
-          {course._count.enrollments === 1 ? 'student' : 'students'} enrolled
+          {course.level && <> · {course.level}</>} · {totalStudents}{' '}
+          {totalStudents === 1 ? 'student' : 'students'} enrolled
         </p>
         {course.description && <p className="mt-4 text-neutral-700">{course.description}</p>}
       </div>
 
-      {/* Two-column: main content + sticky cockpit rail. On mobile the rail
-          (live action + facts) leads, then the teaching content. */}
-      <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-        {/* MAIN */}
-        <div className="order-2 min-w-0 space-y-10 lg:order-1">
-          {isProgram && (canManage || hasBatches) && (
-            <BatchesSection
-              programId={id}
-              batches={batches}
-              canManage={canManage}
-              defaultWeeks={course.durationWeeks}
-              defaultTimezone={course.timezone}
-              enrolledCourseIds={enrolledIds}
-            />
-          )}
+      {/* Contextual Batch Switch Notice for Student */}
+      {otherEnrolledCohort && !isEnrolledInActiveCohort ? (
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-signal-200 bg-signal-50/70 p-3.5 text-sm text-signal-900">
+          <div className="flex items-center gap-2">
+            <span className="text-base">📅</span>
+            <span>
+              You are enrolled in{' '}
+              <span className="font-bold">
+                {otherEnrolledCohort.title.includes(' — ')
+                  ? otherEnrolledCohort.title.slice(otherEnrolledCohort.title.indexOf(' — ') + 3)
+                  : otherEnrolledCohort.title}
+              </span>
+              .
+            </span>
+          </div>
+          <Link
+            href={`/courses/${id}?cohort=${otherEnrolledCohort.id}`}
+            className={cn(btn('secondary', 'sm'), 'shrink-0')}
+          >
+            Switch to your batch →
+          </Link>
+        </div>
+      ) : activeCohort && enrolledIds.has(id) && !isEnrolledInActiveCohort ? (
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-signal-200 bg-signal-50/70 p-3.5 text-sm text-signal-900">
+          <div className="flex items-center gap-2">
+            <span className="text-base">📅</span>
+            <span>
+              You are enrolled in the <span className="font-bold">Base Program</span>.
+            </span>
+          </div>
+          <Link
+            href={`/courses/${id}?cohort=base`}
+            className={cn(btn('secondary', 'sm'), 'shrink-0')}
+          >
+            Switch to base program →
+          </Link>
+        </div>
+      ) : null}
 
-          {!studentBatchGate && teachTools.length > 0 && (
+      {/* Contextual Batch Switch Notice for Instructor */}
+      {otherTaughtCohort && !isOwnerOfActiveCohort ? (
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-accent-200 bg-accent-50/70 p-3.5 text-sm text-accent-900">
+          <div className="flex items-center gap-2">
+            <span className="text-base">👨‍🏫</span>
+            <span>
+              You are assigned to teach{' '}
+              <span className="font-bold">
+                {otherTaughtCohort.title.includes(' — ')
+                  ? otherTaughtCohort.title.slice(otherTaughtCohort.title.indexOf(' — ') + 3)
+                  : otherTaughtCohort.title}
+              </span>
+              .
+            </span>
+          </div>
+          <Link
+            href={`/courses/${id}?cohort=${otherTaughtCohort.id}`}
+            className={cn(btn('secondary', 'sm'), 'shrink-0')}
+          >
+            Switch to your batch →
+          </Link>
+        </div>
+      ) : activeCohort && course.instructorId === user?.sub && !isOwnerOfActiveCohort ? (
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-accent-200 bg-accent-50/70 p-3.5 text-sm text-accent-900">
+          <div className="flex items-center gap-2">
+            <span className="text-base">👨‍🏫</span>
+            <span>
+              You are assigned to teach the <span className="font-bold">Base Program</span>.
+            </span>
+          </div>
+          <Link
+            href={`/courses/${id}?cohort=base`}
+            className={cn(btn('secondary', 'sm'), 'shrink-0')}
+          >
+            Switch to base program →
+          </Link>
+        </div>
+      ) : null}
+
+      {/* Two-column layout: main content + sticky cockpit rail */}
+      <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        {/* MAIN COLUMN */}
+        <div className="order-2 min-w-0 space-y-10 lg:order-1">
+          {teachTools.length > 0 && (
             <section>
               <SectionLabel>Teach</SectionLabel>
               <div className="grid gap-3 xl:grid-cols-2">
@@ -494,132 +649,91 @@ export default async function CoursePage(props: {
             )}
           </section>
 
-          {/* Records — demoted to light links */}
-          {!studentBatchGate && (
-            <section>
-              <SectionLabel>Records</SectionLabel>
-              <div className="flex flex-wrap gap-3">
-                <RecordLink
-                  href={`/courses/${id}/sessions`}
-                  icon={PiClockCounterClockwise}
-                  label="Session history"
-                />
-                {isAdmin && (
-                  <RecordLink
-                    href={`/courses/${id}/roster`}
-                    icon={PiUsers}
-                    label="Roster & certificates"
-                  />
-                )}
-              </div>
-            </section>
-          )}
+          {/* Cohorts overview & intake schedule (commented out per design) */}
+          {/*
+          <BatchesSection
+            programId={id}
+            batches={batches}
+            activeCohortId={effectiveId}
+            canManage={canManage}
+            defaultWeeks={course.durationWeeks}
+            defaultTimezone={course.timezone}
+            defaultTime={course.meetingTime}
+            defaultDays={course.meetingDays}
+            enrolledCourseIds={enrolledIds}
+          />
+          */}
 
-          {/* Admin: invite-first management — a shareable link per role that
-              lands people straight in this program. */}
+          {/* Records */}
+          <section>
+            <SectionLabel>Records</SectionLabel>
+            <div className="flex flex-wrap gap-3">
+              <RecordLink
+                href={`/courses/${id}/sessions`}
+                icon={PiClockCounterClockwise}
+                label="Session history"
+              />
+              {isAdmin && (
+                <RecordLink
+                  href={`/courses/${id}/roster`}
+                  icon={PiUsers}
+                  label="Roster & certificates"
+                />
+              )}
+            </div>
+          </section>
+
+          {/* Admin: invite-first management */}
           {isAdmin && (
             <CourseInviteManage
               courseId={id}
               currentInstructorName={course.instructor?.name ?? null}
-              enrolledCount={course._count.enrollments}
+              enrolledCount={totalStudents}
               instructorInvites={courseInvites.filter((i) => i.role === 'INSTRUCTOR')}
               studentInvites={courseInvites.filter((i) => i.role === 'STUDENT')}
             />
           )}
 
-          {isOwner && <InstructorPanel course={course} />}
+          {isOwnerOfActiveCohort && <InstructorPanel course={course} />}
 
-          {/* Danger zone — admin can permanently delete the program/batch. */}
+          {/* Danger zone — admin can permanently delete the program or active cohort */}
           {isAdmin && (
             <DangerZone
-              courseId={id}
-              title={course.title}
-              isBatch={!isProgram}
+              courseId={activeCohort ? activeCohort.id : id}
+              title={activeCohort ? activeCohort.title : course.title}
+              isBatch={Boolean(activeCohort)}
             />
           )}
         </div>
 
-        {/* RAIL — the "program cockpit". Hidden for a student choosing a batch;
-            their batch's own page carries the full cockpit. */}
-        {!studentBatchGate && (
+        {/* RAIL — the unified "Classroom Cockpit" */}
         <aside className="order-1 space-y-4 lg:sticky lg:top-6 lg:order-2">
-          {/* Primary action / status */}
-          {isOwner || isEnrolled ? (
-            <JoinLiveCard
-              courseId={id}
-              canJoin={isOwner || isEnrolled}
-              isInstructor={isOwner}
-              joinableNow={sessionStatus.joinableNow}
-              isLive={sessionStatus.isLive}
-              nextAt={sessionStatus.nextAt}
-              timezone={course.timezone}
-              hasAssessment={hasAssessment}
-            />
-          ) : user?.role === 'STUDENT' && isProgram && hasBatches ? (
-            <div className={cn(cardClass, 'p-4')}>
-              <p className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">
-                Choose your batch
-              </p>
-              <p className="mt-1.5 text-sm text-neutral-500">
-                This program runs in {batches.length}{' '}
-                {batches.length === 1 ? 'batch' : 'batches'}. Pick the one whose
-                time and timezone suit you to enrol.
-              </p>
-              <a
-                href="#batches"
-                className={cn(btn('primary', 'md', 'w-full'), 'mt-3')}
-              >
-                See batches
-              </a>
-            </div>
-          ) : user?.role === 'STUDENT' ? (
-            <div className={cn(cardClass, 'p-4')}>
-              <p className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">
-                Join this cohort
-              </p>
-              <p className="mb-3 mt-1.5 text-sm text-neutral-500">
-                Enrol to join the live room, get reminders, and earn a certificate.
-              </p>
-              <EnrollActions courseId={id} isEnrolled={isEnrolled} />
-            </div>
-          ) : isAdmin ? (
-            <ShadowJoinCard
-              courseId={id}
-              live={sessionStatus.isLive}
-              joinableNow={sessionStatus.joinableNow}
-            />
-          ) : (
-            <NextSessionCard live={sessionStatus.isLive} when={nextWhen} />
-          )}
-
-          {/* Cohort facts — with the admin's Edit control docked in the footer. */}
-          <FactsCard
-            schedule={cadence}
-            tz={tz}
-            duration={duration}
-            dates={dateRange}
-            datesLabel={cohort.status === 'COMPLETED' ? 'Ran' : 'Dates'}
-            footer={
-              isAdmin ? (
-                <EditProgramButton
-                  course={course}
-                  className={btn('secondary', 'md', 'w-full')}
-                />
-              ) : undefined
-            }
+          <ClassroomCockpit
+            course={course}
+            activeCohort={activeCohort}
+            activeCourseForEdit={activeCourseForEdit}
+            batches={batches}
+            effectiveId={effectiveId}
+            user={user}
+            isAdmin={isAdmin}
+            isOwnerOfActiveCohort={isOwnerOfActiveCohort}
+            isEnrolledInActiveCohort={isEnrolledInActiveCohort}
+            sessionStatus={sessionStatus}
+            hasAssessment={hasAssessment}
+            enrolledIds={enrolledIds}
           />
 
           {/* Student reminder */}
-          {isEnrolled && (
+          {isEnrolledInActiveCohort && (
             <ClassReminderCard
-              courseId={id}
+              courseId={effectiveId}
               cadence={cadence}
               reminderAddedAt={myReminderAddedAt}
               scheduleUpdatedAt={course.scheduleUpdatedAt}
             />
           )}
 
-          {/* Live-class leaderboard — shown to students, instructors & admins. */}
+          {/* Live-class leaderboard */}
           <Leaderboard
             courseId={id}
             highlightUserId={user?.role === 'STUDENT' ? user.sub : undefined}
@@ -632,9 +746,11 @@ export default async function CoursePage(props: {
                 Roster
               </p>
               <p className="mt-1.5 text-[22px] font-extrabold tracking-tight text-neutral-950">
-                {course._count.enrollments}{' '}
+                {activeCohort ? activeCohort._count.enrollments : course._count.enrollments}{' '}
                 <span className="text-sm font-semibold text-neutral-500">
-                  {course._count.enrollments === 1 ? 'student' : 'students'}
+                  {activeCohort
+                    ? activeCohort._count.enrollments === 1 ? 'student in batch' : 'students in batch'
+                    : course._count.enrollments === 1 ? 'student' : 'students'}
                 </span>
               </p>
               <Link
@@ -664,7 +780,6 @@ export default async function CoursePage(props: {
             </div>
           )}
         </aside>
-        )}
       </div>
     </main>
   );

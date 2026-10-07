@@ -32,10 +32,14 @@ export function AddBatchForm({
   programId,
   defaultWeeks,
   defaultTimezone,
+  defaultTime,
+  defaultDays = [],
 }: {
   programId: string;
   defaultWeeks: number | null;
   defaultTimezone: string | null;
+  defaultTime?: string | null;
+  defaultDays?: number[] | null;
 }) {
   const [state, action] = useActionState(
     createBatch.bind(null, programId),
@@ -53,12 +57,12 @@ export function AddBatchForm({
           id="label"
           name="label"
           required
-          placeholder="e.g. Batch A · Morning"
+          placeholder="e.g. Morning Batch or Weekend Intake"
           className={inputClass}
         />
         <p className="text-xs text-neutral-400">
           Shown to students so they can pick the right time. The program&apos;s
-          curriculum and assessments are copied into the batch automatically.
+          curriculum and interactive tools are shared with this batch.
         </p>
       </div>
 
@@ -77,7 +81,13 @@ export function AddBatchForm({
           <div className="flex flex-wrap gap-1.5">
             {DAYS.map((d, i) => (
               <label key={i} className="cursor-pointer">
-                <input type="checkbox" name="meetingDays" value={i} className="peer sr-only" />
+                <input
+                  type="checkbox"
+                  name="meetingDays"
+                  value={i}
+                  defaultChecked={defaultDays?.includes(i)}
+                  className="peer sr-only"
+                />
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-neutral-300 text-xs font-medium text-neutral-600 transition hover:border-neutral-500 peer-checked:border-signal-700 peer-checked:bg-signal-700 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-signal-400 peer-focus-visible:ring-offset-1">
                   {d}
                 </span>
@@ -95,7 +105,7 @@ export function AddBatchForm({
               id="meetingTime"
               name="meetingTime"
               type="time"
-              defaultValue="09:00"
+              defaultValue={defaultTime || '18:00'}
               className={inputClass}
             />
           </div>
