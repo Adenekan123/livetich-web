@@ -6,6 +6,7 @@ import { register, type AuthFormState } from '@/app/actions/auth';
 import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
 import { PasswordInput } from '@/components/password-input';
+import { Turnstile } from '@/components/turnstile';
 import { inputClass, labelClass } from '@/lib/ui';
 
 const initial: AuthFormState = { error: null };
@@ -84,6 +85,8 @@ export function JoinForm({
           placeholder="At least 8 characters"
         />
       </div>
+
+      <Turnstile />
 
       <SubmitButton size="lg" className="w-full" pendingLabel="Creating account…">
         Create account

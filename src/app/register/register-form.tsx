@@ -12,6 +12,7 @@ import { registerOrganization, type AuthFormState } from '@/app/actions/auth';
 import { FormError } from '@/components/form-error';
 import { PasswordInput } from '@/components/password-input';
 import { SubmitButton } from '@/components/submit-button';
+import { Turnstile } from '@/components/turnstile';
 import {
   btn,
   cn,
@@ -378,6 +379,8 @@ export function RegisterForm() {
               You can configure your curriculum tools and add-on packs whenever you create a program.
             </p>
           </div>
+
+          <Turnstile />
 
           <div className="flex items-center gap-3 pt-2">
             <button

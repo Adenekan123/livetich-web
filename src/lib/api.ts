@@ -73,11 +73,31 @@ export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 10_000);
   let res: Response;
+
+  // On the server (Next.js SSR / Server Actions), forward client edge IP and user-agent
+  // to the API so Cloudflare headers, rate limiters, and audit logs track the real visitor.
+  let clientHeaders: Record<string, string> = {};
+  if (typeof window === 'undefined') {
+    try {
+      const { headers } = await import('next/headers');
+      const reqHeaders = await headers();
+      const cfIp = reqHeaders.get('cf-connecting-ip');
+      if (cfIp) clientHeaders['cf-connecting-ip'] = cfIp;
+      const xff = reqHeaders.get('x-forwarded-for');
+      if (xff) clientHeaders['x-forwarded-for'] = xff;
+      const ua = reqHeaders.get('user-agent');
+      if (ua) clientHeaders['user-agent'] = ua;
+    } catch {
+      // Ignored safely if called outside an active HTTP request context (e.g. build phase)
+    }
+  }
+
   try {
     res = await fetch(`${base}${path}`, {
       method: opts.method ?? 'GET',
       headers: {
         'Content-Type': 'application/json',
+        ...clientHeaders,
         ...(opts.token && { Authorization: `Bearer ${opts.token}` }),
         ...opts.headers,
       },
