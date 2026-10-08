@@ -41,6 +41,7 @@ jobs:
           push: true
           build-args: |
             NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY=${{ vars.NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY }}
           tags: |
             ${{ env.IMAGE }}:${{ env.TAG }}
             ${{ env.IMAGE }}:${{ github.sha }}
