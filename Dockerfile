@@ -18,6 +18,8 @@ RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 # here (passed as a build arg from compose). See deploy/DEPLOY.md.
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY
+ENV NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY=$NEXT_PUBLIC_CLOUDFLARE_TURNSTILE_SITE_KEY
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # The deps stage's copy of the Excalidraw fonts landed in its own public/, which
