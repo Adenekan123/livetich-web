@@ -20,7 +20,7 @@ export default async function AdminLayout({
   if (!user.isSuperAdmin) redirect('/dashboard');
 
   return (
-    <div className="flex min-h-screen flex-col bg-neutral-50">
+    <div className="dashboard-surface flex min-h-screen flex-col bg-neutral-50">
       <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white/90 backdrop-blur">
         <div className="mx-auto w-full max-w-[1600px] px-4 sm:px-6">
           <div className="flex items-center justify-between py-3">
