@@ -17,6 +17,8 @@ export function PasswordInput({
   required,
   showRequirement = false,
   size = 'md',
+  value: controlledValue,
+  onChange: controlledOnChange,
 }: {
   id: string;
   name: string;
@@ -28,12 +30,21 @@ export function PasswordInput({
   showRequirement?: boolean;
   /** `lg` uses the roomier auth field styling + a larger toggle target. */
   size?: 'md' | 'lg';
+  value?: string;
+  onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }) {
   const [show, setShow] = useState(false);
-  const [value, setValue] = useState('');
+  const [internalValue, setInternalValue] = useState('');
+  const value = controlledValue !== undefined ? controlledValue : internalValue;
   const met = minLength ? value.length >= minLength : true;
   const hintId = `${id}-req`;
   const lg = size === 'lg';
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (controlledValue === undefined) setInternalValue(e.target.value);
+    controlledOnChange?.(e);
+  };
+
   return (
     <div className="relative">
       <input
@@ -44,8 +55,9 @@ export function PasswordInput({
         minLength={minLength}
         autoComplete={autoComplete}
         placeholder={placeholder}
+        value={value}
         aria-describedby={showRequirement && minLength ? hintId : undefined}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={handleChange}
         className={cn(lg ? inputClassLg : inputClass, lg ? 'pr-12 sm:pr-11' : 'pr-11')}
       />
       <button

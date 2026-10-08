@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ConnectionQuality,
   DisconnectReason,
   Room,
   RoomEvent,
@@ -42,6 +43,7 @@ interface Tile {
   camera?: LKTrack;
   mic?: LKTrack;
   micMuted: boolean;
+  connectionQuality?: ConnectionQuality;
 }
 
 /**
@@ -75,6 +77,57 @@ function roleOf(p: Participant): boolean {
   }
 }
 
+function ConnectionQualityBadge({
+  quality,
+}: {
+  quality?: ConnectionQuality;
+}) {
+  if (!quality || quality === ConnectionQuality.Unknown) return null;
+  if (quality === ConnectionQuality.Excellent) {
+    return (
+      <span
+        title="Network: Excellent"
+        className="inline-flex items-end gap-0.5"
+      >
+        <span className="h-1.5 w-0.5 rounded-full bg-emerald-400" />
+        <span className="h-2.5 w-0.5 rounded-full bg-emerald-400" />
+        <span className="h-3.5 w-0.5 rounded-full bg-emerald-400" />
+      </span>
+    );
+  }
+  if (quality === ConnectionQuality.Good) {
+    return (
+      <span title="Network: Good" className="inline-flex items-end gap-0.5">
+        <span className="h-1.5 w-0.5 rounded-full bg-emerald-400" />
+        <span className="h-2.5 w-0.5 rounded-full bg-emerald-400" />
+        <span className="h-3.5 w-0.5 rounded-full bg-neutral-500" />
+      </span>
+    );
+  }
+  if (quality === ConnectionQuality.Poor) {
+    return (
+      <span
+        title="Network: Poor (audio prioritized)"
+        className="inline-flex items-end gap-0.5 animate-pulse"
+      >
+        <span className="h-1.5 w-0.5 rounded-full bg-amber-400" />
+        <span className="h-2.5 w-0.5 rounded-full bg-neutral-500" />
+        <span className="h-3.5 w-0.5 rounded-full bg-neutral-500" />
+      </span>
+    );
+  }
+  return (
+    <span
+      title="Network: Reconnecting"
+      className="inline-flex items-end gap-0.5 animate-pulse"
+    >
+      <span className="h-1.5 w-0.5 rounded-full bg-red-400" />
+      <span className="h-2.5 w-0.5 rounded-full bg-neutral-500" />
+      <span className="h-3.5 w-0.5 rounded-full bg-neutral-500" />
+    </span>
+  );
+}
+
 function tilesFrom(room: Room): { tiles: Tile[]; screen?: LKTrack } {
   const build = (p: Participant, isLocal: boolean): Tile => {
     // A camera turned off is muted (the publication lingers), which would other-
@@ -89,6 +142,7 @@ function tilesFrom(room: Room): { tiles: Tile[]; screen?: LKTrack } {
       camera: camPub && !camPub.isMuted ? camPub.track : undefined,
       mic: p.getTrackPublication(Track.Source.Microphone)?.track,
       micMuted: p.getTrackPublication(Track.Source.Microphone)?.isMuted ?? true,
+      connectionQuality: p.connectionQuality,
     };
   };
 
@@ -223,14 +277,17 @@ function ParticipantTile({ tile }: { tile: Tile }) {
           Teach
         </span>
       )}
-      <div className="absolute bottom-1 left-1 flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white">
+      <div className="absolute bottom-1 left-1 flex items-center gap-1.5 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white">
+        <ConnectionQualityBadge quality={tile.connectionQuality} />
         {tile.micMuted ? (
           <PiMicrophoneSlash className="h-3.5 w-3.5 text-neutral-300" />
         ) : (
           <PiMicrophone className="h-3.5 w-3.5" />
         )}
-        {tile.name}
-        {tile.isLocal && ' (you)'}
+        <span className="max-w-[120px] truncate">
+          {tile.name}
+          {tile.isLocal && ' (you)'}
+        </span>
       </div>
     </div>
   );
@@ -385,6 +442,7 @@ export function VideoStage({
         .on(RoomEvent.ParticipantDisconnected, sync)
         .on(RoomEvent.TrackMuted, sync)
         .on(RoomEvent.TrackUnmuted, sync)
+        .on(RoomEvent.ConnectionQualityChanged, sync)
         // A transient blip: LiveKit is retrying under the hood. Stay "live" so
         // the call and controls don't vanish — just flag it.
         .on(RoomEvent.Reconnecting, () => {
@@ -645,6 +703,7 @@ export function VideoStage({
               </span>
             )}
             <div className="absolute bottom-1 left-1 flex items-center gap-1 rounded bg-black/60 px-1.5 py-0.5 text-[11px] text-white">
+              <ConnectionQualityBadge quality={t.connectionQuality} />
               {t.micMuted ? (
                 <PiMicrophoneSlash className="h-3 w-3 text-neutral-300" />
               ) : (

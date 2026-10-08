@@ -127,26 +127,37 @@ export function JoinLiveCard({
         </div>
 
         {canJoin && (
-          <button
-            onClick={onJoin}
-            disabled={!joinableNow || pending}
-            className={cn(
-              btn('primary'),
-              // Pulse the CTA while the room is open/live to draw the eye.
-              joinableNow && !pending && 'animate-live',
-              (!joinableNow || pending) && 'cursor-not-allowed opacity-50',
-            )}
-          >
-            {pending
-              ? 'Joining…'
-              : isInstructor
-                ? isLive
-                  ? 'Rejoin class →'
-                  : 'Go live →'
-                : isLive
-                  ? 'Join live class →'
-                  : 'Join session →'}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {joinableNow ? (
+              <button
+                onClick={onJoin}
+                disabled={pending}
+                className={cn(
+                  btn('primary'),
+                  !pending && 'animate-live',
+                )}
+              >
+                {pending
+                  ? 'Joining…'
+                  : isInstructor
+                    ? isLive
+                      ? 'Rejoin class →'
+                      : 'Go live →'
+                    : isLive
+                      ? 'Join live class →'
+                      : 'Join session →'}
+              </button>
+            ) : isInstructor ? (
+              <button
+                onClick={onJoin}
+                disabled={pending}
+                className={btn('secondary')}
+                title="Launch a practice session to test your microphone, camera, whiteboard, and plugins"
+              >
+                {pending ? 'Opening room…' : 'Start practice session →'}
+              </button>
+            ) : null}
+          </div>
         )}
       </div>
 

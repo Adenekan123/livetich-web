@@ -52,12 +52,16 @@ export function middleware(req: NextRequest) {
   if (claim === false && !isOpen(pathname)) {
     const url = req.nextUrl.clone();
     url.pathname = '/verify-email';
+    url.searchParams.set('next', pathname + req.nextUrl.search);
     return NextResponse.redirect(url);
   }
   if (claim === true && pathname === '/verify-email') {
-    const url = req.nextUrl.clone();
-    url.pathname = '/dashboard';
-    return NextResponse.redirect(url);
+    const next = req.nextUrl.searchParams.get('next');
+    const dest =
+      next && next.startsWith('/') && !next.startsWith('//')
+        ? next
+        : '/dashboard';
+    return NextResponse.redirect(new URL(dest, req.url));
   }
   return NextResponse.next();
 }

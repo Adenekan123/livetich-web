@@ -34,11 +34,16 @@ export async function login(
 ): Promise<AuthFormState> {
   let result: AuthResult;
   try {
+    const turnstileToken =
+      formData.get('turnstileToken') ||
+      formData.get('cf-turnstile-response') ||
+      undefined;
     result = await api<AuthResult>('/auth/login', {
       method: 'POST',
       body: {
         email: formData.get('email'),
         password: formData.get('password'),
+        ...(turnstileToken ? { turnstileToken: String(turnstileToken) } : {}),
       },
     });
   } catch (e) {
@@ -66,6 +71,10 @@ export async function register(
 ): Promise<AuthFormState> {
   let result: AuthResult;
   try {
+    const turnstileToken =
+      formData.get('turnstileToken') ||
+      formData.get('cf-turnstile-response') ||
+      undefined;
     result = await api<AuthResult>('/auth/register', {
       method: 'POST',
       body: {
@@ -73,6 +82,7 @@ export async function register(
         email: formData.get('email'),
         password: formData.get('password'),
         inviteToken: formData.get('inviteToken'),
+        ...(turnstileToken ? { turnstileToken: String(turnstileToken) } : {}),
       },
     });
   } catch (e) {
@@ -85,9 +95,12 @@ export async function register(
   // Verification still comes first — that gate is not this feature's to
   // open. Past it, someone who signed up through a program link lands on
   // the class rather than a dashboard they have to search.
-  if (!result.user.emailVerified) redirect('/verify-email');
   const courseId = String(formData.get('courseId') ?? '');
-  redirect(courseId ? `/c/${courseId}` : `/dashboard`, RedirectType.replace);
+  const dest = courseId ? `/c/${courseId}` : '/dashboard';
+  if (!result.user.emailVerified) {
+    redirect(`/verify-email?next=${encodeURIComponent(dest)}`);
+  }
+  redirect(dest, RedirectType.replace);
 }
 
 /** Company signup — creates the organization and its first admin together. */
@@ -97,6 +110,10 @@ export async function registerOrganization(
 ): Promise<AuthFormState> {
   let result: AuthResult;
   try {
+    const turnstileToken =
+      formData.get('turnstileToken') ||
+      formData.get('cf-turnstile-response') ||
+      undefined;
     result = await api<AuthResult>('/auth/register-organization', {
       method: 'POST',
       body: {
@@ -106,6 +123,14 @@ export async function registerOrganization(
         password: formData.get('password'),
         tagline: formData.get('tagline') || undefined,
         primaryColor: formData.get('primaryColor') || undefined,
+        pluginKeys:
+          formData
+            .getAll('pluginKeys')
+            .map(String)
+            .filter(Boolean).length > 0
+            ? formData.getAll('pluginKeys').map(String).filter(Boolean)
+            : undefined,
+        ...(turnstileToken ? { turnstileToken: String(turnstileToken) } : {}),
       },
     });
   } catch (e) {
@@ -265,7 +290,10 @@ export async function verifyEmail(
     throw e;
   }
   await setToken(result.accessToken);
-  redirect('/dashboard');
+  const next = String(formData.get('next') ?? '');
+  const dest =
+    next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard';
+  redirect(dest);
 }
 
 export interface ForgotPasswordState {
@@ -279,9 +307,16 @@ export async function forgotPassword(
   formData: FormData,
 ): Promise<ForgotPasswordState> {
   try {
+    const turnstileToken =
+      formData.get('turnstileToken') ||
+      formData.get('cf-turnstile-response') ||
+      undefined;
     await api('/auth/forgot-password', {
       method: 'POST',
-      body: { email: formData.get('email') },
+      body: {
+        email: formData.get('email'),
+        ...(turnstileToken ? { turnstileToken: String(turnstileToken) } : {}),
+      },
     });
   } catch (e) {
     if (e instanceof ApiError) return { error: e.message };

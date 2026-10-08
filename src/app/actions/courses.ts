@@ -58,6 +58,11 @@ export async function createCourse(
   const durationWeeks = formData.get('durationWeeks');
   const startDate = formData.get('startDate') as string;
 
+  const pluginKeys = formData
+    .getAll('pluginKeys')
+    .map(String)
+    .filter(Boolean);
+
   let course: CourseDetail;
   try {
     course = await api<CourseDetail>('/courses', {
@@ -78,6 +83,7 @@ export async function createCourse(
             ? meetingTimesByDay
             : undefined,
         timezone: formData.get('timezone') || undefined,
+        pluginKeys: pluginKeys.length ? pluginKeys : undefined,
       },
     });
   } catch (e) {
@@ -155,7 +161,7 @@ export async function createBatch(
     if (e instanceof ApiError) return { error: e.message };
     throw e;
   }
-  redirect(`/courses/${batch.id}`);
+  redirect(`/courses/${programId}?cohort=${batch.id}`);
 }
 
 /** Permanently delete a program (or batch) and everything under it (admin). On
@@ -187,19 +193,30 @@ export async function updateCourse(
   formData: FormData,
 ): Promise<ActionState> {
   const courseId = formData.get('courseId') as string;
+  const parentCourseId = (formData.get('parentCourseId') as string) || undefined;
+  const parentTitle = (formData.get('parentTitle') as string) || undefined;
+  const rawTitle = (formData.get('title') as string) ?? '';
+  const title =
+    parentCourseId && parentTitle && rawTitle && !rawTitle.includes(' — ')
+      ? `${parentTitle} — ${rawTitle}`
+      : rawTitle;
   const meetingDays = formData
     .getAll('meetingDays')
     .map((d) => Number(d))
     .filter((d) => !Number.isNaN(d));
   const startDate = (formData.get('startDate') as string) || '';
   const durationWeeks = formData.get('durationWeeks');
+  const hasPluginSelection = formData.has('hasPluginSelection');
+  const pluginKeys = hasPluginSelection
+    ? formData.getAll('pluginKeys').map(String).filter(Boolean)
+    : undefined;
   return run(
-    (token) =>
-      api(`/courses/${courseId}`, {
+    async (token) => {
+      await api(`/courses/${courseId}`, {
         method: 'PATCH',
         token,
         body: {
-          title: formData.get('title'),
+          title,
           description: (formData.get('description') as string) ?? '',
           category: (formData.get('category') as string) || undefined,
           level: (formData.get('level') as string) || undefined,
@@ -210,8 +227,13 @@ export async function updateCourse(
           // Always sent (default {}) so clearing per-day overrides sticks.
           meetingTimesByDay: parseMeetingTimesByDay(formData) ?? {},
           timezone: (formData.get('timezone') as string) || undefined,
+          pluginKeys,
         },
-      }),
+      });
+      if (parentCourseId) {
+        revalidatePath(`/courses/${parentCourseId}`);
+      }
+    },
     `/courses/${courseId}`,
   );
 }

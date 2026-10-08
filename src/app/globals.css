@@ -21,9 +21,10 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-display: var(--font-lexend), var(--font-source), ui-sans-serif,
+  --font-display: var(--font-lexend), var(--font-inter), ui-sans-serif,
     system-ui, sans-serif;
-  --font-sans: var(--font-source), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), var(--font-source), ui-sans-serif, system-ui,
+    sans-serif;
   --font-mono: var(--font-geist-mono);
 }
 
@@ -206,32 +207,31 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-source), ui-sans-serif, system-ui, -apple-system,
-    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-inter), var(--font-source), ui-sans-serif, system-ui,
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
-/* Headings render in the display face (Lexend) app-wide, without each screen
-   having to opt in with a `font-display` utility. */
+/* Headings render in crisp UI sans (Inter) with tight optical tracking app-wide;
+   marketing landing headlines explicitly use `font-display` (Lexend). */
 h1,
 h2,
 h3,
 h4 {
-  font-family: var(--font-lexend), var(--font-source), ui-sans-serif, system-ui,
+  font-family: var(--font-inter), var(--font-source), ui-sans-serif, system-ui,
     sans-serif;
+  letter-spacing: -0.025em;
 }
 
 /*
- * App-wide readable body-text floor. The default small text (14px) reads too
- * small on modern displays, so raise the derived --text-xs/--text-sm scale
- * everywhere (desktop + mobile) — this is the app's main body/label copy.
- * text-base and headings keep their sizes; literal `text-[Npx]` sizes are set
- * per-surface; and the landing page (.lp-root) keeps its own larger scale.
+ * App-wide type scale: restored 14px (0.875rem) for secondary/metadata copy (text-sm)
+ * and 12px (0.75rem) for micro badges/pills (text-xs) to maintain crisp hierarchy.
  */
 :root {
-  --text-xs: 0.8125rem; /* 13px (from 12px) */
-  --text-sm: 1rem; /* 16px (from 14px) */
+  --text-xs: 0.75rem; /* 12px */
+  --text-sm: 0.875rem; /* 14px */
 }
 
 /* Pulsing "live" indicator dot. */

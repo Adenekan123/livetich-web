@@ -364,6 +364,8 @@ export interface CohortFields {
    *  = every meeting day uses meetingTime. */
   meetingTimesByDay?: Record<string, string> | null;
   timezone: string | null; // IANA zone or short label
+  /** Specialized classroom tools/plugins enabled for this program. */
+  pluginKeys?: string[] | null;
 }
 
 export interface CourseListItem extends CohortFields {

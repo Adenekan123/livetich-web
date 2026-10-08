@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { getCurrentUser, getToken } from '@/lib/auth';
-import { isPluginEnabled, PLUGIN_ISLAMIC_EDUCATION } from '@/lib/plugins';
+import { isPluginActiveForCourse, PLUGIN_ISLAMIC_EDUCATION } from '@/lib/plugins';
 import type { TajweedAnnotation } from '@/lib/realtime-contract';
 import type { CourseDetail } from '@/lib/types';
 import { TajweedSheet, type SheetSurah } from '../../tajweed-sheet';
@@ -13,7 +13,6 @@ export default async function LessonSheetPage(props: {
   const { id, sectionId } = await props.params;
   const [user, token] = await Promise.all([getCurrentUser(), getToken()]);
   if (!user || !token) redirect('/login');
-  if (!(await isPluginEnabled(PLUGIN_ISLAMIC_EDUCATION, token))) notFound();
 
   let course: CourseDetail;
   let annotations: TajweedAnnotation[];
@@ -27,6 +26,8 @@ export default async function LessonSheetPage(props: {
     if (e instanceof ApiError && [403, 404].includes(e.status)) notFound();
     throw e;
   }
+
+  if (!(await isPluginActiveForCourse(course, PLUGIN_ISLAMIC_EDUCATION, token))) notFound();
   const section = course.sections.find((s) => s.id === sectionId);
   if (!section) notFound();
 

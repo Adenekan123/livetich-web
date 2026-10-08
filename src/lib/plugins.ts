@@ -2,11 +2,7 @@ import { api } from '@/lib/api';
 import { getToken } from '@/lib/auth';
 import type { PluginInfo } from '@/lib/types';
 
-/** Add-on pack keys, mirrored from the API catalog. Feature code gates on these. */
-export const PLUGIN_ISLAMIC_EDUCATION = 'islamic-education';
-export const PLUGIN_CODE_INSTRUCTION = 'code-instruction';
-export const PLUGIN_MATHS_SCIENCES = 'maths-sciences';
-export const PLUGIN_TEST_PREP = 'test-prep';
+export * from './plugin-constants';
 
 /**
  * Keys of the add-on packs enabled for the current user's org. Fails closed —
@@ -30,3 +26,34 @@ export async function isPluginEnabled(
 ): Promise<boolean> {
   return (await enabledPluginKeys(token)).has(key);
 }
+
+/**
+ * Synchronous check whether a plugin pack is active for a course given an org fallback.
+ * If course.pluginKeys is an array, it takes precedence. Otherwise falls back to org.
+ */
+export function isCoursePluginActive(
+  course: { pluginKeys?: string[] | null } | null | undefined,
+  key: string,
+  fallbackOrgEnabled: boolean,
+): boolean {
+  if (course && Array.isArray(course.pluginKeys)) {
+    return course.pluginKeys.includes(key);
+  }
+  return fallbackOrgEnabled;
+}
+
+/**
+ * Resolves whether a pack is active for a course, checking course.pluginKeys
+ * first and querying organization-wide plugins as fallback.
+ */
+export async function isPluginActiveForCourse(
+  course: { pluginKeys?: string[] | null } | null | undefined,
+  key: string,
+  token?: string,
+): Promise<boolean> {
+  if (course && Array.isArray(course.pluginKeys)) {
+    return course.pluginKeys.includes(key);
+  }
+  return isPluginEnabled(key, token);
+}
+

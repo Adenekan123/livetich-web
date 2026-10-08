@@ -12,6 +12,8 @@ export default async function RegisterPage() {
     <AuthShell
       title="Create your teaching space"
       subtitle="Set up livetich to run your own live classes — invite instructors and students once you're in."
+      maxWidth="max-w-[32rem] sm:max-w-[38rem]"
+      showMobileLogo={false}
       footer={
         <div className="mt-6 space-y-4">
           {/* Non-admins don't sign up here — they join with a link. Make that a

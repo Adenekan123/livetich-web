@@ -7,6 +7,7 @@ import { clearRealtimeToken } from '@/lib/client-token';
 import { SubmitButton } from '@/components/submit-button';
 import { FormError } from '@/components/form-error';
 import { PasswordInput } from '@/components/password-input';
+import { Turnstile } from '@/components/turnstile';
 import { inputClassLg, labelClassLg } from '@/lib/ui';
 
 const initial: AuthFormState = { error: null };
@@ -60,6 +61,7 @@ export function LoginForm({ next }: { next?: string }) {
           size="lg"
         />
       </div>
+      <Turnstile />
       <SubmitButton size="xl" className="w-full" pendingLabel="Logging in…">
         Log in
       </SubmitButton>

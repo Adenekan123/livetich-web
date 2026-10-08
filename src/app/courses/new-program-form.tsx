@@ -9,6 +9,7 @@ import { inputClass, labelClass } from '@/lib/ui';
 import { DurationField } from './duration-field';
 import { MeetingSchedule } from './meeting-schedule';
 import { COURSE_CATEGORIES } from './catalog-lib';
+import { ProgramPluginsField } from './program-plugins-field';
 
 interface BatchRow {
   label: string;
@@ -47,24 +48,24 @@ function BatchRows({ timezones }: { timezones: string[] }) {
     <div className="space-y-3">
       <input type="hidden" name="batches" value={serialized} />
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-semibold text-neutral-950">Scheduled batches</p>
+        <p className="text-sm font-semibold text-neutral-950">Additional cohorts</p>
         <button
           type="button"
           onClick={() =>
             setRows((r) => [
               ...r,
-              { label: '', days: [], time: '09:00', tz: 'Africa/Lagos' },
+              { label: '', days: [], time: '18:00', tz: 'Africa/Lagos' },
             ])
           }
           className="inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold text-signal-700 hover:text-signal-800"
         >
           <PiPlusBold className="h-3.5 w-3.5" aria-hidden />
-          Add batch
+          Add cohort
         </button>
       </div>
       <p className="text-sm text-neutral-600">
-        Run this program at more than one time (e.g. Batch A morning, Batch B
-        afternoon). You can also add batches later.
+        Offer this program at more than one weekly schedule (e.g. Morning Cohort vs
+        Evening Cohort). All cohorts share the same curriculum and interactive tools.
       </p>
 
       {rows.map((row, i) => (
@@ -76,7 +77,7 @@ function BatchRows({ timezones }: { timezones: string[] }) {
             <input
               value={row.label}
               onChange={(e) => update(i, { label: e.target.value })}
-              placeholder="Batch label (e.g. Batch A · Morning)"
+              placeholder="Cohort label (e.g. Morning Cohort or Evening Cohort)"
               className={inputClass}
             />
             <button
@@ -270,6 +271,21 @@ export function NewProgramForm() {
 
       <section className="border-t border-neutral-200 pt-7">
         <div className="mb-5">
+          <h3 className="text-lg font-bold tracking-tight text-neutral-950">
+            Classroom capabilities
+          </h3>
+          <p className="mt-1 text-sm text-neutral-600">
+            Equip this program with specialized interactive teaching tools.
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-5">
+          <ProgramPluginsField />
+        </div>
+      </section>
+
+      <section className="border-t border-neutral-200 pt-7">
+        <div className="mb-5">
           <h3 className="text-lg font-bold tracking-tight text-neutral-950">Cohort schedule</h3>
           <p className="mt-1 text-sm text-neutral-600">Choose when this cohort starts and when the class meets each week.</p>
         </div>
@@ -307,9 +323,11 @@ export function NewProgramForm() {
 
       <section className="border-t border-neutral-200 pt-7">
         <div className="mb-5">
-          <h3 className="text-lg font-bold tracking-tight text-neutral-950">Batches (Optional)</h3>
+          <h3 className="text-lg font-bold tracking-tight text-neutral-950">
+            Cohorts &amp; Schedules (Optional)
+          </h3>
           <p className="mt-1 text-sm text-neutral-600">
-            Offer the same program at more than one weekly schedule when your learners need options.
+            Offer the same program at multiple weekly timeslots or intake dates. You can also add more cohorts later.
           </p>
         </div>
         <div className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-5">
