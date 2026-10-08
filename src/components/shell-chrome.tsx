@@ -275,7 +275,7 @@ export function ShellChrome({
   );
 
   return (
-    <div className="flex min-h-screen w-full bg-[#f4f6f3]">
+    <div className="dashboard-surface flex min-h-screen w-full bg-[#f4f6f3]">
       {/* Desktop sidebar */}
       <aside className="sticky top-0 hidden h-screen w-[280px] shrink-0 lg:block">
         {sidebar()}
