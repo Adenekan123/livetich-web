@@ -103,42 +103,58 @@ export function RecorderView({
   const [ctx, setCtx] = useState<RecorderContext | null>(null);
   const [fault, setFault] = useState<string | null>(null);
 
+  // Expose global startRecording callback for LiveKit template harness compatibility
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as unknown as { startRecording?: () => void }).startRecording = () => {
+        console.log('START_RECORDING');
+      };
+    }
+  }, []);
+
   // Exchange the recorder token for what the classroom needs to render: who it
   // is rendering as, and which course the session belongs to.
   useEffect(() => {
     let cancelled = false;
+    const apiTarget = (apiBase || API_URL).replace(/\/+$/, '');
+    if (apiBase) setApiBase(apiBase);
+
     void (async () => {
       try {
+        console.log(`[recorder] Fetching context for session ${sessionId} from ${apiTarget}`);
         const res = await fetch(
-          `${API_URL}/sessions/${sessionId}/recorder-context`,
+          `${apiTarget}/sessions/${sessionId}/recorder-context`,
           { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' },
         );
         if (!res.ok) throw new Error(`recorder-context ${res.status}`);
-        if (!cancelled) setCtx((await res.json()) as RecorderContext);
+        const data = (await res.json()) as RecorderContext;
+        if (!cancelled) setCtx(data);
       } catch (e) {
-        if (!cancelled)
-          setFault(e instanceof Error ? e.message : 'context failed');
+        if (!cancelled) {
+          const msg = e instanceof Error ? e.message : 'context failed';
+          console.error('[recorder] Context fetch failed:', msg);
+          setFault(msg);
+          // If the context fails to load, signal START_RECORDING so the compositor
+          // records the visible failure notice rather than failing silently with
+          // "Start signal not received" after a 60s timeout.
+          setTimeout(() => {
+            console.log('START_RECORDING');
+          }, 1500);
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [sessionId, token]);
+  }, [sessionId, token, apiBase]);
 
-  // Tell egress the frame is worth recording.
-  //
-  // This is not optional and it is not web-egress-only, which is the mistake
-  // that produced a run of "Failed — Start signal not received": a *custom*
-  // room-composite template is held at the gate exactly like a web egress is,
-  // and LiveKit gives up after about a minute of waiting. LiveKit's own stock
-  // templates send it too. Only the built-in layouts are exempt, and this page
-  // is not one.
+  // Tell egress the frame is worth recording once context has assembled.
   useEffect(() => {
     if (!ctx) return;
     const t = setTimeout(() => {
       // Read by LiveKit from the browser's console; not for humans.
       console.log('START_RECORDING');
-    }, SETTLE_MS);
+    }, 1500);
     return () => clearTimeout(t);
   }, [ctx]);
 
