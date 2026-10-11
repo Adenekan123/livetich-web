@@ -4,10 +4,12 @@ import type { IconType } from 'react-icons';
 import {
   PiCaretRightBold,
   PiChalkboardTeacherBold,
+  PiCookieBold,
   PiDeviceMobileBold,
   PiKeyBold,
   PiPaletteBold,
   PiPuzzlePieceBold,
+  PiShieldCheckBold,
   PiSlidersHorizontalBold,
   PiStudentBold,
   PiUserBold,
@@ -142,6 +144,25 @@ export default async function AccountPage() {
             </div>
           </>
         )}
+
+        {/* Privacy & Compliance */}
+        <p className="mt-8 px-1 font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-neutral-400">
+          Privacy &amp; Data
+        </p>
+        <div className={cn(cardClass, 'mt-2 divide-y divide-neutral-100 overflow-hidden')}>
+          <SettingsRow
+            href="/privacy"
+            icon={PiShieldCheckBold}
+            title="Privacy policy &amp; rights"
+            subtitle="Understand how your data is handled and how to request export or erasure"
+          />
+          <SettingsRow
+            href="/cookies"
+            icon={PiCookieBold}
+            title="Cookie preferences"
+            subtitle="Review active session cookies and telemetry choices"
+          />
+        </div>
     </main>
   );
 }

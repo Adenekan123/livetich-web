@@ -95,10 +95,15 @@ export default async function VerifyCertificatePage(props: {
           </StatusCard>
         )}
 
-        <p className="mt-6 text-center text-xs text-neutral-400">
-          Certificates are issued through livetich. Verification confirms a record
-          exists for this code.
-        </p>
+        <div className="mt-6 rounded-xl border border-neutral-200/80 bg-neutral-50/80 p-3.5 text-center text-xs leading-relaxed text-neutral-500">
+          <p className="font-semibold text-neutral-700">Accreditation Notice</p>
+          <p className="mt-1">
+            This certificate confirms completion of an instructor-led cohort on livetich. It verifies
+            completion of course syllabus requirements and does not confer formal university degree
+            credits or government-accredited vocational licenses unless issued directly by an
+            accredited educational institution.
+          </p>
+        </div>
       </div>
     </main>
   );

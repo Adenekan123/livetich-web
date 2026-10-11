@@ -500,6 +500,9 @@ export interface ServerToClientEvents {
   /** The instructor ended class and the org evicts students on end. */
   'room:closed': (p: { sessionId: string; reason: 'ENDED' }) => void;
 
+  /** A recording started or stopped in this class. Broadcast so all clients play the tone. */
+  'recording:status': (p: { sessionId: string; recording: boolean }) => void;
+
   'chat:message': (p: ChatMessage) => void;
   /** Recent messages, sent once to the joining client. */
   'chat:history': (p: { sessionId: string; messages: ChatMessage[] }) => void;

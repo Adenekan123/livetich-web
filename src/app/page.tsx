@@ -810,6 +810,8 @@ export default async function Home() {
             <Link href="/register" className="hover:text-lp-lime">Get started</Link>
             <Link href="/privacy" className="hover:text-lp-lime">Privacy</Link>
             <Link href="/terms" className="hover:text-lp-lime">Terms</Link>
+            <Link href="/cookies" className="hover:text-lp-lime">Cookies</Link>
+            <Link href="/dmca" className="hover:text-lp-lime">DMCA</Link>
           </nav>
           <p className="text-xs text-lp-text-3">
             © {new Date().getFullYear()} livetich. Learn skills live.

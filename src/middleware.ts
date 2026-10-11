@@ -14,6 +14,8 @@ const OPEN_PATHS = new Set([
   '/verify-email',
   '/privacy',
   '/terms',
+  '/cookies',
+  '/dmca',
 ]);
 
 function isOpen(pathname: string): boolean {
