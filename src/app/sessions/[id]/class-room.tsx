@@ -68,6 +68,7 @@ import { QuranReader } from './quran-reader';
 import { useTajweed } from './use-tajweed';
 import { useClassroomChat } from './use-classroom-chat';
 import { RecordButton } from './record-button';
+import { playRecordingTone } from './recording-sound';
 import {
   playClassEndTone,
   playClassStartTone,
@@ -534,6 +535,12 @@ export function ClassRoom({
     socket.on('chat:history', handleHistory);
     socket.on('chat:message', handleNewMessage);
     socket.on('chat:locked', handleLockUpdate);
+    socket.on('recording:status', (p) => {
+      // Notify students by tone whenever recording begins or ends
+      if (!isInstructor) {
+        playRecordingTone(p.recording ? 'start' : 'stop');
+      }
+    });
     socket.on('view:changed', (p) => setView(p.view));
     socket.on('theme:changed', (p) => setScheme(p.scheme));
     socket.on('quran:position', (p) =>
