@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { PiShieldCheckFill, PiX } from 'react-icons/pi';
 import { btn } from '@/lib/ui';
@@ -10,8 +11,11 @@ const COOKIE_NAME = 'lt_cookie_consent';
 
 export function CookieBanner() {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
+    // Don't show on recorder template pages
+    if (pathname?.startsWith('/record')) return;
     // Check if user has already made a consent decision
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
@@ -21,7 +25,7 @@ export function CookieBanner() {
     } catch {
       // If localStorage is blocked, do nothing
     }
-  }, []);
+  }, [pathname]);
 
   const saveConsent = (choice: 'all' | 'essential') => {
     try {
