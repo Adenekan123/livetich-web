@@ -360,54 +360,185 @@
       position: relative;
       display: flex;
       flex-direction: column;
-      background: #0b0f19;
+      background: #0f1219;
+      height: 100%;
+      overflow: hidden;
     }
-    .board-toolbar-strip {
+
+    /* Google Chalkboard Dock in Live Session */
+    .board-dock-wrapper {
       position: absolute;
-      top: 14px;
-      left: 14px;
-      background: var(--glass);
-      backdrop-filter: blur(20px);
-      border: 1px solid var(--surface-border);
-      border-radius: var(--radius-dock);
-      padding: 4px 8px;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 35;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .board-floating-island {
+      background: rgba(18, 20, 28, 0.92);
+      backdrop-filter: blur(28px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 9999px;
+      padding: 6px 10px;
       display: flex;
       align-items: center;
-      gap: 6px;
-      z-index: 20;
-      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      gap: 4px;
+      box-shadow: 0 16px 40px -8px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.06);
+      pointer-events: auto;
+      white-space: nowrap;
     }
-    .board-tool-btn {
-      width: 32px;
-      height: 32px;
+
+    .board-tool-icon-btn {
+      width: 38px;
+      height: 38px;
       border-radius: 50%;
       border: none;
       background: transparent;
       color: var(--text-muted);
+      cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
+      position: relative;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .board-tool-icon-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      transform: translateY(-1px);
+    }
+    .board-tool-icon-btn.active {
+      background: rgba(255, 255, 255, 0.95);
+      color: #090a0f;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+    }
+
+    .board-divider-v {
+      width: 1px;
+      height: 22px;
+      background: rgba(255, 255, 255, 0.12);
+      margin: 0 3px;
+      flex-shrink: 0;
+    }
+
+    .board-color-swatch-trigger {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 2px solid #ffffff;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
       cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .board-color-swatch-trigger:hover { transform: scale(1.15); }
+
+    .board-btn-insert-hero {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #ffffff;
+      border: none;
+      border-radius: 9999px;
+      padding: 7px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
       transition: all 0.2s;
     }
-    .board-tool-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
-    .board-tool-btn.active { background: rgba(255,255,255,0.15); color: #fff; }
+    .board-btn-insert-hero:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
 
-    .board-color-pick {
-      width: 16px;
-      height: 16px;
+    .board-properties-popover {
+      position: absolute;
+      bottom: 70px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 310px;
+      background: rgba(15, 18, 26, 0.96);
+      backdrop-filter: blur(28px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 18px;
+      padding: 14px 16px;
+      box-shadow: 0 24px 60px -10px rgba(0, 0, 0, 0.8);
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+      pointer-events: auto;
+      z-index: 40;
+    }
+    .board-properties-popover.open { display: flex; }
+
+    .board-pop-row-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #64748b;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .board-palette-grid {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .board-color-dot {
+      width: 24px;
+      height: 24px;
       border-radius: 50%;
       cursor: pointer;
       border: 2px solid transparent;
-      transition: transform 0.2s;
+      transition: all 0.18s;
     }
-    .board-color-pick.active { border-color: #ffffff; transform: scale(1.15); }
+    .board-color-dot:hover { transform: scale(1.2); }
+    .board-color-dot.active {
+      border-color: #ffffff;
+      transform: scale(1.18);
+      box-shadow: 0 0 12px rgba(255, 255, 255, 0.4);
+    }
+
+    .board-stroke-size-selector {
+      display: flex;
+      gap: 6px;
+    }
+    .board-stroke-btn {
+      flex: 1;
+      height: 30px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      transition: all 0.15s;
+    }
+    .board-stroke-btn:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+    .board-stroke-btn.active {
+      background: rgba(255, 255, 255, 0.2);
+      border-color: rgba(255, 255, 255, 0.3);
+      color: #fff;
+    }
 
     canvas#chalkboardCanvas {
       flex: 1;
       width: 100%;
       height: 100%;
       cursor: crosshair;
+      display: block;
     }
 
     /* -------------------------------------------------------------
@@ -1134,26 +1265,86 @@
 
       <!-- SURFACE 2: COLLABORATIVE CHALKBOARD (Working vector drawing canvas) -->
       <div class="stage-canvas" id="canvas-board">
-        <div class="board-container">
-          <div class="board-toolbar-strip">
-            <button class="board-tool-btn active" id="toolPen" onclick="selectBoardTool('pen')" title="Pen">
-              <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>
-            </button>
-            <button class="board-tool-btn" id="toolEraser" onclick="selectBoardTool('eraser')" title="Eraser">
-              <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M20 20H7L3 16C2 15 2 13 3 12L13 2L22 11L18 15L20 20Z"/></svg>
-            </button>
-            <div style="width: 1px; height: 16px; background: rgba(255,255,255,0.1); margin: 0 2px;"></div>
-            <div class="board-color-pick active" style="background: #10b981;" onclick="setBoardColor('#10b981', this)"></div>
-            <div class="board-color-pick" style="background: #38bdf8;" onclick="setBoardColor('#38bdf8', this)"></div>
-            <div class="board-color-pick" style="background: #fbbf24;" onclick="setBoardColor('#fbbf24', this)"></div>
-            <div class="board-color-pick" style="background: #f43f5e;" onclick="setBoardColor('#f43f5e', this)"></div>
-            <div class="board-color-pick" style="background: #ffffff;" onclick="setBoardColor('#ffffff', this)"></div>
-            <div style="width: 1px; height: 16px; background: rgba(255,255,255,0.1); margin: 0 2px;"></div>
-            <button class="board-tool-btn" onclick="clearBoard()" title="Clear Board">
-              <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-            </button>
-          </div>
+        <div class="board-container" id="boardContainer">
           <canvas id="chalkboardCanvas"></canvas>
+          <div class="laser-dot" id="boardLaserPointer" style="position: absolute; width: 10px; height: 10px; border-radius: 50%; background: #f43f5e; box-shadow: 0 0 14px #f43f5e; pointer-events: none; display: none; transform: translate(-50%, -50%); z-index: 30;"></div>
+
+          <!-- The Floating Island Dock -->
+          <div class="board-dock-wrapper" id="boardDockWrapper">
+            <!-- Properties Popover -->
+            <div class="board-properties-popover" id="boardPropertiesPopover">
+              <div class="board-pop-row-label">
+                <span>Color Palette</span>
+                <span id="boardActiveColorHex" style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--accent);">#10B981</span>
+              </div>
+              <div class="board-palette-grid">
+                <div class="board-color-dot active" style="background: #10b981;" onclick="setBoardColor('#10b981', this)"></div>
+                <div class="board-color-dot" style="background: #38bdf8;" onclick="setBoardColor('#38bdf8', this)"></div>
+                <div class="board-color-dot" style="background: #fbbf24;" onclick="setBoardColor('#fbbf24', this)"></div>
+                <div class="board-color-dot" style="background: #f43f5e;" onclick="setBoardColor('#f43f5e', this)"></div>
+                <div class="board-color-dot" style="background: #a855f7;" onclick="setBoardColor('#a855f7', this)"></div>
+                <div class="board-color-dot" style="background: #ffffff;" onclick="setBoardColor('#ffffff', this)"></div>
+                <div class="board-color-dot" style="background: #27272a;" onclick="setBoardColor('#27272a', this)"></div>
+              </div>
+              <div class="board-pop-row-label">
+                <span>Stroke Thickness</span>
+                <span id="boardStrokeWeightLabel">4px</span>
+              </div>
+              <div class="board-stroke-size-selector">
+                <button class="board-stroke-btn" onclick="setBoardStrokeWeight(2, this)">
+                  <div style="width: 14px; height: 2px; background: currentColor; border-radius: 1px;"></div>
+                </button>
+                <button class="board-stroke-btn active" onclick="setBoardStrokeWeight(4, this)">
+                  <div style="width: 14px; height: 4px; background: currentColor; border-radius: 2px;"></div>
+                </button>
+                <button class="board-stroke-btn" onclick="setBoardStrokeWeight(8, this)">
+                  <div style="width: 14px; height: 8px; background: currentColor; border-radius: 4px;"></div>
+                </button>
+                <button class="board-stroke-btn" onclick="setBoardStrokeWeight(16, this)">
+                  <div style="width: 14px; height: 16px; background: currentColor; border-radius: 4px;"></div>
+                </button>
+              </div>
+            </div>
+
+            <!-- Dock Buttons -->
+            <div class="board-floating-island">
+              <button class="board-tool-icon-btn" id="toolSelect" onclick="selectBoardTool('select')" title="Selection Pointer (V)">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M3 3l7 18 3-7 7-3L3 3z"/></svg>
+              </button>
+              <button class="board-tool-icon-btn active" id="toolPen" onclick="selectBoardTool('pen')" title="Chalkboard Pen (P)">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>
+              </button>
+              <button class="board-tool-icon-btn" id="toolHighlighter" onclick="selectBoardTool('highlighter')" title="Highlighter Marker (H)">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M14 2l4 4L7 17H3v-4L14 2z"/><line x1="3" y1="22" x2="21" y2="22"/></svg>
+              </button>
+              <button class="board-tool-icon-btn" id="toolEraser" onclick="selectBoardTool('eraser')" title="Stroke Eraser (E)">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M20 20H7L3 16C2 15 2 13 3 12L13 2L22 11L18 15L20 20Z"/></svg>
+              </button>
+              <button class="board-tool-icon-btn" id="toolShapes" onclick="selectBoardTool('rectangle')" title="Geometric Shapes (R)">
+                <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>
+              </button>
+              <button class="board-tool-icon-btn" id="toolText" onclick="selectBoardTool('text')" title="Text Typography (T)">
+                <svg class="icon" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+              </button>
+              <button class="board-tool-icon-btn" id="toolLaser" onclick="selectBoardTool('laser')" title="Presentation Laser Pointer (L)">
+                <svg class="icon" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              </button>
+              <div class="board-divider-v"></div>
+              <div class="board-color-swatch-trigger" id="boardActiveColorCircle" style="background: #10b981;" onclick="toggleBoardPropertiesPopover()" title="Change color & stroke size"></div>
+              <div class="board-divider-v"></div>
+              <button class="board-btn-insert-hero" onclick="insertVectorCardSample()" title="Insert Pedagogical Block">
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <span>Insert</span>
+              </button>
+              <div class="board-divider-v"></div>
+              <button class="board-tool-icon-btn" onclick="undoBoardStroke()" title="Undo (Ctrl+Z)">
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+              </button>
+              <button class="board-tool-icon-btn" onclick="redoBoardStroke()" title="Redo (Ctrl+Y)">
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1703,49 +1894,469 @@
       }, 350);
     }
 
-    // 7. Interactive Chalkboard Logic
+    // 7. Interactive Google Chalkboard Engine
     let isDrawing = false;
     let currentColor = '#10b981';
+    let currentWeight = 4;
     let currentTool = 'pen';
     let canvas, ctx;
+    let boardElements = [];
+    let selectedElement = null;
+    let isDraggingElement = false;
+    let dragOffsetX = 0, dragOffsetY = 0;
+    let shapePreview = null;
+    let boardHistory = [];
+    let boardRedoStack = [];
+    let startX = 0, startY = 0;
+    let lastX = 0, lastY = 0;
+
+    const strokesCanvas = document.createElement('canvas');
+    const strokesCtx = strokesCanvas.getContext('2d');
+
+    function saveBoardState() {
+      if (!canvas) return;
+      boardHistory.push({
+        elements: JSON.parse(JSON.stringify(boardElements)),
+        strokes: strokesCanvas.toDataURL()
+      });
+      boardRedoStack = [];
+      if (boardHistory.length > 25) boardHistory.shift();
+    }
+
+    function undoBoardStroke() {
+      if (boardHistory.length === 0) return;
+      boardRedoStack.push({
+        elements: JSON.parse(JSON.stringify(boardElements)),
+        strokes: strokesCanvas.toDataURL()
+      });
+      const prev = boardHistory.pop();
+      boardElements = JSON.parse(JSON.stringify(prev.elements));
+      selectedElement = null;
+      const img = new Image();
+      img.onload = () => {
+        strokesCtx.clearRect(0, 0, strokesCanvas.width, strokesCanvas.height);
+        strokesCtx.drawImage(img, 0, 0);
+        renderChalkboard();
+      };
+      img.src = prev.strokes;
+    }
+
+    function redoBoardStroke() {
+      if (boardRedoStack.length === 0) return;
+      const next = boardRedoStack.pop();
+      boardHistory.push({
+        elements: JSON.parse(JSON.stringify(boardElements)),
+        strokes: strokesCanvas.toDataURL()
+      });
+      boardElements = JSON.parse(JSON.stringify(next.elements));
+      selectedElement = null;
+      const img = new Image();
+      img.onload = () => {
+        strokesCtx.clearRect(0, 0, strokesCanvas.width, strokesCanvas.height);
+        strokesCtx.drawImage(img, 0, 0);
+        renderChalkboard();
+      };
+      img.src = next.strokes;
+    }
+
+    function renderChalkboard() {
+      if (!ctx || !canvas) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(strokesCanvas, 0, 0);
+
+      boardElements.forEach(el => {
+        ctx.save();
+        if (el.type === 'rectangle') {
+          ctx.strokeStyle = el.color || currentColor;
+          ctx.lineWidth = el.weight || 3;
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(el.x, el.y, el.w, el.h, 8);
+          else ctx.rect(el.x, el.y, el.w, el.h);
+          ctx.stroke();
+        } else if (el.type === 'text') {
+          ctx.font = `${el.weight || 600} ${el.size || 18}px 'Plus Jakarta Sans', sans-serif`;
+          ctx.fillStyle = el.color || '#ffffff';
+          ctx.textBaseline = 'top';
+          ctx.fillText(el.text, el.x, el.y);
+        } else if (el.type === 'card') {
+          const w = el.w || 320;
+          const h = el.h || 120;
+          ctx.fillStyle = 'rgba(18, 20, 28, 0.94)';
+          ctx.strokeStyle = el.color || '#10b981';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(el.x, el.y, w, h, 14);
+          else ctx.rect(el.x, el.y, w, h);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = (el.color || '#10b981') + '22';
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(el.x + 12, el.y + 12, 28, 28, 8);
+          else ctx.rect(el.x + 12, el.y + 12, 28, 28);
+          ctx.fill();
+
+          ctx.fillStyle = el.color || '#10b981';
+          ctx.beginPath();
+          ctx.arc(el.x + 26, el.y + 26, 5, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = "700 13px 'Plus Jakarta Sans', sans-serif";
+          ctx.textBaseline = 'middle';
+          ctx.fillText(el.title || 'Pedagogical Block', el.x + 48, el.y + 26);
+
+          ctx.font = "600 14px 'JetBrains Mono', monospace";
+          ctx.fillStyle = el.color || '#10b981';
+          ctx.fillText(el.content || '', el.x + 16, el.y + 66);
+          ctx.font = "500 11px 'Plus Jakarta Sans', sans-serif";
+          ctx.fillStyle = '#94a3b8';
+          ctx.fillText(el.subtitle || 'Synchronized Vector Surface', el.x + 16, el.y + 96);
+        }
+
+        // Selection highlight
+        if (el === selectedElement) {
+          const b = getBoardElementBounds(el);
+          ctx.strokeStyle = '#10b981';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([4, 4]);
+          ctx.strokeRect(b.x - 6, b.y - 6, b.w + 12, b.h + 12);
+          ctx.setLineDash([]);
+          ctx.fillStyle = '#10b981';
+          ctx.fillRect(b.x - 9, b.y - 9, 6, 6);
+          ctx.fillRect(b.x + b.w + 3, b.y - 9, 6, 6);
+          ctx.fillRect(b.x - 9, b.y + b.h + 3, 6, 6);
+          ctx.fillRect(b.x + b.w + 3, b.y + b.h + 3, 6, 6);
+        }
+        ctx.restore();
+      });
+
+      if (shapePreview && currentTool === 'rectangle') {
+        ctx.save();
+        ctx.strokeStyle = currentColor;
+        ctx.lineWidth = currentWeight;
+        ctx.setLineDash([6, 6]);
+        ctx.strokeRect(shapePreview.x, shapePreview.y, shapePreview.w, shapePreview.h);
+        ctx.restore();
+      }
+    }
+
+    function getBoardElementBounds(el) {
+      if (el.type === 'rectangle') {
+        return {
+          x: Math.min(el.x, el.x + el.w),
+          y: Math.min(el.y, el.y + el.h),
+          w: Math.abs(el.w),
+          h: Math.abs(el.h)
+        };
+      } else if (el.type === 'card') {
+        return { x: el.x, y: el.y, w: el.w || 320, h: el.h || 120 };
+      } else if (el.type === 'text') {
+        ctx.font = `${el.weight || 600} ${el.size || 18}px 'Plus Jakarta Sans', sans-serif`;
+        const m = ctx.measureText(el.text);
+        return { x: el.x, y: el.y, w: m.width, h: (el.size || 18) * 1.3 };
+      }
+      return { x: el.x, y: el.y, w: 20, h: 20 };
+    }
+
+    function hitTestBoardElement(px, py) {
+      for (let i = boardElements.length - 1; i >= 0; i--) {
+        const el = boardElements[i];
+        const b = getBoardElementBounds(el);
+        if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) {
+          return el;
+        }
+      }
+      return null;
+    }
+
+    function getBoardCoords(e) {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches && e.touches.length > 0 ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches && e.touches.length > 0 ? e.touches[0].clientY : e.clientY;
+      return {
+        x: clientX - rect.left,
+        y: clientY - rect.top,
+        clientX,
+        clientY
+      };
+    }
 
     function initChalkboard() {
       canvas = document.getElementById('chalkboardCanvas');
       if (!canvas) return;
       ctx = canvas.getContext('2d');
-      canvas.width = canvas.parentElement.clientWidth;
-      canvas.height = canvas.parentElement.clientHeight;
+      const container = canvas.parentElement;
+      canvas.width = container.clientWidth;
+      canvas.height = container.clientHeight;
+      strokesCanvas.width = canvas.width;
+      strokesCanvas.height = canvas.height;
 
-      canvas.onmousedown = (e) => {
+      renderChalkboard();
+
+      function onBoardPointerDown(e) {
+        const coords = getBoardCoords(e);
         isDrawing = true;
-        ctx.beginPath();
-        ctx.moveTo(e.offsetX, e.offsetY);
-      };
-      canvas.onmousemove = (e) => {
+        startX = coords.x;
+        startY = coords.y;
+        lastX = coords.x;
+        lastY = coords.y;
+
+        const laser = document.getElementById('boardLaserPointer');
+        if (currentTool === 'laser') {
+          if (laser) {
+            laser.style.display = 'block';
+            laser.style.left = coords.x + 'px';
+            laser.style.top = coords.y + 'px';
+          }
+          return;
+        }
+
+        if (currentTool === 'select') {
+          const hit = hitTestBoardElement(coords.x, coords.y);
+          if (hit) {
+            selectedElement = hit;
+            isDraggingElement = true;
+            dragOffsetX = coords.x - hit.x;
+            dragOffsetY = coords.y - hit.y;
+            renderChalkboard();
+          } else if (selectedElement) {
+            selectedElement = null;
+            renderChalkboard();
+          }
+          return;
+        }
+
+        if (currentTool === 'rectangle') {
+          shapePreview = { x: startX, y: startY, w: 0, h: 0 };
+          return;
+        }
+
+        if (currentTool === 'text') {
+          const val = prompt('Enter text for chalkboard:');
+          if (val && val.trim()) {
+            saveBoardState();
+            boardElements.push({
+              id: 'text_' + Date.now(),
+              type: 'text',
+              text: val.trim(),
+              x: coords.x,
+              y: coords.y,
+              color: currentColor,
+              size: 18,
+              weight: 600
+            });
+            renderChalkboard();
+          }
+          return;
+        }
+
+        if (currentTool === 'eraser') {
+          const hit = hitTestBoardElement(coords.x, coords.y);
+          if (hit) {
+            saveBoardState();
+            boardElements = boardElements.filter(el => el !== hit);
+            selectedElement = null;
+            renderChalkboard();
+            return;
+          }
+          strokesCtx.clearRect(coords.x - 18, coords.y - 18, 36, 36);
+          renderChalkboard();
+          return;
+        }
+
+        if (currentTool === 'pen' || currentTool === 'highlighter') {
+          strokesCtx.beginPath();
+          strokesCtx.moveTo(coords.x, coords.y);
+        }
+      }
+
+      function onBoardPointerMove(e) {
+        const coords = getBoardCoords(e);
+        const laser = document.getElementById('boardLaserPointer');
+
+        if (currentTool === 'laser') {
+          if (laser) {
+            laser.style.display = 'block';
+            laser.style.left = coords.x + 'px';
+            laser.style.top = coords.y + 'px';
+          }
+          return;
+        }
+
         if (!isDrawing) return;
-        ctx.lineTo(e.offsetX, e.offsetY);
-        ctx.strokeStyle = currentTool === 'eraser' ? '#0b0f19' : currentColor;
-        ctx.lineWidth = currentTool === 'eraser' ? 24 : 3;
-        ctx.lineCap = 'round';
-        ctx.stroke();
+
+        if (currentTool === 'select' && isDraggingElement && selectedElement) {
+          selectedElement.x = coords.x - dragOffsetX;
+          selectedElement.y = coords.y - dragOffsetY;
+          renderChalkboard();
+          return;
+        }
+
+        if (currentTool === 'rectangle' && shapePreview) {
+          shapePreview.w = coords.x - startX;
+          shapePreview.h = coords.y - startY;
+          renderChalkboard();
+          return;
+        }
+
+        if (currentTool === 'pen') {
+          strokesCtx.save();
+          strokesCtx.lineCap = 'round';
+          strokesCtx.lineJoin = 'round';
+          strokesCtx.strokeStyle = currentColor;
+          strokesCtx.lineWidth = currentWeight;
+          strokesCtx.globalAlpha = 1.0;
+          strokesCtx.lineTo(coords.x, coords.y);
+          strokesCtx.stroke();
+          strokesCtx.restore();
+          renderChalkboard();
+        } else if (currentTool === 'highlighter') {
+          strokesCtx.save();
+          strokesCtx.lineCap = 'round';
+          strokesCtx.lineJoin = 'round';
+          strokesCtx.strokeStyle = currentColor;
+          strokesCtx.lineWidth = currentWeight * 3;
+          strokesCtx.globalAlpha = 0.28;
+          strokesCtx.lineTo(coords.x, coords.y);
+          strokesCtx.stroke();
+          strokesCtx.restore();
+          renderChalkboard();
+        } else if (currentTool === 'eraser') {
+          strokesCtx.clearRect(coords.x - 18, coords.y - 18, 36, 36);
+          renderChalkboard();
+        }
+
+        lastX = coords.x;
+        lastY = coords.y;
+      }
+
+      function onBoardPointerUp() {
+        if (!isDrawing) return;
+        isDrawing = false;
+        isDraggingElement = false;
+
+        if (currentTool === 'rectangle' && shapePreview) {
+          if (Math.abs(shapePreview.w) > 8 && Math.abs(shapePreview.h) > 8) {
+            saveBoardState();
+            boardElements.push({
+              id: 'rect_' + Date.now(),
+              type: 'rectangle',
+              x: shapePreview.w < 0 ? startX + shapePreview.w : startX,
+              y: shapePreview.h < 0 ? startY + shapePreview.h : startY,
+              w: Math.abs(shapePreview.w),
+              h: Math.abs(shapePreview.h),
+              color: currentColor,
+              weight: currentWeight
+            });
+          }
+          shapePreview = null;
+          renderChalkboard();
+          return;
+        }
+
+        saveBoardState();
+      }
+
+      canvas.onmousedown = onBoardPointerDown;
+      canvas.onmousemove = onBoardPointerMove;
+      canvas.onmouseup = onBoardPointerUp;
+      canvas.onmouseleave = () => {
+        isDrawing = false;
+        const l = document.getElementById('boardLaserPointer');
+        if (l) l.style.display = 'none';
       };
-      canvas.onmouseup = () => isDrawing = false;
-      canvas.onmouseleave = () => isDrawing = false;
+
+      canvas.ontouchstart = (e) => { e.preventDefault(); onBoardPointerDown(e); };
+      canvas.ontouchmove = (e) => { e.preventDefault(); onBoardPointerMove(e); };
+      canvas.ontouchend = onBoardPointerUp;
     }
 
     function selectBoardTool(tool) {
       currentTool = tool;
-      document.getElementById('toolPen').classList.toggle('active', tool === 'pen');
-      document.getElementById('toolEraser').classList.toggle('active', tool === 'eraser');
+      const toolMap = {
+        select: 'toolSelect',
+        pen: 'toolPen',
+        highlighter: 'toolHighlighter',
+        eraser: 'toolEraser',
+        rectangle: 'toolShapes',
+        text: 'toolText',
+        laser: 'toolLaser'
+      };
+      document.querySelectorAll('.board-tool-icon-btn').forEach(btn => btn.classList.remove('active'));
+      const activeBtn = document.getElementById(toolMap[tool]);
+      if (activeBtn) activeBtn.classList.add('active');
+
+      const l = document.getElementById('boardLaserPointer');
+      if (l) l.style.display = tool === 'laser' ? 'block' : 'none';
+
+      closeBoardPropertiesPopover();
     }
+
     function setBoardColor(color, el) {
       currentColor = color;
-      document.querySelectorAll('.board-color-pick').forEach(p => p.classList.remove('active'));
-      el.classList.add('active');
-      selectBoardTool('pen');
+      document.querySelectorAll('.board-color-dot').forEach(p => p.classList.remove('active'));
+      if (el) el.classList.add('active');
+      const c = document.getElementById('boardActiveColorCircle');
+      if (c) c.style.background = color;
+      const hex = document.getElementById('boardActiveColorHex');
+      if (hex) hex.innerText = color.toUpperCase();
+
+      if (selectedElement) {
+        selectedElement.color = color;
+        renderChalkboard();
+        saveBoardState();
+      }
     }
+
+    function setBoardStrokeWeight(weight, el) {
+      currentWeight = weight;
+      document.querySelectorAll('.board-stroke-btn').forEach(b => b.classList.remove('active'));
+      if (el) el.classList.add('active');
+      const lbl = document.getElementById('boardStrokeWeightLabel');
+      if (lbl) lbl.innerText = weight + 'px';
+      if (selectedElement && selectedElement.type === 'rectangle') {
+        selectedElement.weight = weight;
+        renderChalkboard();
+        saveBoardState();
+      }
+    }
+
+    function toggleBoardPropertiesPopover() {
+      const p = document.getElementById('boardPropertiesPopover');
+      if (p) p.classList.toggle('open');
+    }
+    function closeBoardPropertiesPopover() {
+      const p = document.getElementById('boardPropertiesPopover');
+      if (p) p.classList.remove('open');
+    }
+
+    function insertVectorCardSample() {
+      saveBoardState();
+      const card = {
+        id: 'card_' + Date.now(),
+        type: 'card',
+        title: 'Euler Identity Formula',
+        content: 'e^(iπ) + 1 = 0',
+        subtitle: 'Live Pedagogical Synchronized Block',
+        x: Math.max(20, (canvas.width / 2) - 160),
+        y: Math.max(20, (canvas.height / 2) - 60),
+        w: 320,
+        h: 120,
+        color: currentColor
+      };
+      boardElements.push(card);
+      selectedElement = card;
+      selectBoardTool('select');
+      renderChalkboard();
+    }
+
     function clearBoard() {
-      if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
+      saveBoardState();
+      boardElements = [];
+      strokesCtx.clearRect(0, 0, strokesCanvas.width, strokesCanvas.height);
+      selectedElement = null;
+      renderChalkboard();
     }
 
     // 8. IDE Execution Simulator

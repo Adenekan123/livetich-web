@@ -47,22 +47,46 @@
 
 /* Hide Excalidraw's legacy native toolbar, rail, menus, and zoom footer */
 .livetich-board .excalidraw .shapes-section,
-.livetich-board .excalidraw .App-toolbar,
-.livetich-board .excalidraw .App-toolbar-container,
 .livetich-board .excalidraw .layer-ui__wrapper__top-right,
 .livetich-board .excalidraw .App-menu__left,
 .livetich-board .excalidraw .footer-center,
 .livetich-board .excalidraw .footer-right,
 .livetich-board .excalidraw .zoom-actions,
-.livetich-board .excalidraw .undo-redo-buttons,
 .livetich-board .excalidraw .help-icon,
 .livetich-board .excalidraw .dropdown-menu-button,
 .livetich-board .excalidraw .Stats,
 .livetich-board .excalidraw .HintViewer,
 .livetich-board .excalidraw .layer-ui__wrapper .shapes-section,
-.livetich-board .excalidraw .layer-ui__wrapper .App-toolbar,
 .livetich-board .excalidraw .layer-ui__wrapper .footer-center {
   display: none !important;
+}
+
+/* Off-screen toolbar & undo-redo so programmatic button clicks trigger successfully */
+.livetich-board .excalidraw .App-toolbar,
+.livetich-board .excalidraw .App-toolbar-container,
+.livetich-board .excalidraw .undo-redo-buttons,
+.livetich-board .excalidraw .layer-ui__wrapper .App-toolbar {
+  position: absolute !important;
+  left: -9999px !important;
+  top: -9999px !important;
+  width: 0 !important;
+  height: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+}
+
+.mobile-only-text {
+  display: none !important;
+}
+
+@media (max-width: 768px) {
+  .desktop-only-text {
+    display: none !important;
+  }
+  .mobile-only-text {
+    display: inline !important;
+  }
 }
 
 .livetich-board,

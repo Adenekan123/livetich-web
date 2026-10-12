@@ -736,7 +736,7 @@ export function BoardExcalidraw({
       if (tool === 'select') {
         editor.setActiveTool({ type: 'selection' });
       } else if (tool === 'pen') {
-        editor.setActiveTool({ type: 'freedraw' });
+        editor.setActiveTool({ type: 'freedraw', locked: true });
         editor.updateScene({
           appState: {
             currentItemOpacity: 100,
@@ -745,7 +745,7 @@ export function BoardExcalidraw({
           },
         });
       } else if (tool === 'highlighter') {
-        editor.setActiveTool({ type: 'freedraw' });
+        editor.setActiveTool({ type: 'freedraw', locked: true });
         editor.updateScene({
           appState: {
             currentItemOpacity: 35,
@@ -754,13 +754,26 @@ export function BoardExcalidraw({
           },
         });
       } else if (tool === 'eraser') {
-        editor.setActiveTool({ type: 'eraser' });
+        editor.setActiveTool({ type: 'eraser', locked: true });
       } else if (tool === 'rectangle') {
-        editor.setActiveTool({ type: 'rectangle' });
+        editor.setActiveTool({ type: 'rectangle', locked: true });
+        editor.updateScene({
+          appState: {
+            currentItemStrokeColor: activeColor,
+            currentItemStrokeWidth: activeWeight,
+            currentItemBackgroundColor: 'transparent',
+            currentItemFillStyle: 'solid',
+          },
+        });
       } else if (tool === 'text') {
-        editor.setActiveTool({ type: 'text' });
+        editor.setActiveTool({ type: 'text', locked: true });
+        editor.updateScene({
+          appState: {
+            currentItemStrokeColor: activeColor,
+          },
+        });
       } else if (tool === 'laser') {
-        editor.setActiveTool({ type: 'laser' });
+        editor.setActiveTool({ type: 'laser', locked: true });
       }
       setPropertiesPopoverOpen(false);
     },
@@ -770,7 +783,19 @@ export function BoardExcalidraw({
   const setStrokeColor = useCallback(
     (color: string) => {
       setActiveColor(color);
-      apiRef.current?.updateScene({ appState: { currentItemStrokeColor: color } });
+      const editor = apiRef.current;
+      if (!editor) return;
+      const elements = editor.getSceneElements();
+      const appState = editor.getAppState();
+      const selectedIds = appState.selectedElementIds;
+      if (selectedIds && Object.keys(selectedIds).some((id) => selectedIds[id])) {
+        const next = elements.map((el) =>
+          selectedIds[el.id] ? { ...el, strokeColor: color, version: el.version + 1 } : el,
+        );
+        editor.updateScene({ elements: next, appState: { currentItemStrokeColor: color } });
+      } else {
+        editor.updateScene({ appState: { currentItemStrokeColor: color } });
+      }
       if (activeToolState === 'eraser') selectTool('pen');
     },
     [activeToolState, selectTool],
@@ -778,7 +803,19 @@ export function BoardExcalidraw({
 
   const setStrokeWeight = useCallback((weight: number) => {
     setActiveWeight(weight);
-    apiRef.current?.updateScene({ appState: { currentItemStrokeWidth: weight } });
+    const editor = apiRef.current;
+    if (!editor) return;
+    const elements = editor.getSceneElements();
+    const appState = editor.getAppState();
+    const selectedIds = appState.selectedElementIds;
+    if (selectedIds && Object.keys(selectedIds).some((id) => selectedIds[id])) {
+      const next = elements.map((el) =>
+        selectedIds[el.id] ? { ...el, strokeWidth: weight, version: el.version + 1 } : el,
+      );
+      editor.updateScene({ elements: next, appState: { currentItemStrokeWidth: weight } });
+    } else {
+      editor.updateScene({ appState: { currentItemStrokeWidth: weight } });
+    }
   }, []);
 
   const handleUndo = useCallback(() => {
@@ -894,7 +931,7 @@ export function BoardExcalidraw({
   const [resyncing, setResyncing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const canEdit = ready && (canDraw || boardOpen);
+  const canEdit = canDraw || (ready && boardOpen);
 
   useEffect(() => {
     apiRef.current = api;
