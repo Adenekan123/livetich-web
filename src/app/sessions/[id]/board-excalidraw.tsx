@@ -43,15 +43,19 @@ import {
   PiBookOpenTextBold,
   PiArrowsInBold,
   PiArrowsOutBold,
+  PiCheckBold,
   PiCrosshairBold,
   PiDownloadSimpleBold,
   PiCaretDownBold,
   PiFilesBold,
   PiFunctionBold,
+  PiImageBold,
+  PiPlusBold,
   PiXBold,
   PiLockBold,
   PiLinkSimpleBold,
   PiLockOpenBold,
+  PiMathOperationsBold,
   PiPencilSimpleBold,
   PiSelectionAllBold,
   PiSlidersHorizontalBold,
@@ -131,6 +135,30 @@ interface SelectedMath {
   left: number;
   top: number;
 }
+
+type InsertStudioTab = 'math' | 'quran' | 'docs' | 'files';
+
+const MATH_PRESETS = [
+  { label: 'Quadratic', latex: 'x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}' },
+  { label: 'Integral', latex: '\\int_{a}^{b} f(x) \\, dx' },
+  { label: 'Summation', latex: '\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}' },
+  { label: 'Euler Identity', latex: 'e^{i\\pi} + 1 = 0' },
+  { label: 'Maxwell', latex: '\\nabla \\times \\mathbf{B} = \\mu_0\\mathbf{J}' },
+  { label: '2×2 Matrix', latex: 'A = \\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}' },
+];
+
+const SURAH_SNIPPETS: Record<string, string> = {
+  '1': 'بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ',
+  '2': 'الم ۝ ذَٰلِكَ ٱلْكِتَـٰبُ لَا رَيْبَ ۛ فِيهِ ۛ هُدًى لِّلْمُتَّقِينَ',
+  '3': 'الم ۝ ٱللَّهُ لَآ إِلَـٰهَ إِلَّا هُوَ ٱلْحَىُّ ٱلْقَيُّومُ',
+  '18': 'ٱلْحَمْدُ لِلَّهِ ٱلَّذِىٓ أَنزَلَ عَلَىٰ عَبْدِهِ ٱلْكِتَـٰبَ',
+  '36': 'يسٓ ۝ وَٱلْقُرْءَانِ ٱلْحَكِيمِ',
+  '55': 'ٱلرَّحْمَـٰنُ ۝ عَلَّمَ ٱلْقُرْءَانَ',
+  '67': 'تَبَـٰرَكَ ٱلَّذِى بِيَدِهِ ٱلْمُلْكُ وَهُوَ عَلَىٰ كُلِّ شَىْءٍ قَدِيرٌ',
+  '112': 'قُلْ هُوَ ٱللَّهُ أَحَدٌ ۝ ٱللَّهُ ٱلصَّمَدُ',
+  '113': 'قُلْ أَعُوذُ بِرَبِّ ٱلْفَلَقِ',
+  '114': 'قُلْ أَعُوذُ بِرَبِّ ٱلنَّاسِ',
+};
 
 /**
  * The one selected equation, or null.
@@ -673,6 +701,22 @@ export function BoardExcalidraw({
    *  gives its own toolbar the full width of the top, and the pills sat on top
    *  of it. */
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [insertStudioOpen, setInsertStudioOpen] = useState(false);
+  const [insertStudioTab, setInsertStudioTab] = useState<InsertStudioTab>('math');
+  const [collabSheetOpen, setCollabSheetOpen] = useState(false);
+
+  const openInsertStudio = useCallback((tab?: InsertStudioTab) => {
+    if (tab) setInsertStudioTab(tab);
+    setInsertStudioOpen(true);
+    setCollabSheetOpen(false);
+  }, []);
+
+  const closeInsertStudio = useCallback(() => {
+    setInsertStudioOpen(false);
+    setEditingMath(null);
+    setLinkError(null);
+    setQuranError(null);
+  }, []);
   /** The instructor's playback position for a shared video. Ephemeral, so it
    *  rides awareness alongside the cursors rather than the persisted doc. */
   const [videoState, setVideoState] = useState<VideoState | null>(null);
@@ -1751,15 +1795,16 @@ export function BoardExcalidraw({
   const openMathEditor = useCallback((target: SelectedMath) => {
     setEditingMath(target);
     setMathSource(target.latex);
-    setMathOpen(true);
+    setInsertStudioTab('math');
+    setInsertStudioOpen(true);
   }, []);
 
   /** Close the formula panel and forget what it was working on. */
   const closeMath = useCallback(() => {
-    setMathOpen(false);
+    closeInsertStudio();
     setMathSource('');
     setEditingMath(null);
-  }, []);
+  }, [closeInsertStudio]);
 
   /**
    * Render LaTeX to a PNG, upload it, and register it with the board.
@@ -1923,10 +1968,10 @@ export function BoardExcalidraw({
           : [560, 720];
 
     putEmbeddable(editor, url, w, h);
-    setLinkOpen(false);
+    closeInsertStudio();
     setLinkSource('');
     setLinkError(null);
-  }, []);
+  }, [closeInsertStudio]);
 
   /**
    * Put a block of ayahs on the board. It travels like any embeddable; what it
@@ -1947,9 +1992,9 @@ export function BoardExcalidraw({
       return;
     }
     putEmbeddable(editor, link, 640, 360);
-    setQuranOpen(false);
+    closeInsertStudio();
     setQuranError(null);
-  }, [quranForm]);
+  }, [quranForm, closeInsertStudio]);
 
   /**
    * Put a Google file on the board as pages.
@@ -1994,7 +2039,7 @@ export function BoardExcalidraw({
         const blob = await res.blob();
         // The name is what the overlay titles the import with.
         const file = new File([blob], 'Google file.pdf', { type: 'application/pdf' });
-        setLinkOpen(false);
+        closeInsertStudio();
         setLinkSource('');
         setLinkError(null);
         await importFilesRef.current?.([file]);
@@ -2275,6 +2320,35 @@ export function BoardExcalidraw({
     } finally {
       setExporting(false);
       setExportPage(null);
+    }
+  }, [sessionId, flash]);
+
+  const exportPng = useCallback(async () => {
+    const editor = apiRef.current;
+    if (!editor) return;
+    try {
+      setExporting(true);
+      const elements = editor.getSceneElements();
+      const appState = { ...editor.getAppState(), exportBackground: true };
+      const files = editor.getFiles();
+      const blob = await exportToBlob({
+        elements,
+        appState,
+        files,
+        mimeType: 'image/png',
+        exportPadding: 24,
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `chalkboard-${sessionId}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+      flash('Board snapshot downloaded');
+    } catch {
+      flash('Could not export snapshot');
+    } finally {
+      setExporting(false);
     }
   }, [sessionId, flash]);
 
@@ -2648,7 +2722,7 @@ export function BoardExcalidraw({
           board advertises a double-click — this is what tells the teacher the
           equation is still editable, and it rides along on pans and zooms
           because its position is recomputed with the selection. */}
-      {selectedMath && canDraw && maths && !mathOpen && (
+      {selectedMath && canDraw && maths && !insertStudioOpen && (
         <button
           type="button"
           data-math-edit
@@ -2745,35 +2819,42 @@ export function BoardExcalidraw({
       {/* Against the board for the same reason as the shapes menu below: the
           tool row scrolls, and this must not be clipped by it — least of all a
           confirm for something this final. */}
-      {clearOpen && clearMenuAt && (
+      {clearOpen && (
         <div
           data-clear-board-panel
           role="dialog"
           aria-label="Clear the board"
-          style={{ top: clearMenuAt.top, left: clearMenuAt.left }}
-          className="pointer-events-auto absolute z-[404] w-72 rounded-xl bg-white p-3 shadow-lg ring-1 ring-neutral-200"
+          className="fixed inset-0 z-[550] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={() => setClearOpen(false)}
         >
-          <p className="text-xs font-semibold text-neutral-900">Clear the board?</p>
-          <p className="mt-1 text-[11px] text-neutral-600">
-            Everything goes — drawings, imported pages and embedded files — for you
-            and for every student. They cannot undo it from their side.
-          </p>
-          <div className="mt-2.5 flex justify-end gap-1.5">
-            <button
-              type="button"
-              onClick={() => setClearOpen(false)}
-              className={cn(toolClass, toolIdle)}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={clearBoard}
-              className={cn(toolClass, 'bg-rose-600 text-white hover:bg-rose-700')}
-            >
-              <PiTrashBold aria-hidden />
-              Clear everything
-            </button>
+          <div
+            className="pointer-events-auto w-full max-w-sm rounded-2xl border border-white/10 bg-[#141724] p-4 text-slate-100 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-sm font-bold text-white">Clear the board?</p>
+            <p className="mt-1.5 text-xs text-slate-300">
+              Everything goes — drawings, imported pages and embedded files — for you and for every student. They cannot undo it from their side.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setClearOpen(false)}
+                className="rounded-full bg-white/5 px-3.5 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setClearOpen(false);
+                  clearBoard();
+                }}
+                className="flex items-center gap-1.5 rounded-full bg-rose-600 px-3.5 py-1.5 text-xs font-bold text-white transition hover:bg-rose-500"
+              >
+                <PiTrashBold aria-hidden />
+                <span>Clear everything</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -2838,241 +2919,167 @@ export function BoardExcalidraw({
         {fullscreen ? <PiArrowsInBold /> : <PiArrowsOutBold />}
       </button>
 
-      {/* Instructor controls / viewer follow, above the editor's top bar. */}
-      {/* Phones only: Excalidraw's toolbar owns the full width of the top on a
-          small screen, so the classroom controls move behind one button placed
-          clear of it rather than overlapping it. */}
-      {canDraw && (
-        <button
-          type="button"
-          onClick={() => setToolsOpen((v) => !v)}
-          aria-expanded={toolsOpen}
-          aria-controls="board-classroom-tools"
-          className={cn(
-            // Left, not right: Excalidraw keeps its own vertical strip down the
-            // right edge on a phone, and this sat on top of it. The inset lines
-            // its left edge up with the toolbar island above it rather than
-            // hugging the board's rounded corner, and the top leaves real space
-            // under that toolbar instead of the 4px it had.
-            'pointer-events-auto absolute left-6 top-20 z-[402] min-[730px]:hidden',
-            'flex items-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-semibold shadow-md ring-1 transition',
-            toolsOpen
-              ? 'bg-signal-700 text-white shadow-signal-800/25 ring-signal-700'
-              : 'bg-white text-signal-800 ring-signal-100 hover:bg-signal-50',
-          )}
-        >
-          <PiSlidersHorizontalBold
-            className={cn('h-3.5 w-3.5', !toolsOpen && 'text-signal-600')}
-            aria-hidden
-          />
-          Tools
-          {/* The label alone gave no sign this opens anything. A caret that
-              turns is the plainest way to say "there is more under here". */}
-          <PiCaretDownBold
-            className={cn(
-              'h-3 w-3 transition-transform duration-200',
-              toolsOpen && 'rotate-180',
-            )}
-            aria-hidden
-          />
-        </button>
-      )}
+      {/* =========================================================================
+          GOOGLE AMBIENT HUD (Top Bar across the board)
+          ========================================================================= */}
+      <div className="pointer-events-none absolute left-3 right-3 top-2.5 z-[401] flex items-center justify-between gap-2 sm:left-4 sm:right-4 sm:top-3">
+        {/* Left: Document Status Chip */}
+        <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-slate-900/85 px-3 py-1.5 text-xs font-semibold text-slate-100 shadow-md shadow-black/40 ring-1 ring-white/10 backdrop-blur-xl">
+          <span className="flex h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+          <span className="max-w-[120px] truncate sm:max-w-[200px]">Livetich Chalkboard</span>
+          <span className="hidden text-[10px] text-slate-400 sm:inline">· Live</span>
+        </div>
 
-      <div
-        id="board-classroom-tools"
-        className={cn(
-          'pointer-events-none absolute z-[401] flex items-center',
-          // Desktop: centred across the top, where the tool rail no longer is.
-          'min-[730px]:left-1/2 min-[730px]:top-3 min-[730px]:max-w-[calc(100%-6rem)] min-[730px]:-translate-x-1/2 min-[730px]:justify-center',
-          // Phone: a panel under the toolbar, opened from the Tools button.
-          'max-[729px]:left-6 max-[729px]:w-[min(15rem,calc(100%-4.5rem))] max-[729px]:justify-start',
-          // A viewer has no Tools button to open — their single follow control
-          // sits where that button would be, and is never collapsed.
-          canDraw ? 'max-[729px]:top-32' : 'max-[729px]:top-20',
-          canDraw && !toolsOpen && 'max-[729px]:hidden',
-        )}
-      >
-        {canDraw ? (
-          // One island in three groups — who may draw, what to put on the
-          // board, and files in and out — instead of a row of loose pills that
-          // gave every control the same weight. On a phone the same island
-          // stands up as a column.
-          <div
-            role="toolbar"
-            aria-label="Classroom tools"
-            className="pointer-events-auto flex items-center gap-0.5 rounded-2xl bg-white/95 p-1 shadow-lg shadow-signal-900/10 ring-1 ring-signal-100 backdrop-blur max-[729px]:w-full max-[729px]:flex-col max-[729px]:items-stretch min-[730px]:flex-wrap min-[730px]:justify-center"
+        {/* Center / Action: Primary "+ Insert" Hero Pill (Instructor only) */}
+        {canDraw && (
+          <button
+            type="button"
+            onClick={() => openInsertStudio()}
+            className="pointer-events-auto flex items-center gap-1.5 rounded-full bg-emerald-500 px-3.5 py-1.5 text-xs font-bold text-emerald-950 shadow-md shadow-emerald-950/30 transition hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
           >
-            <button
-              type="button"
-              role="switch"
-              aria-checked={boardOpen}
-              onClick={toggleBoardOpen}
-              title={boardOpen ? 'Lock the board' : 'Let students draw'}
-              className={cn(
-                toolClass,
-                boardOpen
-                  ? 'bg-signal-50 text-signal-800 hover:bg-signal-100'
-                  : 'text-neutral-700 hover:bg-signal-50 hover:text-signal-800',
-              )}
-            >
-              {boardOpen ? (
-                <PiLockOpenBold className="text-signal-600" aria-hidden />
-              ) : (
-                <PiLockBold className="text-neutral-400" aria-hidden />
-              )}
-              {boardOpen ? 'Students can draw' : 'Board locked'}
-              <span
-                aria-hidden
+            <PiPlusBold className="h-3.5 w-3.5" />
+            <span>Insert</span>
+          </button>
+        )}
+
+        {/* Right: Collaboration & Export Pill (Instructor) OR Follow Pill (Student) */}
+        <div className="relative">
+          {canDraw ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setCollabSheetOpen((v) => !v)}
                 className={cn(
-                  'relative ml-1 inline-flex h-4 w-7 shrink-0 rounded-full transition-colors max-[729px]:ml-auto',
-                  boardOpen ? 'bg-signal-600' : 'bg-neutral-300',
+                  'pointer-events-auto flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold shadow-md shadow-black/30 ring-1 backdrop-blur-xl transition',
+                  boardOpen
+                    ? 'bg-slate-900/85 text-emerald-400 ring-emerald-500/30 hover:bg-slate-800'
+                    : 'bg-slate-900/85 text-slate-300 ring-white/10 hover:bg-slate-800'
                 )}
               >
                 <span
                   className={cn(
-                    'absolute top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-all',
-                    boardOpen ? 'left-3.5' : 'left-0.5',
+                    'h-2 w-2 rounded-full transition',
+                    boardOpen
+                      ? 'bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse'
+                      : 'bg-slate-500'
                   )}
                 />
-              </span>
-            </button>
-
-            <span aria-hidden className={dividerClass} />
-
-            {maths && (
-              <button
-                type="button"
-                aria-pressed={mathOpen}
-                onClick={() => {
-                  setEditingMath(null);
-                  setMathSource('');
-                  setMathOpen((v) => !v);
-                }}
-                className={cn(toolClass, mathOpen ? toolActive : toolIdle)}
-              >
-                <PiFunctionBold aria-hidden />
-                Math
+                <span className="hidden sm:inline">
+                  {boardOpen ? 'Students Can Draw' : 'Board Locked'}
+                </span>
+                <span className="sm:hidden">
+                  {boardOpen ? 'Can Draw' : 'Locked'}
+                </span>
+                <PiCaretDownBold
+                  className={cn(
+                    'h-3 w-3 opacity-60 transition-transform duration-200',
+                    collabSheetOpen && 'rotate-180'
+                  )}
+                />
               </button>
-            )}
+
+              {/* Collaboration & Export Flyout Sheet */}
+              {collabSheetOpen && (
+                <div className="pointer-events-auto absolute right-0 top-10 z-[403] w-72 rounded-2xl border border-white/10 bg-[#141724]/95 p-3.5 text-slate-100 shadow-2xl shadow-black/80 ring-1 ring-white/10 backdrop-blur-2xl">
+                  {/* Student Drawing Switch */}
+                  <div className="flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.03] p-2.5">
+                    <div>
+                      <p className="text-xs font-bold text-white">Student Drawing</p>
+                      <p className="text-[11px] text-slate-400">Let cohort write on board</p>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={boardOpen}
+                      onClick={toggleBoardOpen}
+                      className={cn(
+                        'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors',
+                        boardOpen ? 'bg-emerald-500' : 'bg-slate-700'
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'inline-block h-4 w-4 rounded-full bg-white shadow transition-transform mt-0.5 ml-0.5',
+                          boardOpen ? 'translate-x-4' : 'translate-x-0'
+                        )}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="my-2.5 h-px bg-white/10" />
+
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1 mb-1">
+                    Export & Sharing
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCollabSheetOpen(false);
+                      void exportPdf();
+                    }}
+                    disabled={exporting}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10 hover:text-white"
+                  >
+                    <PiDownloadSimpleBold className="h-4 w-4 text-emerald-400" />
+                    <span>{exporting ? 'Exporting PDF…' : 'Export Multi-Page PDF'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCollabSheetOpen(false);
+                      void exportPng();
+                    }}
+                    disabled={exporting}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10 hover:text-white"
+                  >
+                    <PiImageBold className="h-4 w-4 text-sky-400" />
+                    <span>Export Snapshot PNG</span>
+                  </button>
+
+                  <div className="my-2 h-px bg-white/10" />
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCollabSheetOpen(false);
+                      setClearOpen(true);
+                    }}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-rose-400 transition hover:bg-rose-500/10 hover:text-rose-300"
+                  >
+                    <PiTrashBold className="h-4 w-4" />
+                    <span>Wipe Entire Chalkboard</span>
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
             <button
               type="button"
-              aria-pressed={linkOpen}
               onClick={() => {
-                setLinkError(null);
-                setLinkOpen((v) => !v);
-                setTimeout(() => linkInputRef.current?.focus(), 0);
+                setFollowing(true);
+                applyPresenterView();
               }}
-              className={cn(toolClass, linkOpen ? toolActive : toolIdle)}
+              className={cn(
+                'pointer-events-auto flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-semibold shadow-lg ring-1 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500',
+                following
+                  ? 'bg-slate-900/85 text-emerald-400 ring-emerald-500/30 backdrop-blur-xl'
+                  : 'animate-pulse bg-emerald-600 text-white shadow-emerald-900/25 ring-emerald-600 hover:bg-emerald-700'
+              )}
             >
-              <PiFilesBold aria-hidden />
-              Docs &amp; video
+              {following ? (
+                <span aria-hidden className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                </span>
+              ) : (
+                <PiCrosshairBold aria-hidden />
+              )}
+              {following ? 'Following instructor' : "Back to instructor's view"}
             </button>
-            {quran && (
-              <button
-                type="button"
-                aria-pressed={quranOpen}
-                onClick={() => {
-                  setQuranError(null);
-                  setLinkOpen(false);
-                  setQuranOpen((v) => !v);
-                }}
-                className={cn(toolClass, quranOpen ? toolActive : toolIdle)}
-              >
-                <PiBookOpenTextBold aria-hidden />
-                Qur’an block
-              </button>
-            )}
-
-            <span aria-hidden className={dividerClass} />
-
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={importing}
-              className={cn(toolClass, toolIdle)}
-            >
-              <PiUploadSimpleBold aria-hidden />
-              {importing ? 'Importing…' : 'Import'}
-            </button>
-            <button
-              type="button"
-              onClick={() => void exportPdf()}
-              disabled={exporting}
-              className={cn(toolClass, toolIdle)}
-            >
-              <PiDownloadSimpleBold aria-hidden />
-              {exporting
-                ? exportPage
-                  ? `Page ${exportPage.page} of ${exportPage.of}…`
-                  : 'Exporting…'
-                : 'Export'}
-            </button>
-
-            {/* Last, and behind a divider: taking the board off every screen
-                does not belong flush against the tools that put things on it. */}
-            <span aria-hidden className={dividerClass} />
-
-            <button
-              type="button"
-              ref={clearTriggerRef}
-              aria-haspopup="dialog"
-              aria-expanded={clearOpen}
-              onClick={() => {
-                const next = !clearOpen;
-                setClearOpen(next);
-                if (!next) return;
-                const btn = clearTriggerRef.current?.getBoundingClientRect();
-                const board = wrapperRef.current?.getBoundingClientRect();
-                if (!btn || !board) return;
-                const W = 288;
-                const H = 148;
-                const GAP = 8;
-                // Below the toolbar, and never past the edge of the board.
-                const left = Math.min(
-                  btn.left - board.left,
-                  board.width - W - GAP,
-                );
-                const top = Math.min(
-                  btn.bottom + GAP - board.top,
-                  board.height - H - GAP,
-                );
-                setClearMenuAt({ top: Math.max(GAP, top), left: Math.max(GAP, left) });
-              }}
-              className={cn(toolClass, clearOpen ? toolActive : toolIdle)}
-            >
-              <PiTrashBold aria-hidden />
-              Clear
-            </button>
-
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => {
-              setFollowing(true);
-              applyPresenterView();
-            }}
-            className={cn(
-              'pointer-events-auto flex items-center gap-2 rounded-full px-3.5 py-2 text-xs font-semibold shadow-lg ring-1 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-500',
-              following
-                ? 'bg-white/95 text-signal-800 shadow-signal-900/10 ring-signal-100 backdrop-blur'
-                : 'animate-pulse bg-signal-700 text-white shadow-signal-800/25 ring-signal-700 hover:bg-signal-800',
-            )}
-          >
-            {/* A live dot while in step, so "following" reads as a state rather
-                than a button label; the crosshair only when there is somewhere
-                to go back to. Neither adds text, which the follow spec reads. */}
-            {following ? (
-              <span aria-hidden className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-signal-400 opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-signal-600" />
-              </span>
-            ) : (
-              <PiCrosshairBold aria-hidden />
-            )}
-            {following ? 'Following instructor' : "Back to instructor's view"}
-          </button>
-        )}
+          )}
+        </div>
       </div>
 
       {/* The formula being built comes first and stays visible: what it will
@@ -3134,329 +3141,410 @@ export function BoardExcalidraw({
         </div>
       )}
 
-      {quranOpen && canDraw && quran && (
+
+
+      {insertStudioOpen && canDraw && (
         <div
-          data-quran-block-panel
-          className="pointer-events-auto absolute left-1/2 top-14 z-[403] w-[min(26rem,calc(100%-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl bg-white shadow-xl shadow-signal-900/10 ring-1 ring-signal-100"
+          data-insert-studio-scrim
+          className="pointer-events-auto fixed inset-0 z-[520] flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 backdrop-blur-md transition-opacity"
+          onClick={closeInsertStudio}
         >
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              addQuranBlock();
-            }}
+          <div
+            data-insert-studio-card
+            className="studio-bottom-sheet relative flex max-h-[92vh] sm:max-h-[85vh] w-full max-w-full sm:max-w-2xl flex-col overflow-hidden rounded-t-[28px] sm:rounded-2xl border border-white/10 bg-[#141722] text-neutral-100 shadow-2xl shadow-black/80"
+            onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start gap-3 border-b border-signal-100 bg-gradient-to-r from-signal-50 to-white px-4 py-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-signal-700 text-white shadow-sm shadow-signal-800/25">
-                <PiBookOpenTextBold className="h-4.5 w-4.5" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-neutral-900">Qur’an block</p>
-                <p className="mt-0.5 text-xs text-neutral-500">
-                  Put ayahs on the board. Tajweed marks made in the Qur’an view
-                  show on them as they are made.
-                </p>
+            {/* Mobile Drag Handle */}
+            <div className="mx-auto mt-2.5 h-1 w-9 shrink-0 rounded-full bg-white/20 sm:hidden" />
+
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-white/10 px-5 py-3.5 sm:py-4">
+              <div className="flex items-center gap-2.5">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-signal-500/15 text-signal-400">
+                  <PiPlusBold className="h-4 w-4" />
+                </span>
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    {editingMath ? 'Edit Formula' : 'Insert into Chalkboard'}
+                  </h3>
+                  <p className="text-[11px] text-neutral-400">
+                    {editingMath
+                      ? 'Update formula or add a new line below'
+                      : 'Add interactive mathematical formulas, Qur’anic ayahs, or Google docs'}
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
-                aria-label="Close"
-                onClick={() => {
-                  setQuranOpen(false);
-                  setQuranError(null);
-                }}
-                className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-neutral-400 transition hover:bg-signal-100 hover:text-signal-800"
+                onClick={closeInsertStudio}
+                aria-label="Close dialog"
+                className="grid h-7 w-7 place-items-center rounded-full bg-white/5 text-neutral-400 transition hover:bg-white/10 hover:text-white"
               >
-                <PiXBold />
+                <PiXBold className="h-3.5 w-3.5" />
               </button>
             </div>
-            <div className="grid grid-cols-3 gap-2 p-4">
-              {(
-                [
-                  ['surah', 'Surah', 114],
-                  ['from', 'From ayah', 286],
-                  ['to', 'To ayah', 286],
-                ] as const
-              ).map(([key, label, max]) => (
-                <label key={key} className="block text-xs font-semibold text-neutral-700">
-                  {label}
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={1}
-                    max={max}
-                    value={quranForm[key]}
-                    onChange={(e) => {
-                      setQuranForm((f) => ({ ...f, [key]: e.target.value }));
-                      setQuranError(null);
-                    }}
-                    className={cn(inputClass, 'mt-1')}
-                  />
-                </label>
-              ))}
-            </div>
-            <div className="flex items-center justify-between gap-3 px-4 pb-4">
-              <p className="text-xs text-red-600">{quranError}</p>
-              <button
-                type="submit"
-                className="shrink-0 rounded-xl bg-signal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-signal-800/25 transition hover:bg-signal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-500 focus-visible:ring-offset-2"
-              >
-                Add to board
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
 
-      {linkOpen && canDraw && (
-        <div className="pointer-events-auto absolute left-1/2 top-14 z-[403] w-[min(32rem,calc(100%-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl bg-white shadow-xl shadow-signal-900/10 ring-1 ring-signal-100">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              addLinkToBoard(linkSource);
-            }}
-          >
-            {/* The dashboard's teal-into-white header, so the board's panels
-                read as part of the same product rather than a bolted-on tool. */}
-            <div className="flex items-start gap-3 border-b border-signal-100 bg-gradient-to-r from-signal-50 to-white px-4 py-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-signal-700 text-white shadow-sm shadow-signal-800/25">
-                <PiFilesBold className="h-4.5 w-4.5" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-neutral-900">Docs &amp; video</p>
-                <p className="mt-0.5 text-xs text-neutral-500">
-                  Google Docs, Sheets, Slides and Drive files, or a YouTube video.
-                </p>
-              </div>
+            {/* Studio Navigation Tabs (Mobile horizontally scrollable, single row) */}
+            <div className="studio-scroll-hidden flex border-b border-white/10 bg-black/20 px-3 overflow-x-auto shrink-0">
               <button
                 type="button"
-                aria-label="Close"
-                onClick={() => {
-                  setLinkOpen(false);
-                  setLinkSource('');
-                  setLinkError(null);
-                }}
-                className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-neutral-400 transition hover:bg-signal-100 hover:text-signal-800"
+                onClick={() => setInsertStudioTab('math')}
+                className={cn(
+                  'relative flex items-center gap-2 px-4 py-3 text-xs font-semibold whitespace-nowrap transition-colors',
+                  insertStudioTab === 'math'
+                    ? 'text-signal-400 after:absolute after:bottom-0 after:left-3 after:right-3 after:h-0.5 after:rounded-full after:bg-signal-400'
+                    : 'text-neutral-400 hover:text-white',
+                )}
               >
-                <PiXBold />
+                <PiMathOperationsBold className="h-4 w-4" />
+                <span>Math &amp; Science</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInsertStudioTab('quran')}
+                className={cn(
+                  'relative flex items-center gap-2 px-4 py-3 text-xs font-semibold whitespace-nowrap transition-colors',
+                  insertStudioTab === 'quran'
+                    ? 'text-signal-400 after:absolute after:bottom-0 after:left-3 after:right-3 after:h-0.5 after:rounded-full after:bg-signal-400'
+                    : 'text-neutral-400 hover:text-white',
+                )}
+              >
+                <PiBookOpenTextBold className="h-4 w-4" />
+                <span>Qur’an Block</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInsertStudioTab('docs')}
+                className={cn(
+                  'relative flex items-center gap-2 px-4 py-3 text-xs font-semibold whitespace-nowrap transition-colors',
+                  insertStudioTab === 'docs'
+                    ? 'text-signal-400 after:absolute after:bottom-0 after:left-3 after:right-3 after:h-0.5 after:rounded-full after:bg-signal-400'
+                    : 'text-neutral-400 hover:text-white',
+                )}
+              >
+                <PiFilesBold className="h-4 w-4" />
+                <span>Docs &amp; Video</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInsertStudioTab('files')}
+                className={cn(
+                  'relative flex items-center gap-2 px-4 py-3 text-xs font-semibold whitespace-nowrap transition-colors',
+                  insertStudioTab === 'files'
+                    ? 'text-signal-400 after:absolute after:bottom-0 after:left-3 after:right-3 after:h-0.5 after:rounded-full after:bg-signal-400'
+                    : 'text-neutral-400 hover:text-white',
+                )}
+              >
+                <PiUploadSimpleBold className="h-4 w-4" />
+                <span>Import File</span>
               </button>
             </div>
 
-            <div className="p-4">
-              <label
-                htmlFor="board-link-input"
-                className="block text-xs font-semibold text-neutral-700"
-              >
-                Paste a link
-              </label>
-              <div className="relative mt-1.5">
-                <PiLinkSimpleBold
-                  aria-hidden
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400"
-                />
-                <input
-                  id="board-link-input"
-                  ref={linkInputRef}
-                  value={linkSource}
-                  onChange={(e) => {
-                    setLinkSource(e.target.value);
-                    setLinkError(null);
-                  }}
-                  placeholder="https://docs.google.com/document/d/…"
-                  className={cn(inputClass, 'pl-9')}
-                />
-              </div>
+            {/* Studio Content Body */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+              {/* TAB 1: MATH & SCIENCE */}
+              {insertStudioTab === 'math' && (
+                <div className="space-y-4">
+                  {/* KaTeX Live Preview Plate */}
+                  <div className="grid min-h-[5rem] place-items-center overflow-x-auto rounded-xl border border-white/10 bg-[#090a0f] p-4 text-[#38bdf8]">
+                    {mathSource.trim() === '' ? (
+                      <p className="text-xs text-neutral-400">
+                        Pick an equation or symbol below — it appears here as you build it.
+                      </p>
+                    ) : mathIssue ? (
+                      <p className="text-center text-xs font-semibold text-rose-400">
+                        {mathIssue}
+                      </p>
+                    ) : (
+                      <div dangerouslySetInnerHTML={{ __html: mathPreview }} />
+                    )}
+                  </div>
 
-              {/* Two different things, so two buttons rather than one Add and a
-                  setting. Pages is first because it is what teaching from a
-                  document needs; the live view is for showing, not working. */}
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => void importGoogleAsPages(linkSource)}
-                  disabled={importing || linkSource.trim() === ''}
-                  className="rounded-xl bg-signal-700 px-3.5 py-2.5 text-left text-white shadow-sm shadow-signal-800/25 transition hover:bg-signal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-500 focus-visible:ring-offset-2 disabled:opacity-40"
-                >
-                  <span className="flex items-center gap-2 text-xs font-semibold">
-                    {importing ? 'Importing…' : 'Add as pages'}
-                    <span className="rounded-full bg-white/15 px-1.5 py-px text-[10px] font-semibold">
-                      Recommended
-                    </span>
-                  </span>
-                  <span className="mt-0.5 block text-[11px] leading-snug text-signal-100">
-                    Everyone scrolls together, and you can write on it. A
-                    snapshot — later edits will not appear.
-                  </span>
-                </button>
-                <button
-                  type="submit"
-                  disabled={linkSource.trim() === ''}
-                  className="rounded-xl border border-neutral-300 bg-white px-3.5 py-2.5 text-left text-neutral-900 transition hover:border-signal-600 hover:bg-signal-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400 focus-visible:ring-offset-2 disabled:opacity-40"
-                >
-                  <span className="block text-xs font-semibold">Add live view</span>
-                  <span className="mt-0.5 block text-[11px] leading-snug text-neutral-500">
-                    Always current, but read-only, and each person scrolls it
-                    themselves.
-                  </span>
-                </button>
-              </div>
+                  <div>
+                    <label htmlFor="studio-math-input" className="block text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+                      LaTeX Expression
+                    </label>
+                    <textarea
+                      id="studio-math-input"
+                      ref={mathInputRef}
+                      value={mathSource}
+                      onChange={(e) => setMathSource(e.target.value)}
+                      rows={2}
+                      spellCheck={false}
+                      placeholder="Type LaTeX or click quick presets..."
+                      className="mt-1.5 w-full resize-y rounded-xl border border-white/10 bg-white/5 px-3 py-2 font-mono text-sm text-white placeholder:text-neutral-500 outline-none focus:border-signal-400 focus:ring-1 focus:ring-signal-400"
+                    />
+                  </div>
 
-              {linkError ? (
-                <p className="mt-2.5 text-xs font-medium text-red-600">{linkError}</p>
-              ) : (
-                <p className="mt-2.5 text-xs text-neutral-500">
-                  YouTube is live view only. Google files must be shared with
-                  &ldquo;anyone with the link&rdquo;.
-                </p>
-              )}
-            </div>
-          </form>
-        </div>
-      )}
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-400 mb-2">
+                      Preset Formulas
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {MATH_PRESETS.map((preset) => (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => {
+                            setMathSource(preset.latex);
+                          }}
+                          className="rounded-lg border border-white/10 bg-white/5 p-2 text-center text-xs font-mono text-neutral-300 hover:border-signal-500 hover:bg-signal-500/10 hover:text-white transition"
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
-      {mathOpen && canDraw && maths && (
-        <div className="pointer-events-auto absolute left-1/2 top-14 z-[403] flex max-h-[calc(100%-5rem)] w-[min(41rem,calc(100%-2rem))] -translate-x-1/2 flex-col rounded-xl bg-white shadow-xl ring-1 ring-neutral-200">
-          <div className="flex items-center justify-between border-b border-neutral-200 px-3 py-2">
-            <p className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">
-              {editingMath ? 'Edit formula' : 'Formula'}
-            </p>
-            <button
-              type="button"
-              onClick={closeMath}
-              aria-label="Close"
-              className="grid h-6 w-6 place-items-center rounded-lg text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700"
-            >
-              <PiXBold className="h-3 w-3" />
-            </button>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-            {/* Live preview — the answer to "what am I making", full width and
-                first, so clicking a palette entry has a visible result. */}
-            <div className="mt-3 grid min-h-[4.5rem] place-items-center overflow-x-auto rounded-lg bg-neutral-50 px-3 py-3 text-neutral-900">
-              {mathSource.trim() === '' ? (
-                <p className="text-xs text-neutral-400">
-                  Pick an equation or a symbol below — it appears here as you build it.
-                </p>
-              ) : mathIssue ? (
-                <p className="text-center text-xs font-semibold text-red-600">
-                  {mathIssue}
-                </p>
-              ) : (
-                <div dangerouslySetInnerHTML={{ __html: mathPreview }} />
-              )}
-            </div>
-
-            <label htmlFor="board-math-input" className="sr-only">
-              Formula source
-            </label>
-            <textarea
-              id="board-math-input"
-              ref={mathInputRef}
-              value={mathSource}
-              onChange={(e) => setMathSource(e.target.value)}
-              rows={2}
-              spellCheck={false}
-              placeholder="Pick from below, or type LaTeX directly"
-              className="mt-2 w-full resize-y rounded-lg border border-neutral-300 px-2.5 py-1.5 font-mono text-sm text-neutral-900 outline-none focus:border-neutral-500"
-            />
-
-            <input
-              type="search"
-              value={mathQuery}
-              onChange={(e) => setMathQuery(e.target.value)}
-              placeholder="Search — integral, orthogonal, quadratic…"
-              aria-label="Search math symbols"
-              className="mt-2 w-full rounded-lg border border-neutral-300 px-2.5 py-1.5 text-sm text-neutral-900 outline-none focus:border-neutral-500"
-            />
-
-            {/* Categories run down the side rather than wrapping across the
-                top: eleven of them wrapped to two cramped rows, and the grid
-                they controlled was clipped mid-glyph. */}
-            <div className="mt-2 flex min-h-[13rem] gap-2">
-              {/* The category column sizes to its contents and scrolls with
-                  the panel body. An independent scroller here cut the last
-                  category in half, which reads as broken rather than
-                  scrollable. */}
-              {mathQuery.trim() === '' && (
-                <div className="w-28 shrink-0 space-y-0.5">
-                  {mathTabs.map((cat) => (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setMathTab(cat)}
-                      className={cn(
-                        'block w-full rounded-lg px-2 py-1 text-left text-[11px] font-semibold transition',
-                        mathTab === cat
-                          ? 'bg-neutral-900 text-white'
-                          : 'text-neutral-600 hover:bg-neutral-100',
+                  {/* Math Symbols & Search */}
+                  <div className="space-y-2">
+                    <input
+                      type="search"
+                      value={mathQuery}
+                      onChange={(e) => setMathQuery(e.target.value)}
+                      placeholder="Search symbols — integral, matrix, theta..."
+                      aria-label="Search math symbols"
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white placeholder:text-neutral-500 outline-none focus:border-signal-400"
+                    />
+                    <div className="flex max-h-40 gap-2 overflow-hidden">
+                      {mathQuery.trim() === '' && (
+                        <div className="w-24 shrink-0 space-y-0.5 overflow-y-auto pr-1">
+                          {mathTabs.map((cat) => (
+                            <button
+                              key={cat}
+                              type="button"
+                              onClick={() => setMathTab(cat)}
+                              className={cn(
+                                'block w-full rounded-lg px-2 py-1 text-left text-[11px] font-semibold transition',
+                                mathTab === cat
+                                  ? 'bg-signal-500/20 text-signal-300 border border-signal-500/30'
+                                  : 'text-neutral-400 hover:bg-white/5 hover:text-neutral-200',
+                              )}
+                            >
+                              {cat}
+                            </button>
+                          ))}
+                        </div>
                       )}
-                    >
-                      {cat}
-                    </button>
-                  ))}
+                      <div
+                        className={cn(
+                          'flex min-w-0 flex-1 gap-1 overflow-y-auto rounded-xl border border-white/10 bg-black/30 p-2',
+                          mathTab === 'Equations' && mathQuery.trim() === ''
+                            ? 'flex-col'
+                            : 'flex-wrap content-start',
+                        )}
+                      >
+                        {visibleMath.length === 0 ? (
+                          <p className="p-2 text-xs text-neutral-500">
+                            Nothing matches “{mathQuery.trim()}”.
+                          </p>
+                        ) : (
+                          visibleMath.map((e) => (
+                            <MathButton key={e.latex} entry={e} onPick={pickMath} />
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
-              <div
-                className={cn(
-                  'flex min-w-0 flex-1 gap-1 overflow-y-auto rounded-lg bg-neutral-50/60 p-1.5',
-                  mathTab === 'Equations' && mathQuery.trim() === ''
-                    ? 'flex-col'
-                    : 'flex-wrap content-start',
-                )}
-              >
-                {visibleMath.length === 0 ? (
-                  <p className="px-1 py-2 text-xs text-neutral-400">
-                    Nothing matches “{mathQuery.trim()}”.
-                  </p>
-                ) : (
-                  visibleMath.map((e) => (
-                    <MathButton key={e.latex} entry={e} onPick={pickMath} />
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
+              {/* TAB 2: QUR'AN BLOCK */}
+              {insertStudioTab === 'quran' && (
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-amber-500/30 bg-[#0b0e14] p-5 text-center font-serif text-xl sm:text-2xl leading-loose text-amber-300">
+                    {SURAH_SNIPPETS[quranForm.surah] || 'بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ'}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-neutral-400">Surah</label>
+                      <select
+                        value={quranForm.surah}
+                        onChange={(e) => {
+                          setQuranForm((f) => ({ ...f, surah: e.target.value }));
+                          setQuranError(null);
+                        }}
+                        className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white outline-none focus:border-signal-400"
+                      >
+                        <option value="1" className="bg-[#141722] text-white">1. Al-Fatihah</option>
+                        <option value="2" className="bg-[#141722] text-white">2. Al-Baqarah</option>
+                        <option value="18" className="bg-[#141722] text-white">18. Al-Kahf</option>
+                        <option value="36" className="bg-[#141722] text-white">36. Ya-Sin</option>
+                        <option value="67" className="bg-[#141722] text-white">67. Al-Mulk</option>
+                        <option value="112" className="bg-[#141722] text-white">112. Al-Ikhlas</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-neutral-400">From Ayah</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={286}
+                        value={quranForm.from}
+                        onChange={(e) => {
+                          setQuranForm((f) => ({ ...f, from: e.target.value }));
+                          setQuranError(null);
+                        }}
+                        className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white outline-none focus:border-signal-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-neutral-400">To Ayah</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={286}
+                        value={quranForm.to}
+                        onChange={(e) => {
+                          setQuranForm((f) => ({ ...f, to: e.target.value }));
+                          setQuranError(null);
+                        }}
+                        className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white outline-none focus:border-signal-400"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2.5 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-200">
+                    <span className="text-amber-400">✦</span>
+                    <span>Tajweed color annotations made in reader automatically synchronize to this vector block.</span>
+                  </div>
+                  {quranError && <p className="text-xs text-rose-400">{quranError}</p>}
+                </div>
+              )}
 
-          <div className="flex items-center justify-between gap-2 border-t border-neutral-200 px-3 py-2">
-            <p className="truncate text-[11px] text-neutral-400">
-              {mathSource.trim() === ''
-                ? 'Nothing to add yet'
-                : mathIssue
-                  ? 'Fix the formula to add it'
-                  : editingMath
-                    ? 'Replace it, or add the next line underneath'
-                    : 'Lands in the middle of your view'}
-            </p>
-            <div className="flex shrink-0 gap-2">
+              {/* TAB 3: DOCS & VIDEO */}
+              {insertStudioTab === 'docs' && (
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="studio-link-input" className="block text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+                      Google Drive, Slides, Docs or YouTube Link
+                    </label>
+                    <div className="relative mt-1.5">
+                      <PiLinkSimpleBold className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+                      <input
+                        id="studio-link-input"
+                        ref={linkInputRef}
+                        value={linkSource}
+                        onChange={(e) => {
+                          setLinkSource(e.target.value);
+                          setLinkError(null);
+                        }}
+                        placeholder="https://docs.google.com/presentation/d/…"
+                        className="w-full rounded-xl border border-white/10 bg-white/5 pl-9 pr-3 py-2.5 text-xs text-white placeholder:text-neutral-500 outline-none focus:border-signal-400"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-2.5 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => void importGoogleAsPages(linkSource)}
+                      disabled={importing || linkSource.trim() === ''}
+                      className="rounded-xl border border-signal-500/30 bg-signal-500/10 p-3.5 text-left transition hover:bg-signal-500/20 disabled:opacity-40"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-signal-400">Paginated Slides</span>
+                        <span className="rounded-full bg-signal-400 px-2 py-0.5 text-[10px] font-extrabold text-[#022c22]">
+                          Recommended
+                        </span>
+                      </div>
+                      <p className="mt-1.5 text-[11px] leading-snug text-neutral-300">
+                        Imports slides as scrollable chalkboard pages. Everyone views synchronously and you can write on top.
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addLinkToBoard(linkSource)}
+                      disabled={linkSource.trim() === ''}
+                      className="rounded-xl border border-white/10 bg-white/5 p-3.5 text-left transition hover:bg-white/10 disabled:opacity-40"
+                    >
+                      <span className="block text-xs font-bold text-white">Live Interactive Frame</span>
+                      <p className="mt-1.5 text-[11px] leading-snug text-neutral-400">
+                        Always current Google Drive iframe. Best for read-only spreadsheets and collaborative forms.
+                      </p>
+                    </button>
+                  </div>
+                  {linkError ? (
+                    <p className="text-xs font-medium text-rose-400">{linkError}</p>
+                  ) : (
+                    <p className="text-[11px] text-neutral-500">
+                      YouTube is live view only. Google files must be shared with &ldquo;anyone with the link&rdquo;.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 4: FILE UPLOAD */}
+              {insertStudioTab === 'files' && (
+                <div className="space-y-4">
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-white/20 bg-white/5 p-8 text-center cursor-pointer transition hover:border-signal-400 hover:bg-signal-500/10"
+                  >
+                    <div className="grid h-12 w-12 place-items-center rounded-full bg-signal-500/10 text-signal-400 mb-3">
+                      <PiUploadSimpleBold className="h-6 w-6" />
+                    </div>
+                    <p className="text-sm font-bold text-white">
+                      Click to upload PDF slides or images
+                    </p>
+                    <p className="mt-1 text-xs text-neutral-400">
+                      Supports Multi-page PDF, PNG, JPG, WebP
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer Actions */}
+            <div className="flex items-center justify-between border-t border-white/10 bg-black/20 px-5 py-3.5 shrink-0">
               <button
                 type="button"
-                onClick={closeMath}
-                className={`${pill} bg-white text-neutral-700`}
+                onClick={closeInsertStudio}
+                className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-neutral-300 hover:bg-white/10 hover:text-white transition"
               >
                 Cancel
               </button>
-              {editingMath && (
+              <div className="flex items-center gap-2">
+                {insertStudioTab === 'math' && editingMath && (
+                  <button
+                    type="button"
+                    onClick={() => void replaceMathOnBoard()}
+                    disabled={mathBusy || !!mathIssue || mathSource.trim() === ''}
+                    className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-bold text-white transition hover:bg-white/20 disabled:opacity-40"
+                  >
+                    {mathBusy ? 'Working…' : 'Replace Equation'}
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => void replaceMathOnBoard()}
-                  disabled={mathBusy || !!mathIssue || mathSource.trim() === ''}
-                  className={`${pill} bg-white text-neutral-800 disabled:opacity-40`}
+                  onClick={() => {
+                    if (insertStudioTab === 'math') {
+                      void addMathToBoard();
+                    } else if (insertStudioTab === 'quran') {
+                      addQuranBlock();
+                    } else if (insertStudioTab === 'docs') {
+                      if (linkSource.trim()) void importGoogleAsPages(linkSource);
+                    } else if (insertStudioTab === 'files') {
+                      fileInputRef.current?.click();
+                    }
+                  }}
+                  disabled={
+                    (insertStudioTab === 'math' && (mathBusy || !!mathIssue || mathSource.trim() === '')) ||
+                    (insertStudioTab === 'docs' && linkSource.trim() === '')
+                  }
+                  className="rounded-full bg-signal-500 px-5 py-2 text-xs font-bold text-[#022c22] shadow-sm shadow-signal-500/30 transition hover:bg-signal-400 disabled:opacity-40"
                 >
-                  {mathBusy ? 'Working…' : 'Replace'}
+                  {insertStudioTab === 'math'
+                    ? mathBusy
+                      ? 'Adding…'
+                      : editingMath
+                        ? 'Add as New Line'
+                        : 'Insert on Board'
+                    : insertStudioTab === 'quran'
+                      ? 'Add Ayah Block'
+                      : insertStudioTab === 'docs'
+                        ? 'Import Slides'
+                        : 'Choose File'}
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={() => void addMathToBoard()}
-                disabled={mathBusy || !!mathIssue || mathSource.trim() === ''}
-                className={`${pill} bg-neutral-900 text-white ring-neutral-900 disabled:opacity-40`}
-              >
-                {mathBusy
-                  ? 'Adding…'
-                  : editingMath
-                    ? 'Add as a new line'
-                    : 'Add to board'}
-              </button>
+              </div>
             </div>
           </div>
         </div>

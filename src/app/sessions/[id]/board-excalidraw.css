@@ -259,3 +259,26 @@
     opacity: 0.5;
   }
 }
+
+/* Pedagogical Insert Studio Modal & Bottom Sheet */
+@keyframes studio-slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.studio-bottom-sheet {
+  animation: studio-slide-up 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.studio-scroll-hidden::-webkit-scrollbar {
+  display: none;
+}
+.studio-scroll-hidden {
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
