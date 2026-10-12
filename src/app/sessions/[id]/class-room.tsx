@@ -987,43 +987,6 @@ export function ClassRoom({
           </h1>
         </div>
 
-        {/* Center: Surface Segmented Controller */}
-        <div className="flex items-center">
-          {isInstructor ? (
-            <div className="inline-flex items-center rounded-full bg-white/10 p-1 backdrop-blur-md">
-              {views.map((v) => {
-                const { label, Icon } = VIEW_META[v];
-                return (
-                  <button
-                    key={v}
-                    onClick={() => changeView(v)}
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition sm:px-3 sm:py-1.5',
-                      view === v
-                        ? 'bg-white text-neutral-950 shadow-sm'
-                        : 'text-neutral-300 hover:text-white',
-                    )}
-                    aria-label={label}
-                    title={label}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">{label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            (() => {
-              const { label, Icon } = VIEW_META[view];
-              return (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-neutral-200 backdrop-blur-md">
-                  <Icon className="h-3.5 w-3.5 text-signal-400" />
-                  <span className="hidden sm:inline">Following · </span>{label}
-                </span>
-              );
-            })()
-          )}
-        </div>
 
         {/* Right: Record, Theme, Participants */}
         <div className="flex shrink-0 items-center gap-2">
@@ -1739,17 +1702,17 @@ export function ClassRoom({
       </div>
 
       {/* ---------- Modern Google Minimalist Dock ---------- */}
-      <footer className="relative z-30 flex items-center justify-center p-2.5 sm:p-3 bg-neutral-950/40 backdrop-blur-md border-t border-white/5">
-        <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+      <footer className="relative z-30 flex items-center justify-center p-2 sm:p-2.5 bg-neutral-950/40 backdrop-blur-md border-t border-white/5">
+        <div className="flex max-w-full items-center justify-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 sm:gap-2.5">
           {/* Island 1: Media Core (Mic, Cam, Screen, End) */}
-          <div className="flex items-center gap-1.5 rounded-full border border-white/10 bg-neutral-900/90 p-1.5 shadow-xl backdrop-blur-xl">
+          <div className="flex shrink-0 items-center gap-1 rounded-full border border-white/10 bg-neutral-900/90 p-1 shadow-xl backdrop-blur-xl sm:gap-1.5 sm:p-1.5">
             {/* Mic */}
             {!isShadow && videoControls?.canPublishMedia && (
               <button
                 onClick={videoControls.toggleMic}
                 disabled={!canSpeak}
                 className={cn(
-                  'grid h-10 w-10 place-items-center rounded-full transition sm:h-11 sm:w-11',
+                  'grid h-9 w-9 place-items-center rounded-full transition sm:h-10 sm:w-10',
                   !canSpeak
                     ? 'cursor-not-allowed bg-white/5 text-neutral-400 opacity-40'
                     : videoControls.micOn
@@ -1765,9 +1728,9 @@ export function ClassRoom({
                 }
               >
                 {videoControls.micOn && canSpeak ? (
-                  <PiMicrophone className="h-5 w-5" />
+                  <PiMicrophone className="h-4 w-4 sm:h-5 sm:w-5" />
                 ) : (
-                  <PiMicrophoneSlash className="h-5 w-5" />
+                  <PiMicrophoneSlash className="h-4 w-4 sm:h-5 sm:w-5" />
                 )}
               </button>
             )}
@@ -1777,7 +1740,7 @@ export function ClassRoom({
               <button
                 onClick={videoControls.toggleCam}
                 className={cn(
-                  'grid h-10 w-10 place-items-center rounded-full transition sm:h-11 sm:w-11',
+                  'grid h-9 w-9 place-items-center rounded-full transition sm:h-10 sm:w-10',
                   videoControls.camOn
                     ? 'bg-white text-neutral-950 shadow-sm'
                     : 'bg-white/10 text-neutral-300 hover:bg-white/20',
@@ -1785,9 +1748,9 @@ export function ClassRoom({
                 title={videoControls.camOn ? 'Turn camera off' : 'Turn camera on'}
               >
                 {videoControls.camOn ? (
-                  <PiVideoCamera className="h-5 w-5" />
+                  <PiVideoCamera className="h-4 w-4 sm:h-5 sm:w-5" />
                 ) : (
-                  <PiVideoCameraSlash className="h-5 w-5" />
+                  <PiVideoCameraSlash className="h-4 w-4 sm:h-5 sm:w-5" />
                 )}
               </button>
             )}
@@ -1797,14 +1760,14 @@ export function ClassRoom({
               <button
                 onClick={videoControls.toggleScreen}
                 className={cn(
-                  'grid h-10 w-10 place-items-center rounded-full transition sm:h-11 sm:w-11',
+                  'grid h-9 w-9 place-items-center rounded-full transition sm:h-10 sm:w-10',
                   videoControls.screenOn
                     ? 'bg-signal-500 text-neutral-950 shadow-sm'
                     : 'bg-white/10 text-neutral-300 hover:bg-white/20',
                 )}
                 title={videoControls.screenOn ? 'Stop sharing screen' : 'Share screen'}
               >
-                <PiScreencast className="h-5 w-5" />
+                <PiScreencast className="h-4 w-4 sm:h-5 sm:w-5" />
               </button>
             )}
 
@@ -1812,7 +1775,7 @@ export function ClassRoom({
             <button
               onClick={() => setConfirmLeave(true)}
               disabled={ending}
-              className="grid h-10 w-10 place-items-center rounded-full bg-rose-600 text-white transition hover:bg-rose-500 active:scale-95 disabled:opacity-40 sm:h-11 sm:w-11"
+              className="grid h-9 w-9 place-items-center rounded-full bg-rose-600 text-white transition hover:bg-rose-500 active:scale-95 disabled:opacity-40 sm:h-10 sm:w-10"
               title={
                 ending
                   ? isInstructor
@@ -1824,20 +1787,60 @@ export function ClassRoom({
               }
             >
               {isInstructor ? (
-                <PiPhoneX className="h-5 w-5" />
+                <PiPhoneX className="h-4 w-4 sm:h-5 sm:w-5" />
               ) : (
-                <PiSignOut className="h-5 w-5" />
+                <PiSignOut className="h-4 w-4 sm:h-5 sm:w-5" />
               )}
             </button>
           </div>
 
-          {/* Island 2: Context Action Capsule (Buzzer for Host, Raise Hand for Student) */}
-          <div className="flex items-center rounded-full border border-white/10 bg-neutral-900/90 p-1.5 shadow-xl backdrop-blur-xl">
+          {/* Island 2: Surface Switcher (Brought down from header) */}
+          <div className="flex shrink-0 items-center rounded-full border border-white/10 bg-neutral-900/90 p-1 shadow-xl backdrop-blur-xl">
+            {isInstructor ? (
+              <div className="flex items-center gap-1">
+                {views.map((v) => {
+                  const { label, Icon } = VIEW_META[v];
+                  const isActive = view === v;
+                  return (
+                    <button
+                      key={v}
+                      onClick={() => changeView(v)}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-semibold transition sm:px-3 sm:py-2',
+                        isActive
+                          ? 'bg-white text-neutral-950 shadow-sm'
+                          : 'text-neutral-300 hover:bg-white/10 hover:text-white',
+                      )}
+                      aria-label={label}
+                      title={label}
+                    >
+                      <Icon className="h-4 w-4" />
+                      <span className="hidden md:inline">{label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              (() => {
+                const { label, Icon } = VIEW_META[view];
+                return (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-neutral-200">
+                    <Icon className="h-4 w-4 text-signal-400" />
+                    <span className="hidden sm:inline text-neutral-400">Following · </span>
+                    <span>{label}</span>
+                  </span>
+                );
+              })()
+            )}
+          </div>
+
+          {/* Island 3: Context Action Capsule (Buzzer for Host, Raise Hand for Student) */}
+          <div className="flex shrink-0 items-center rounded-full border border-white/10 bg-neutral-900/90 p-1 shadow-xl backdrop-blur-xl sm:p-1.5">
             {isInstructor ? (
               <button
                 onClick={startBuzzer}
                 disabled={buzzer?.phase === 'QUESTION_OPEN'}
-                className="inline-flex items-center gap-2 rounded-full bg-signal-500 px-4 py-2 text-xs font-bold text-neutral-950 shadow-md transition hover:bg-signal-400 disabled:cursor-not-allowed disabled:opacity-40 sm:px-5 sm:py-2.5 sm:text-sm"
+                className="inline-flex items-center gap-1.5 rounded-full bg-signal-500 px-3 py-1.5 text-xs font-bold text-neutral-950 shadow-md transition hover:bg-signal-400 disabled:cursor-not-allowed disabled:opacity-40 sm:px-4 sm:py-2 sm:text-sm"
                 title={
                   buzzer?.phase === 'QUESTION_OPEN'
                     ? 'A buzzer question is already active'
@@ -1856,7 +1859,7 @@ export function ClassRoom({
                   )
                 }
                 className={cn(
-                  'inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-bold shadow-md transition sm:px-5 sm:py-2.5 sm:text-sm',
+                  'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold shadow-md transition sm:px-4 sm:py-2 sm:text-sm',
                   myHandRaised
                     ? 'bg-signal-600 text-white hover:bg-signal-500'
                     : 'bg-white text-neutral-950 hover:bg-neutral-100',
@@ -1869,70 +1872,28 @@ export function ClassRoom({
             ) : null}
           </div>
 
-          {/* Island 3: Utility & Progressive Disclosure Overflow */}
-          <div className="relative flex items-center gap-1.5 rounded-full border border-white/10 bg-neutral-900/90 p-1.5 shadow-xl backdrop-blur-xl">
-            {/* Chat button */}
-            <button
-              onClick={() => (panel === 'chat' ? setPanel(null) : openChat())}
-              className={cn(
-                'relative grid h-10 w-10 place-items-center rounded-full transition sm:h-11 sm:w-11',
-                panel === 'chat'
-                  ? 'bg-white text-neutral-950'
-                  : 'bg-white/10 text-neutral-300 hover:bg-white/20',
-              )}
-              title="Toggle chat"
-            >
-              <PiChatCircle className="h-5 w-5" />
-              {unreadChat > 0 && (
-                <span className="absolute -top-1 -right-1 grid h-4 min-w-[16px] place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
-                  {unreadChat > 9 ? '9+' : unreadChat}
-                </span>
-              )}
-            </button>
-
-            {/* People button */}
-            <button
-              onClick={() => setPanel(panel === 'people' ? null : 'people')}
-              className={cn(
-                'grid h-10 w-10 place-items-center rounded-full transition sm:h-11 sm:w-11',
-                panel === 'people'
-                  ? 'bg-white text-neutral-950'
-                  : 'bg-white/10 text-neutral-300 hover:bg-white/20',
-              )}
-              title="Participants & Rosters"
-            >
-              <PiUsers className="h-5 w-5" />
-            </button>
-
-            {/* Points / Leaderboard button */}
-            <button
-              onClick={() => setPanel(panel === 'points' ? null : 'points')}
-              className={cn(
-                'grid h-10 w-10 place-items-center rounded-full transition sm:h-11 sm:w-11',
-                panel === 'points'
-                  ? 'bg-white text-neutral-950'
-                  : 'bg-white/10 text-neutral-300 hover:bg-white/20',
-              )}
-              title="Leaderboard & Standings"
-            >
-              <PiTrophy className="h-5 w-5" />
-            </button>
-
-            {/* More (⋮) Overflow Toggle */}
+          {/* Island 4: Progressive Disclosure & Tools (Houses Chat, People, Leaderboard) */}
+          <div className="relative flex shrink-0 items-center rounded-full border border-white/10 bg-neutral-900/90 p-1 shadow-xl backdrop-blur-xl sm:p-1.5">
+            {/* More (⋮) Overflow Toggle with Unread Badge */}
             <button
               type="button"
               onClick={() => setMoreOpen((v) => !v)}
               className={cn(
-                'grid h-10 w-10 place-items-center rounded-full transition sm:h-11 sm:w-11',
+                'relative grid h-9 w-9 place-items-center rounded-full transition sm:h-10 sm:w-10',
                 moreOpen || moreActive
                   ? 'bg-white text-neutral-950'
                   : 'bg-white/10 text-neutral-300 hover:bg-white/20',
               )}
-              title="More Classroom Tools"
+              title="More Classroom Tools & Collaboration"
               aria-haspopup="menu"
               aria-expanded={moreOpen}
             >
               <PiDotsThreeOutline className="h-5 w-5" />
+              {unreadChat > 0 && panel !== 'chat' && (
+                <span className="absolute -top-1 -right-1 grid h-4 min-w-[16px] place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white shadow-sm">
+                  {unreadChat > 9 ? '9+' : unreadChat}
+                </span>
+              )}
             </button>
 
             {/* Progressive Disclosure Popover Sheet */}
@@ -1950,7 +1911,54 @@ export function ClassRoom({
                   aria-label="More classroom tools"
                   className="absolute bottom-full right-0 z-50 mb-3 w-72 overflow-hidden rounded-2xl border border-white/15 bg-neutral-900/98 p-3 shadow-2xl backdrop-blur-2xl"
                 >
-                  {/* Category 1: Teaching Tools */}
+                  {/* Category 1: Cohort Collaboration (Chat, People, Leaderboard) */}
+                  <div className="mb-2 border-b border-white/10 pb-2">
+                    <p className="px-2 py-1 text-[10.5px] font-bold uppercase tracking-wider text-neutral-500">
+                      Cohort Collaboration
+                    </p>
+                    <button
+                      onClick={() => {
+                        openChat();
+                        setMoreOpen(false);
+                      }}
+                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-xs font-medium text-neutral-200 transition hover:bg-white/10 hover:text-white"
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <PiChatCircle className="h-4 w-4 text-signal-400" />
+                        <span>Cohort Chat</span>
+                      </span>
+                      {unreadChat > 0 && (
+                        <span className="grid h-4 min-w-[16px] place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
+                          {unreadChat > 9 ? '9+' : unreadChat}
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPanel('people');
+                        setMoreOpen(false);
+                      }}
+                      className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-xs font-medium text-neutral-200 transition hover:bg-white/10 hover:text-white"
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <PiUsers className="h-4 w-4 text-signal-400" />
+                        <span>Participants & Rosters</span>
+                      </span>
+                      <span className="text-[11px] text-neutral-400">{users.length}</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPanel('points');
+                        setMoreOpen(false);
+                      }}
+                      className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-xs font-medium text-neutral-200 transition hover:bg-white/10 hover:text-white"
+                    >
+                      <PiTrophy className="h-4 w-4 text-signal-400" />
+                      <span>Leaderboard & Standings</span>
+                    </button>
+                  </div>
+
+                  {/* Category 2: Teaching Tools */}
                   {(isInstructor || (codeInstruction && codingTask)) && (
                     <div className="mb-2 border-b border-white/10 pb-2">
                       <p className="px-2 py-1 text-[10.5px] font-bold uppercase tracking-wider text-neutral-500">
@@ -2007,7 +2015,7 @@ export function ClassRoom({
                     </div>
                   )}
 
-                  {/* Category 2: Room Administration */}
+                  {/* Category 3: Room Administration */}
                   <div>
                     <p className="px-2 py-1 text-[10.5px] font-bold uppercase tracking-wider text-neutral-500">
                       Room Controls
