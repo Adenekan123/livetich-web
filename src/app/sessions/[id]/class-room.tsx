@@ -1792,6 +1792,47 @@ export function ClassRoom({
                 <PiSignOut className="h-5 w-5" />
               )}
             </button>
+
+            {/* Divider before Context Action */}
+            {(isInstructor || (!isShadow && myHandRaised !== undefined)) && (
+              <div className="h-6 w-px bg-white/15 mx-0.5" />
+            )}
+
+            {/* Context Action Button (Buzzer for Host, Raise Hand for Student) */}
+            {isInstructor ? (
+              <button
+                onClick={startBuzzer}
+                disabled={buzzer?.phase === 'QUESTION_OPEN'}
+                className="inline-flex items-center gap-1.5 rounded-full bg-signal-500 px-3.5 py-2 text-xs font-bold text-neutral-950 shadow-md transition hover:bg-signal-400 disabled:cursor-not-allowed disabled:opacity-40 sm:px-4 sm:py-2.5 sm:text-sm"
+                title={
+                  buzzer?.phase === 'QUESTION_OPEN'
+                    ? 'A buzzer question is already active'
+                    : 'Start a buzzer competition round'
+                }
+              >
+                <PiLightning className="h-4 w-4" />
+                <span>{buzzer?.phase === 'QUESTION_OPEN' ? 'Round Active' : 'Start Buzzer'}</span>
+              </button>
+            ) : !isShadow ? (
+              <button
+                onClick={() =>
+                  socketRef.current?.emit(
+                    myHandRaised ? 'hand:lower' : 'hand:raise',
+                    { sessionId },
+                  )
+                }
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-bold shadow-md transition sm:px-4 sm:py-2.5 sm:text-sm',
+                  myHandRaised
+                    ? 'bg-signal-600 text-white hover:bg-signal-500'
+                    : 'bg-white text-neutral-950 hover:bg-neutral-100',
+                )}
+                title={myHandRaised ? 'Lower your hand' : 'Raise hand to speak'}
+              >
+                <PiHandPalm className="h-4 w-4" />
+                <span>{myHandRaised ? 'Lower Hand' : 'Raise Hand'}</span>
+              </button>
+            ) : null}
           </div>
 
           {/* Island (Desktop): Surface Switcher brought down to dock */}
@@ -1830,44 +1871,6 @@ export function ClassRoom({
                 );
               })()
             )}
-          </div>
-
-          {/* Island 2: Context Action Capsule (Buzzer for Host, Raise Hand for Student) */}
-          <div className="flex items-center rounded-full border border-white/10 bg-neutral-900/90 p-1.5 shadow-xl backdrop-blur-xl">
-            {isInstructor ? (
-              <button
-                onClick={startBuzzer}
-                disabled={buzzer?.phase === 'QUESTION_OPEN'}
-                className="inline-flex items-center gap-2 rounded-full bg-signal-500 px-4 py-2 text-xs font-bold text-neutral-950 shadow-md transition hover:bg-signal-400 disabled:cursor-not-allowed disabled:opacity-40 sm:px-5 sm:py-2.5 sm:text-sm"
-                title={
-                  buzzer?.phase === 'QUESTION_OPEN'
-                    ? 'A buzzer question is already active'
-                    : 'Start a buzzer competition round'
-                }
-              >
-                <PiLightning className="h-4 w-4" />
-                <span>{buzzer?.phase === 'QUESTION_OPEN' ? 'Round Active' : 'Start Buzzer'}</span>
-              </button>
-            ) : !isShadow ? (
-              <button
-                onClick={() =>
-                  socketRef.current?.emit(
-                    myHandRaised ? 'hand:lower' : 'hand:raise',
-                    { sessionId },
-                  )
-                }
-                className={cn(
-                  'inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-bold shadow-md transition sm:px-5 sm:py-2.5 sm:text-sm',
-                  myHandRaised
-                    ? 'bg-signal-600 text-white hover:bg-signal-500'
-                    : 'bg-white text-neutral-950 hover:bg-neutral-100',
-                )}
-                title={myHandRaised ? 'Lower your hand' : 'Raise hand to speak'}
-              >
-                <PiHandPalm className="h-4 w-4" />
-                <span>{myHandRaised ? 'Lower Hand' : 'Raise Hand'}</span>
-              </button>
-            ) : null}
           </div>
 
           {/* Island 3: Collaboration & Overflow Pill */}
