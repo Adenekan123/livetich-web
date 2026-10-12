@@ -987,43 +987,6 @@ export function ClassRoom({
           </h1>
         </div>
 
-        {/* Center: Surface Segmented Controller (Desktop - on mobile it moves down to the bottom pill) */}
-        <div className="hidden md:flex items-center">
-          {isInstructor ? (
-            <div className="inline-flex items-center rounded-full bg-white/10 p-1 backdrop-blur-md">
-              {views.map((v) => {
-                const { label, Icon } = VIEW_META[v];
-                return (
-                  <button
-                    key={v}
-                    onClick={() => changeView(v)}
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold transition sm:px-3 sm:py-1.5',
-                      view === v
-                        ? 'bg-white text-neutral-950 shadow-sm'
-                        : 'text-neutral-300 hover:text-white',
-                    )}
-                    aria-label={label}
-                    title={label}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    <span>{label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            (() => {
-              const { label, Icon } = VIEW_META[view];
-              return (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-neutral-200 backdrop-blur-md">
-                  <Icon className="h-3.5 w-3.5 text-signal-400" />
-                  <span>Following · {label}</span>
-                </span>
-              );
-            })()
-          )}
-        </div>
 
         {/* Right: Record, Theme, Participants */}
         <div className="flex shrink-0 items-center gap-2">
@@ -1829,6 +1792,44 @@ export function ClassRoom({
                 <PiSignOut className="h-5 w-5" />
               )}
             </button>
+          </div>
+
+          {/* Island (Desktop): Surface Switcher brought down to dock */}
+          <div className="hidden md:flex items-center gap-1 rounded-full border border-white/10 bg-neutral-900/90 p-1.5 shadow-xl backdrop-blur-xl">
+            {isInstructor ? (
+              views.map((v) => {
+                const { label, Icon } = VIEW_META[v];
+                const isActive = view === v;
+                return (
+                  <button
+                    key={v}
+                    onClick={() => changeView(v)}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition',
+                      isActive
+                        ? 'bg-white text-neutral-950 shadow-sm'
+                        : 'text-neutral-300 hover:bg-white/10 hover:text-white',
+                    )}
+                    aria-label={label}
+                    title={label}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span>{label}</span>
+                  </button>
+                );
+              })
+            ) : (
+              (() => {
+                const { label, Icon } = VIEW_META[view];
+                return (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-neutral-200">
+                    <Icon className="h-4 w-4 text-signal-400" />
+                    <span className="text-neutral-400">Following · </span>
+                    <span>{label}</span>
+                  </span>
+                );
+              })()
+            )}
           </div>
 
           {/* Island 2: Context Action Capsule (Buzzer for Host, Raise Hand for Student) */}

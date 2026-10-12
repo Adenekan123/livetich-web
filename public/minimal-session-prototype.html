@@ -762,6 +762,11 @@
     .header-surf-desktop {
       display: flex;
     }
+    .dock-surf-desktop {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
     .dock-collab-desktop {
       display: flex;
       align-items: center;
@@ -781,6 +786,9 @@
 
     @media (max-width: 768px) {
       .header-surf-desktop {
+        display: none !important;
+      }
+      .dock-surf-desktop {
         display: none !important;
       }
       .dock-collab-desktop {
@@ -1074,27 +1082,6 @@
       </div>
     </div>
 
-    <!-- Center Segmented Surface Switcher (Desktop only - moves to dock on mobile) -->
-    <div class="header-zone header-surf-desktop">
-      <nav class="surface-segmented" aria-label="Classroom Surface">
-        <button class="surface-btn active" id="btn-surf-video-top" onclick="switchSurface('video')">
-          <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-          <span>Stage</span>
-        </button>
-        <button class="surface-btn" id="btn-surf-board-top" onclick="switchSurface('board')">
-          <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/></svg>
-          <span>Chalkboard</span>
-        </button>
-        <button class="surface-btn" id="btn-surf-quran-top" onclick="switchSurface('quran')">
-          <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-          <span>Tajweed</span>
-        </button>
-        <button class="surface-btn" id="btn-surf-code-top" onclick="switchSurface('code')">
-          <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-          <span>Live IDE</span>
-        </button>
-      </nav>
-    </div>
 
     <!-- Right Controls: Role Simulation Switcher -->
     <div class="header-zone">
@@ -1394,6 +1381,26 @@
       </button>
     </div>
 
+    <!-- Island (Desktop only): Surface Switcher brought down to dock -->
+    <div class="dock-island dock-surf-desktop">
+      <button class="surface-btn active" id="btn-surf-video-dock" onclick="switchSurface('video')" title="Stage / Video">
+        <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        <span>Stage</span>
+      </button>
+      <button class="surface-btn" id="btn-surf-board-dock" onclick="switchSurface('board')" title="Chalkboard">
+        <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/></svg>
+        <span>Chalkboard</span>
+      </button>
+      <button class="surface-btn" id="btn-surf-quran-dock" onclick="switchSurface('quran')" title="Tajweed">
+        <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        <span>Tajweed</span>
+      </button>
+      <button class="surface-btn" id="btn-surf-code-dock" onclick="switchSurface('code')" title="Live IDE">
+        <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        <span>Live IDE</span>
+      </button>
+    </div>
+
     <!-- Island 2: Contextual Action Trigger -->
     <div class="dock-island" id="centerActionContainer">
       <button class="btn-action-hero" id="centerActionBtn" onclick="openBuzzerModal()">
@@ -1550,6 +1557,8 @@
       if (topBtn) topBtn.classList.add('active');
       const dockBtn = document.getElementById('btn-surf-' + id);
       if (dockBtn) dockBtn.classList.add('active');
+      const dockDeskBtn = document.getElementById('btn-surf-' + id + '-dock');
+      if (dockDeskBtn) dockDeskBtn.classList.add('active');
 
       document.querySelectorAll('.stage-canvas').forEach(c => c.classList.remove('active'));
       document.getElementById('canvas-' + id).classList.add('active');
