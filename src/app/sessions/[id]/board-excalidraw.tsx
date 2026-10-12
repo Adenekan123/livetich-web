@@ -704,11 +704,21 @@ export function BoardExcalidraw({
   const [insertStudioOpen, setInsertStudioOpen] = useState(false);
   const [insertStudioTab, setInsertStudioTab] = useState<InsertStudioTab>('math');
   const [collabSheetOpen, setCollabSheetOpen] = useState(false);
+  const [activeToolState, setActiveToolState] = useState<
+    'select' | 'pen' | 'highlighter' | 'eraser' | 'rectangle' | 'text' | 'laser'
+  >('pen');
+  const [activeColor, setActiveColor] = useState('#10b981');
+  const [activeWeight, setActiveWeight] = useState(4);
+  const [propertiesPopoverOpen, setPropertiesPopoverOpen] = useState(false);
+  const [boardTitle, setBoardTitle] = useState('System Architecture');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(3);
 
   const openInsertStudio = useCallback((tab?: InsertStudioTab) => {
     if (tab) setInsertStudioTab(tab);
     setInsertStudioOpen(true);
     setCollabSheetOpen(false);
+    setPropertiesPopoverOpen(false);
   }, []);
 
   const closeInsertStudio = useCallback(() => {
@@ -717,6 +727,104 @@ export function BoardExcalidraw({
     setLinkError(null);
     setQuranError(null);
   }, []);
+
+  const selectTool = useCallback(
+    (tool: 'select' | 'pen' | 'highlighter' | 'eraser' | 'rectangle' | 'text' | 'laser') => {
+      setActiveToolState(tool);
+      const editor = apiRef.current;
+      if (!editor) return;
+      if (tool === 'select') {
+        editor.setActiveTool({ type: 'selection' });
+      } else if (tool === 'pen') {
+        editor.setActiveTool({ type: 'freedraw' });
+        editor.updateScene({
+          appState: {
+            currentItemOpacity: 100,
+            currentItemStrokeWidth: activeWeight,
+            currentItemStrokeColor: activeColor,
+          },
+        });
+      } else if (tool === 'highlighter') {
+        editor.setActiveTool({ type: 'freedraw' });
+        editor.updateScene({
+          appState: {
+            currentItemOpacity: 35,
+            currentItemStrokeWidth: activeWeight * 3,
+            currentItemStrokeColor: activeColor,
+          },
+        });
+      } else if (tool === 'eraser') {
+        editor.setActiveTool({ type: 'eraser' });
+      } else if (tool === 'rectangle') {
+        editor.setActiveTool({ type: 'rectangle' });
+      } else if (tool === 'text') {
+        editor.setActiveTool({ type: 'text' });
+      } else if (tool === 'laser') {
+        editor.setActiveTool({ type: 'laser' });
+      }
+      setPropertiesPopoverOpen(false);
+    },
+    [activeWeight, activeColor],
+  );
+
+  const setStrokeColor = useCallback(
+    (color: string) => {
+      setActiveColor(color);
+      apiRef.current?.updateScene({ appState: { currentItemStrokeColor: color } });
+      if (activeToolState === 'eraser') selectTool('pen');
+    },
+    [activeToolState, selectTool],
+  );
+
+  const setStrokeWeight = useCallback((weight: number) => {
+    setActiveWeight(weight);
+    apiRef.current?.updateScene({ appState: { currentItemStrokeWidth: weight } });
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    const btn = wrapperRef.current?.querySelector<HTMLButtonElement>(
+      '[data-testid="undo"], [aria-label*="Undo"], .undo-button-container button:first-child',
+    );
+    if (btn) btn.click();
+    else {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'z', code: 'KeyZ', ctrlKey: true, bubbles: true }),
+      );
+    }
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    const btn = wrapperRef.current?.querySelector<HTMLButtonElement>(
+      '[data-testid="redo"], [aria-label*="Redo"], .undo-button-container button:last-child',
+    );
+    if (btn) btn.click();
+    else {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'y', code: 'KeyY', ctrlKey: true, bubbles: true }),
+      );
+    }
+  }, []);
+
+  const [boardMsg, setBoardMsg] = useState<string | null>(null);
+
+  const flash = useCallback((m: string) => {
+    setBoardMsg(m);
+    window.setTimeout(() => setBoardMsg(null), 2600);
+  }, []);
+
+  const prevPage = useCallback(() => setCurrentPage((p) => Math.max(1, p - 1)), []);
+  const nextPage = useCallback(
+    () => setCurrentPage((p) => Math.min(totalPages, p + 1)),
+    [totalPages],
+  );
+  const addPage = useCallback(() => {
+    setTotalPages((t) => {
+      const next = t + 1;
+      setCurrentPage(next);
+      return next;
+    });
+    flash('Added page');
+  }, [flash]);
   /** The instructor's playback position for a shared video. Ephemeral, so it
    *  rides awareness alongside the cursors rather than the persisted doc. */
   const [videoState, setVideoState] = useState<VideoState | null>(null);
@@ -784,15 +892,9 @@ export function BoardExcalidraw({
   const [preview, setPreview] = useState<PreviewBox | null>(null);
   const previewRef = useRef<PreviewBox | null>(null);
   const [resyncing, setResyncing] = useState(false);
-  const [boardMsg, setBoardMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const canEdit = ready && (canDraw || boardOpen);
-
-  const flash = useCallback((m: string) => {
-    setBoardMsg(m);
-    window.setTimeout(() => setBoardMsg(null), 2600);
-  }, []);
 
   useEffect(() => {
     apiRef.current = api;
@@ -2494,10 +2596,22 @@ export function BoardExcalidraw({
       __livetichBoard?: ExcalidrawImperativeAPI | null;
     };
     w.__livetichBoard = api;
+    // Force Excalidraw to dark chalkboard canvas matching Google Chalkboard UX prototype
+    api.updateScene({
+      appState: {
+        theme: 'dark',
+        viewBackgroundColor: '#10131c',
+        currentItemStrokeColor: activeColor,
+        currentItemStrokeWidth: activeWeight,
+      },
+    });
+    if (canDraw) {
+      api.setActiveTool({ type: 'freedraw' });
+    }
     return () => {
       w.__livetichBoard = null;
     };
-  }, [api]);
+  }, [api, activeColor, activeWeight, canDraw]);
 
   const pill =
     'rounded-full px-3 py-1.5 text-xs font-semibold shadow ring-1 ring-neutral-200 transition';
@@ -2546,18 +2660,23 @@ export function BoardExcalidraw({
       className={cn(
         'livetich-board',
         fullscreen
-          ? 'fixed inset-0 z-[500] isolate overflow-hidden bg-white'
-          : 'relative isolate h-full min-h-[320px] overflow-hidden rounded-xl border border-neutral-300 bg-white',
+          ? 'fixed inset-0 z-[500] isolate overflow-hidden bg-[#10131c]'
+          : 'relative isolate h-full min-h-[320px] overflow-hidden rounded-xl border border-white/10 bg-[#10131c]',
       )}
     >
       <Excalidraw
         excalidrawAPI={setApi}
-        // Excalidraw defaults to its "bold" width; a classroom board is mostly
-        // handwriting, which reads better thinner.
-        initialData={{ appState: { currentItemStrokeWidth: 1 } }}
+        initialData={{
+          appState: {
+            theme: 'dark',
+            viewBackgroundColor: '#10131c',
+            currentItemStrokeWidth: activeWeight,
+            currentItemStrokeColor: activeColor,
+          },
+        }}
         viewModeEnabled={!canEdit}
         isCollaborating
-        theme="light"
+        theme="dark"
         onChange={onChange}
         onPointerUpdate={onPointerUpdate}
         onScrollChange={onScrollChange}
@@ -2606,8 +2725,6 @@ export function BoardExcalidraw({
           }
           return null;
         }}
-        // Excalidraw does not recognise youtu.be short links on its own, and
-        // has no idea about Google files at all.
         validateEmbeddable={(link) =>
           youTubeIdOf(link) || googleEmbed(link) || parseQuranBlock(link) ? true : undefined
         }
@@ -2626,93 +2743,6 @@ export function BoardExcalidraw({
           <MainMenu.DefaultItems.ChangeCanvasBackground />
         </MainMenu>
       </Excalidraw>
-
-      {/* One shapes control in the rail, standing in for Excalidraw's separate
-          square/diamond/circle buttons (hidden in CSS) and carrying the extra
-          shapes it has no tool for. Portalled into the rail so it sits in the
-          stack instead of floating beside it. */}
-      {railNode &&
-        createPortal(
-          <div data-board-shapes className="relative">
-            <button
-              type="button"
-              title={current ? `${current.label} — click to change` : 'Shapes'}
-              aria-haspopup="menu"
-              aria-expanded={shapesOpen}
-              ref={shapesTriggerRef}
-              onClick={() => {
-                const next = !shapesOpen;
-                setShapesOpen(next);
-                if (!next) return;
-                const btn = shapesTriggerRef.current?.getBoundingClientRect();
-                const board = wrapperRef.current?.getBoundingClientRect();
-                if (!btn || !board) return;
-                const W = 160;
-                const H = 272;
-                const GAP = 8;
-                // Beside the rail when it fits, otherwise below — and never
-                // past the edge of the board.
-                const besideFits = btn.right + GAP + W <= board.right;
-                const left = besideFits
-                  ? btn.right + GAP - board.left
-                  : Math.min(btn.left - board.left, board.width - W - GAP);
-                const top = besideFits
-                  ? Math.min(btn.top - board.top, board.height - H - GAP)
-                  : btn.bottom + GAP - board.top;
-                setShapesMenuAt({ top: Math.max(GAP, top), left: Math.max(GAP, left) });
-              }}
-              className={`relative grid h-9 w-9 place-items-center rounded-lg transition ${
-                shapesOpen
-                  ? 'bg-neutral-900 text-white'
-                  : armed
-                    ? 'bg-[#e0dfff] text-neutral-900'
-                    : 'text-neutral-700 hover:bg-neutral-100'
-              }`}
-            >
-              {/* Before a choice: a group of shapes, so the button says what
-                  is inside it. After one: that shape, at the same weight as
-                  the tools either side — drawn lighter it read as a disabled
-                  slot. */}
-              <svg
-                viewBox="0 0 24 24"
-                className="h-[18px] w-[18px]"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinejoin="round"
-                aria-hidden
-              >
-                {current ? (
-                  <path d={current.icon} />
-                ) : (
-                  <>
-                    <path d="M8 2.5 L12.5 9.5 L3.5 9.5 Z" />
-                    <circle cx="17.5" cy="6" r="3.75" />
-                    <rect x="4" y="13" width="11" height="8" rx="1" />
-                  </>
-                )}
-              </svg>
-              {/* This replaced three separate buttons, so it has to say out
-                  loud that the other shapes are still in here. A 6px hairline
-                  caret did not: it read as "the shapes are gone". */}
-              <svg
-                viewBox="0 0 10 10"
-                className="absolute bottom-0 right-0 h-2.5 w-2.5"
-                aria-hidden
-              >
-                <path d="M0 10 L10 10 L10 0 Z" className="fill-current opacity-30" />
-                <path
-                  d="M3.5 7.5 L8 7.5 L8 3"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={1.6}
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-          </div>,
-          railNode,
-        )}
 
       {/* Live preview of the armed polygon. Excalidraw is drawing a rectangle
           underneath at zero opacity — this is what the instructor actually
@@ -2920,167 +2950,360 @@ export function BoardExcalidraw({
       </button>
 
       {/* =========================================================================
-          GOOGLE AMBIENT HUD (Top Bar across the board)
+          LAYER 2: AMBIENT FLOATING HUD (Top Bar across the board)
           ========================================================================= */}
-      <div className="pointer-events-none absolute left-3 right-3 top-2.5 z-[401] flex items-center justify-between gap-2 sm:left-4 sm:right-4 sm:top-3">
-        {/* Left: Document Status Chip */}
-        <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-slate-900/85 px-3 py-1.5 text-xs font-semibold text-slate-100 shadow-md shadow-black/40 ring-1 ring-white/10 backdrop-blur-xl">
-          <span className="flex h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
-          <span className="max-w-[120px] truncate sm:max-w-[200px]">Livetich Chalkboard</span>
-          <span className="hidden text-[10px] text-slate-400 sm:inline">· Live</span>
-        </div>
-
-        {/* Center / Action: Primary "+ Insert" Hero Pill (Instructor only) */}
-        {canDraw && (
-          <button
-            type="button"
-            onClick={() => openInsertStudio()}
-            className="pointer-events-auto flex items-center gap-1.5 rounded-full bg-emerald-500 px-3.5 py-1.5 text-xs font-bold text-emerald-950 shadow-md shadow-emerald-950/30 transition hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
-          >
-            <PiPlusBold className="h-3.5 w-3.5" />
-            <span>Insert</span>
-          </button>
-        )}
-
-        {/* Right: Collaboration & Export Pill (Instructor) OR Follow Pill (Student) */}
-        <div className="relative">
-          {canDraw ? (
-            <>
+      <header className="chalkboard-header-hud">
+        {/* Left: Document Title + Multi-Page Navigation */}
+        <div className="hud-left">
+          <div className="hud-chip">
+            <PiPencilSimpleBold className="h-3.5 w-3.5 text-emerald-400" />
+            <input
+              type="text"
+              className="doc-title-input"
+              value={boardTitle}
+              onChange={(e) => setBoardTitle(e.target.value)}
+              title="Click to rename board"
+            />
+            <div className="page-stepper">
               <button
                 type="button"
-                onClick={() => setCollabSheetOpen((v) => !v)}
-                className={cn(
-                  'pointer-events-auto flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold shadow-md shadow-black/30 ring-1 backdrop-blur-xl transition',
-                  boardOpen
-                    ? 'bg-slate-900/85 text-emerald-400 ring-emerald-500/30 hover:bg-slate-800'
-                    : 'bg-slate-900/85 text-slate-300 ring-white/10 hover:bg-slate-800'
-                )}
+                className="page-nav-btn"
+                onClick={prevPage}
+                title="Previous page"
               >
-                <span
-                  className={cn(
-                    'h-2 w-2 rounded-full transition',
-                    boardOpen
-                      ? 'bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse'
-                      : 'bg-slate-500'
-                  )}
-                />
-                <span className="hidden sm:inline">
-                  {boardOpen ? 'Students Can Draw' : 'Board Locked'}
-                </span>
-                <span className="sm:hidden">
-                  {boardOpen ? 'Can Draw' : 'Locked'}
-                </span>
-                <PiCaretDownBold
-                  className={cn(
-                    'h-3 w-3 opacity-60 transition-transform duration-200',
-                    collabSheetOpen && 'rotate-180'
-                  )}
-                />
+                ‹
               </button>
-
-              {/* Collaboration & Export Flyout Sheet */}
-              {collabSheetOpen && (
-                <div className="pointer-events-auto absolute right-0 top-10 z-[403] w-72 rounded-2xl border border-white/10 bg-[#141724]/95 p-3.5 text-slate-100 shadow-2xl shadow-black/80 ring-1 ring-white/10 backdrop-blur-2xl">
-                  {/* Student Drawing Switch */}
-                  <div className="flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.03] p-2.5">
-                    <div>
-                      <p className="text-xs font-bold text-white">Student Drawing</p>
-                      <p className="text-[11px] text-slate-400">Let cohort write on board</p>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={boardOpen}
-                      onClick={toggleBoardOpen}
-                      className={cn(
-                        'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors',
-                        boardOpen ? 'bg-emerald-500' : 'bg-slate-700'
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          'inline-block h-4 w-4 rounded-full bg-white shadow transition-transform mt-0.5 ml-0.5',
-                          boardOpen ? 'translate-x-4' : 'translate-x-0'
-                        )}
-                      />
-                    </button>
-                  </div>
-
-                  <div className="my-2.5 h-px bg-white/10" />
-
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1 mb-1">
-                    Export & Sharing
-                  </p>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCollabSheetOpen(false);
-                      void exportPdf();
-                    }}
-                    disabled={exporting}
-                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10 hover:text-white"
-                  >
-                    <PiDownloadSimpleBold className="h-4 w-4 text-emerald-400" />
-                    <span>{exporting ? 'Exporting PDF…' : 'Export Multi-Page PDF'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCollabSheetOpen(false);
-                      void exportPng();
-                    }}
-                    disabled={exporting}
-                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10 hover:text-white"
-                  >
-                    <PiImageBold className="h-4 w-4 text-sky-400" />
-                    <span>Export Snapshot PNG</span>
-                  </button>
-
-                  <div className="my-2 h-px bg-white/10" />
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCollabSheetOpen(false);
-                      setClearOpen(true);
-                    }}
-                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-rose-400 transition hover:bg-rose-500/10 hover:text-rose-300"
-                  >
-                    <PiTrashBold className="h-4 w-4" />
-                    <span>Wipe Entire Chalkboard</span>
-                  </button>
-                </div>
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: 'var(--text-muted)',
+                  minWidth: 32,
+                  textAlign: 'center',
+                }}
+              >
+                {currentPage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                className="page-nav-btn"
+                onClick={nextPage}
+                title="Next page"
+              >
+                ›
+              </button>
+              {canDraw && (
+                <button
+                  type="button"
+                  className="page-nav-btn"
+                  onClick={addPage}
+                  title="Add blank page"
+                  style={{ color: 'var(--accent)', fontWeight: 800 }}
+                >
+                  +
+                </button>
               )}
-            </>
-          ) : (
-            <button
-              type="button"
+            </div>
+          </div>
+        </div>
+
+        {/* Center: Student Follow Status (Visible for Student) */}
+        {!canDraw && (
+          <div className="hud-center">
+            <div
+              className="student-follow-chip"
               onClick={() => {
                 setFollowing(true);
                 applyPresenterView();
               }}
-              className={cn(
-                'pointer-events-auto flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-semibold shadow-lg ring-1 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500',
-                following
-                  ? 'bg-slate-900/85 text-emerald-400 ring-emerald-500/30 backdrop-blur-xl'
-                  : 'animate-pulse bg-emerald-600 text-white shadow-emerald-900/25 ring-emerald-600 hover:bg-emerald-700'
-              )}
             >
-              {following ? (
-                <span aria-hidden className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+              <span className="live-dot" style={{ width: 6, height: 6 }} />
+              <span>{following ? "Following Instructor's View" : "Back to Instructor's View"}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Right: Permissions & Board Settings */}
+        <div className="hud-right">
+          {canDraw && (
+            <>
+              <div
+                className={cn('collab-pill', boardOpen ? 'open' : 'locked')}
+                onClick={() => setCollabSheetOpen((v) => !v)}
+                title="Manage room drawing permissions"
+              >
+                <span className={cn('live-dot', !boardOpen && 'locked')} />
+                <span className="desktop-only-text">
+                  {boardOpen ? 'Students Can Draw (18)' : 'Board Locked'}
                 </span>
-              ) : (
-                <PiCrosshairBold aria-hidden />
-              )}
-              {following ? 'Following instructor' : "Back to instructor's view"}
-            </button>
+                <span className="mobile-only-text">
+                  {boardOpen ? 'Can Draw' : 'Locked'}
+                </span>
+                <PiCaretDownBold
+                  className={cn('h-3 w-3 transition-transform', collabSheetOpen && 'rotate-180')}
+                />
+              </div>
+
+              <button
+                type="button"
+                className="hud-chip desktop-only-btn cursor-pointer"
+                onClick={() => setClearOpen(true)}
+                title="Clear drawing canvas"
+              >
+                <PiTrashBold className="h-3.5 w-3.5" />
+                <span>Clear</span>
+              </button>
+            </>
           )}
         </div>
-      </div>
+      </header>
+
+      {/* Collaboration & Export Flyout Sheet */}
+      {collabSheetOpen && canDraw && (
+        <div className="collab-sheet" onClick={(e) => e.stopPropagation()}>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 800,
+              textTransform: 'uppercase',
+              color: 'var(--text-dim)',
+              letterSpacing: '0.06em',
+            }}
+          >
+            Room Collaboration
+          </div>
+
+          {/* Student Draw Switch */}
+          <div className="collab-toggle-row">
+            <div>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: '#fff' }}>Student Drawing</div>
+              <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>Let cohort write on board</div>
+            </div>
+            <div
+              className={cn('switch-ui', boardOpen && 'on')}
+              onClick={toggleBoardOpen}
+            >
+              <div className="switch-handle" />
+            </div>
+          </div>
+
+          <div style={{ height: 1, background: 'var(--border-subtle)' }} />
+
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 800,
+              textTransform: 'uppercase',
+              color: 'var(--text-dim)',
+              letterSpacing: '0.06em',
+            }}
+          >
+            Export &amp; Sharing
+          </div>
+
+          <div
+            className="collab-action-row"
+            onClick={() => {
+              setCollabSheetOpen(false);
+              void exportPdf();
+            }}
+          >
+            <PiDownloadSimpleBold className="h-4 w-4 text-emerald-400" />
+            <span>Export Multi-Page PDF</span>
+          </div>
+
+          <div
+            className="collab-action-row"
+            onClick={() => {
+              setCollabSheetOpen(false);
+              void exportPng();
+            }}
+          >
+            <PiImageBold className="h-4 w-4 text-sky-400" />
+            <span>Export Snapshot PNG</span>
+          </div>
+
+          <div style={{ height: 1, background: 'var(--border-subtle)' }} />
+
+          <div
+            className="collab-action-row danger"
+            onClick={() => {
+              setCollabSheetOpen(false);
+              setClearOpen(true);
+            }}
+          >
+            <PiTrashBold className="h-4 w-4" />
+            <span>Wipe Entire Chalkboard</span>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          LAYER 3: UNIFIED MINIMALIST TOOL DOCK (Google Floating Island)
+          ===================================================================== */}
+      {canDraw && (
+        <div className="dock-wrapper">
+          {/* Contextual Tool Property Flyout (Colors, Sizes, Styles) */}
+          {propertiesPopoverOpen && (
+            <div className="properties-popover" onClick={(e) => e.stopPropagation()}>
+              <div className="pop-row-label">
+                <span>Color Palette</span>
+                <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--accent)' }}>
+                  {activeColor.toUpperCase()}
+                </span>
+              </div>
+              <div className="palette-grid">
+                {['#10b981', '#38bdf8', '#fbbf24', '#f43f5e', '#a855f7', '#ffffff', '#27272a'].map((col) => (
+                  <div
+                    key={col}
+                    className={cn('color-dot', activeColor.toLowerCase() === col.toLowerCase() && 'active')}
+                    style={{ background: col }}
+                    onClick={() => setStrokeColor(col)}
+                  />
+                ))}
+              </div>
+
+              <div className="pop-row-label">
+                <span>Stroke Thickness</span>
+                <span>{activeWeight}px</span>
+              </div>
+              <div className="stroke-size-selector">
+                {[
+                  { weight: 2, height: 2 },
+                  { weight: 4, height: 4 },
+                  { weight: 8, height: 8 },
+                  { weight: 16, height: 16 },
+                ].map(({ weight, height }) => (
+                  <button
+                    key={weight}
+                    type="button"
+                    className={cn('stroke-btn', activeWeight === weight && 'active')}
+                    onClick={() => setStrokeWeight(weight)}
+                  >
+                    <div style={{ width: 14, height, background: 'currentColor', borderRadius: 2 }} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* The Floating Island Dock */}
+          <div className="floating-island">
+            {/* Tool 1: Select Arrow */}
+            <button
+              type="button"
+              className={cn('tool-icon-btn', activeToolState === 'select' && 'active')}
+              onClick={() => selectTool('select')}
+              title="Selection Pointer (V)"
+            >
+              <svg className="icon" viewBox="0 0 24 24"><path d="M3 3l7 18 3-7 7-3L3 3z"/></svg>
+            </button>
+
+            {/* Tool 2: Smooth Pen */}
+            <button
+              type="button"
+              className={cn('tool-icon-btn', activeToolState === 'pen' && 'active')}
+              onClick={() => selectTool('pen')}
+              title="Chalkboard Pen (P)"
+            >
+              <svg className="icon" viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>
+            </button>
+
+            {/* Tool 3: Highlighter */}
+            <button
+              type="button"
+              className={cn('tool-icon-btn', activeToolState === 'highlighter' && 'active')}
+              onClick={() => selectTool('highlighter')}
+              title="Highlighter Marker (H)"
+            >
+              <svg className="icon" viewBox="0 0 24 24"><path d="M14 2l4 4L7 17H3v-4L14 2z"/><line x1="3" y1="22" x2="21" y2="22"/></svg>
+            </button>
+
+            {/* Tool 4: Eraser */}
+            <button
+              type="button"
+              className={cn('tool-icon-btn', activeToolState === 'eraser' && 'active')}
+              onClick={() => selectTool('eraser')}
+              title="Stroke Eraser (E)"
+            >
+              <svg className="icon" viewBox="0 0 24 24"><path d="M20 20H7L3 16C2 15 2 13 3 12L13 2L22 11L18 15L20 20Z"/></svg>
+            </button>
+
+            {/* Tool 5: Shapes */}
+            <button
+              type="button"
+              className={cn('tool-icon-btn', activeToolState === 'rectangle' && 'active')}
+              onClick={() => selectTool('rectangle')}
+              title="Geometric Shapes (R)"
+            >
+              <svg className="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>
+            </button>
+
+            {/* Tool 6: Text */}
+            <button
+              type="button"
+              className={cn('tool-icon-btn desktop-only-tool', activeToolState === 'text' && 'active')}
+              onClick={() => selectTool('text')}
+              title="Text Typography (T)"
+            >
+              <svg className="icon" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+            </button>
+
+            {/* Tool 7: Laser Pointer */}
+            <button
+              type="button"
+              className={cn('tool-icon-btn desktop-only-tool', activeToolState === 'laser' && 'active')}
+              onClick={() => selectTool('laser')}
+              title="Presentation Laser Pointer (L)"
+            >
+              <svg className="icon" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            </button>
+
+            <div className="divider-v" />
+
+            {/* Active Color Swatch (Tap toggles properties popover) */}
+            <div
+              className="color-swatch-trigger"
+              style={{ background: activeColor }}
+              onClick={() => setPropertiesPopoverOpen((v) => !v)}
+              title="Change color & stroke size"
+            />
+
+            <div className="divider-v" />
+
+            {/* Pedagogical Insert Hero Capsule */}
+            <button
+              type="button"
+              className="btn-insert-hero"
+              onClick={() => openInsertStudio()}
+              title="Insert Math Formula, Qur'an Ayah, Google Docs or Media"
+            >
+              <PiPlusBold className="h-3.5 w-3.5" />
+              <span>Insert</span>
+            </button>
+
+            <div className="divider-v" />
+
+            {/* Undo / Redo */}
+            <button
+              type="button"
+              className="tool-icon-btn"
+              onClick={handleUndo}
+              title="Undo (Ctrl+Z)"
+            >
+              <svg className="icon icon-sm" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            </button>
+            <button
+              type="button"
+              className="tool-icon-btn desktop-only-tool"
+              onClick={handleRedo}
+              title="Redo (Ctrl+Y)"
+            >
+              <svg className="icon icon-sm" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* The formula being built comes first and stays visible: what it will
           look like, then what it is made of, then the tools. The palette used
