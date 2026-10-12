@@ -759,40 +759,56 @@
       white-space: nowrap;
     }
 
+    .header-surf-desktop {
+      display: flex;
+    }
+    .dock-collab-desktop {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .dock-surf-mobile {
+      display: none;
+      align-items: center;
+      gap: 4px;
+    }
+    .more-collab-mobile {
+      display: none;
+    }
+    .more-badge-mobile {
+      display: none;
+    }
+
     @media (max-width: 768px) {
+      .header-surf-desktop {
+        display: none !important;
+      }
+      .dock-collab-desktop {
+        display: none !important;
+      }
+      .dock-surf-mobile {
+        display: flex !important;
+      }
+      .more-collab-mobile {
+        display: block !important;
+      }
+      .more-badge-mobile {
+        display: block !important;
+      }
       footer.google-dock {
         bottom: 10px;
         gap: 6px;
-        height: 48px;
-        overflow-x: auto;
-        overflow-y: hidden;
-        scrollbar-width: none;
-        -webkit-overflow-scrolling: touch;
-        padding: 0 4px;
-      }
-      footer.google-dock::-webkit-scrollbar {
-        display: none;
+        flex-wrap: wrap;
+        justify-content: center;
+        max-width: calc(100vw - 16px);
       }
       .dock-island {
         padding: 4px 6px !important;
         gap: 4px !important;
-        flex-shrink: 0;
       }
       .dock-btn {
-        width: 36px !important;
-        height: 36px !important;
-      }
-      .surface-btn {
-        padding: 6px 9px !important;
-        font-size: 11.5px !important;
-        gap: 4px !important;
-      }
-      .surface-btn span {
-        display: none !important;
-      }
-      .btn-action-hero {
-        padding: 7px 12px !important;
-        font-size: 12px !important;
+        width: 38px !important;
+        height: 38px !important;
       }
       .ambient-header {
         top: 8px !important;
@@ -800,7 +816,7 @@
         right: 10px !important;
       }
       .workspace-layout {
-        margin: 10px 10px 72px 10px !important;
+        margin: 10px 10px 84px 10px !important;
       }
       .unified-drawer.open {
         position: fixed !important;
@@ -1056,6 +1072,28 @@
           <span class="pulse-dot" style="background: #f43f5e;"></span> REC 00:14:28
         </span>
       </div>
+    </div>
+
+    <!-- Center Segmented Surface Switcher (Desktop only - moves to dock on mobile) -->
+    <div class="header-zone header-surf-desktop">
+      <nav class="surface-segmented" aria-label="Classroom Surface">
+        <button class="surface-btn active" id="btn-surf-video-top" onclick="switchSurface('video')">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+          <span>Stage</span>
+        </button>
+        <button class="surface-btn" id="btn-surf-board-top" onclick="switchSurface('board')">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/></svg>
+          <span>Chalkboard</span>
+        </button>
+        <button class="surface-btn" id="btn-surf-quran-top" onclick="switchSurface('quran')">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+          <span>Tajweed</span>
+        </button>
+        <button class="surface-btn" id="btn-surf-code-top" onclick="switchSurface('code')">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          <span>Live IDE</span>
+        </button>
+      </nav>
     </div>
 
     <!-- Right Controls: Role Simulation Switcher -->
@@ -1356,29 +1394,7 @@
       </button>
     </div>
 
-    <!-- Island 2: Surface Switcher (Brought down from header) -->
-    <div class="dock-island">
-      <nav class="surface-segmented" id="dockSurfaceNav" aria-label="Classroom Surface">
-        <button class="surface-btn active" id="btn-surf-video" onclick="switchSurface('video')" title="Stage / Video">
-          <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-          <span>Stage</span>
-        </button>
-        <button class="surface-btn" id="btn-surf-board" onclick="switchSurface('board')" title="Chalkboard">
-          <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/></svg>
-          <span>Chalkboard</span>
-        </button>
-        <button class="surface-btn" id="btn-surf-quran" onclick="switchSurface('quran')" title="Tajweed & Mushaf">
-          <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-          <span>Tajweed</span>
-        </button>
-        <button class="surface-btn" id="btn-surf-code" onclick="switchSurface('code')" title="Live Code IDE">
-          <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-          <span>Live IDE</span>
-        </button>
-      </nav>
-    </div>
-
-    <!-- Island 3: Contextual Action Trigger -->
+    <!-- Island 2: Contextual Action Trigger -->
     <div class="dock-island" id="centerActionContainer">
       <button class="btn-action-hero" id="centerActionBtn" onclick="openBuzzerModal()">
         <svg class="icon icon-sm" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
@@ -1386,18 +1402,48 @@
       </button>
     </div>
 
-    <!-- Island 4: Progressive Disclosure & Overflow (Houses Chat, People, Leaderboard) -->
+    <!-- Island 3: Collaboration & Overflow Pill -->
     <div class="dock-island" style="position: relative;">
-      <!-- The "More" Progressive Disclosure Toggle with Unread Badge -->
-      <button class="dock-btn" id="btnMore" onclick="toggleOverflowMenu()" title="More Tools & Collaboration">
+      <!-- ON DESKTOP: Show Chat, People, Leaderboard buttons -->
+      <div class="dock-collab-desktop">
+        <button class="dock-btn" id="btnChat" onclick="openDrawerPane('chat')" title="Cohort Chat">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span class="badge-pill">2</span>
+        </button>
+        <button class="dock-btn" id="btnPeople" onclick="openDrawerPane('people')" title="Participants Roster">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </button>
+        <button class="dock-btn" id="btnPoints" onclick="openDrawerPane('points')" title="Leaderboard">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.45 1-1 1H7v2h10v-2h-2c-.55 0-1-.45-1-1v-2.34c3.42-.5 6-3.44 6-7V4H4v5.66c0 3.56 2.58 6.5 6 7z"/></svg>
+        </button>
+      </div>
+
+      <!-- ON MOBILE SCREEN: Bring the ones marked at the top (Surface Switcher: Video, Board, Quran, Code) DOWN HERE -->
+      <div class="dock-surf-mobile">
+        <button class="dock-btn active" id="btn-surf-video" onclick="switchSurface('video')" title="Stage / Video">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        </button>
+        <button class="dock-btn" id="btn-surf-board" onclick="switchSurface('board')" title="Chalkboard">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/></svg>
+        </button>
+        <button class="dock-btn" id="btn-surf-quran" onclick="switchSurface('quran')" title="Tajweed">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        </button>
+        <button class="dock-btn" id="btn-surf-code" onclick="switchSurface('code')" title="Live IDE">
+          <svg class="icon" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        </button>
+      </div>
+
+      <!-- More (⋮) Overflow Toggle -->
+      <button class="dock-btn" id="btnMore" onclick="toggleOverflowMenu()" title="More Tools">
         <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
-        <span class="badge-pill" id="moreUnreadBadge">2</span>
+        <span class="badge-pill more-badge-mobile" id="moreUnreadBadge">2</span>
       </button>
 
-      <!-- The Overflow Sheet (Categorized tools) -->
+      <!-- The Overflow Sheet -->
       <div class="overflow-sheet" id="overflowSheet">
-        <!-- Category 1: Cohort Collaboration (Chat, People, Leaderboard) -->
-        <div style="border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 8px;">
+        <!-- ON MOBILE: Put the three from the bottom (Chat, People, Leaderboard) into More options -->
+        <div class="more-collab-mobile" style="border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 8px;">
           <div class="category-label">Cohort Collaboration</div>
           <div class="menu-row" onclick="openDrawerPane('chat'); toggleOverflowMenu();">
             <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -1499,8 +1545,11 @@
 
     // 1. Surface Switching
     function switchSurface(id) {
-      document.querySelectorAll('.surface-btn').forEach(b => b.classList.remove('active'));
-      document.getElementById('btn-surf-' + id).classList.add('active');
+      document.querySelectorAll('.surface-btn, .dock-surf-mobile .dock-btn').forEach(b => b.classList.remove('active'));
+      const topBtn = document.getElementById('btn-surf-' + id + '-top');
+      if (topBtn) topBtn.classList.add('active');
+      const dockBtn = document.getElementById('btn-surf-' + id);
+      if (dockBtn) dockBtn.classList.add('active');
 
       document.querySelectorAll('.stage-canvas').forEach(c => c.classList.remove('active'));
       document.getElementById('canvas-' + id).classList.add('active');
