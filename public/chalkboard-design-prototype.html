@@ -206,6 +206,13 @@
     }
 
     /* Mobile-specific Chalkboard UI Optimizations */
+    .mobile-only-text {
+      display: none;
+    }
+    .collab-pill {
+      white-space: nowrap;
+    }
+
     .device-stage.mode-mobile .chalkboard-header-hud {
       top: 10px;
       left: 10px;
@@ -215,45 +222,71 @@
     .device-stage.mode-mobile .hud-chip {
       padding: 4px 8px;
       font-size: 11px;
-      gap: 5px;
+      gap: 4px;
     }
     .device-stage.mode-mobile .doc-title-input {
-      width: 90px;
+      width: 80px;
       font-size: 11px;
     }
     .device-stage.mode-mobile .page-stepper {
       padding: 1px 3px;
     }
-    .device-stage.mode-mobile .collab-pill {
-      padding: 4px 8px;
+    .device-stage.mode-mobile .page-nav-btn {
+      width: 18px;
+      height: 18px;
       font-size: 11px;
     }
-    .device-stage.mode-mobile .desktop-only-text {
-      display: none;
+    .device-stage.mode-mobile .collab-pill {
+      padding: 4px 10px;
+      font-size: 11px;
+      gap: 5px;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
+    .device-stage.mode-mobile .desktop-only-btn {
+      display: none !important;
+    }
+    .device-stage.mode-mobile .desktop-only-text {
+      display: none !important;
+    }
+    .device-stage.mode-mobile .mobile-only-text {
+      display: inline !important;
+      white-space: nowrap !important;
+    }
+
+    /* Mobile Floating Island Dock */
     .device-stage.mode-mobile .dock-wrapper {
       bottom: 12px;
-      max-width: calc(100% - 16px);
+      max-width: calc(100% - 24px);
     }
     .device-stage.mode-mobile .floating-island {
-      padding: 4px 6px;
-      gap: 2px;
+      padding: 4px 8px;
+      gap: 3px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
     }
     .device-stage.mode-mobile .tool-icon-btn {
-      width: 34px;
-      height: 34px;
+      width: 32px;
+      height: 32px;
+    }
+    .device-stage.mode-mobile .tool-icon-btn svg {
+      width: 15px;
+      height: 15px;
     }
     .device-stage.mode-mobile .tool-icon-btn.desktop-only-tool {
-      display: none;
+      display: none !important;
     }
     .device-stage.mode-mobile .btn-insert-hero {
-      padding: 6px 10px;
-      font-size: 11.5px;
+      padding: 6px 11px;
+      font-size: 11px;
       gap: 4px;
     }
     .device-stage.mode-mobile .color-swatch-trigger {
-      width: 20px;
-      height: 20px;
+      width: 22px;
+      height: 22px;
+    }
+    .device-stage.mode-mobile .divider-v {
+      height: 18px;
+      margin: 0 1px;
     }
     .device-stage.mode-mobile .properties-popover {
       width: 280px;
@@ -1094,16 +1127,17 @@
         <!-- Right: Permissions & Board Settings -->
         <div class="hud-right">
           <!-- Room Collaboration Status -->
-          <div class="collab-pill open" id="btnCollabTrigger" onclick="toggleCollabSheet()">
+          <div class="collab-pill open" id="btnCollabTrigger" onclick="toggleCollabSheet()" title="Manage room drawing permissions">
             <span class="live-dot" id="collabDot"></span>
-            <span id="collabStateText">Students Can Draw (18)</span>
+            <span class="desktop-only-text" id="collabStateTextDesktop">Students Can Draw (18)</span>
+            <span class="mobile-only-text" id="collabStateTextMobile">18 Drawing</span>
             <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
           </div>
 
-          <!-- Quick Action: Clear Board -->
-          <button class="hud-chip" onclick="confirmClearBoard()" title="Clear drawing canvas" style="cursor: pointer;">
+          <!-- Quick Action: Clear Board (Desktop Only - on mobile it is safely in the sheet) -->
+          <button class="hud-chip desktop-only-btn" onclick="confirmClearBoard()" title="Clear drawing canvas" style="cursor: pointer;">
             <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-            <span class="desktop-only-text">Clear</span>
+            <span>Clear</span>
           </button>
         </div>
       </header>
@@ -1645,15 +1679,17 @@
       studentsCanDraw = !studentsCanDraw;
       const sw = document.getElementById('collabSwitch');
       const dot = document.getElementById('collabDot');
-      const txt = document.getElementById('collabStateText');
       const pill = document.getElementById('btnCollabTrigger');
+      const txtDesk = document.getElementById('collabStateTextDesktop');
+      const txtMob = document.getElementById('collabStateTextMobile');
 
       sw.classList.toggle('on', studentsCanDraw);
       dot.classList.toggle('locked', !studentsCanDraw);
       pill.classList.toggle('open', studentsCanDraw);
       pill.classList.toggle('locked', !studentsCanDraw);
 
-      txt.innerText = studentsCanDraw ? 'Students Can Draw (18)' : 'Board Locked (View Only)';
+      if (txtDesk) txtDesk.innerText = studentsCanDraw ? 'Students Can Draw (18)' : 'Board Locked (View Only)';
+      if (txtMob) txtMob.innerText = studentsCanDraw ? '18 Drawing' : 'Locked';
     }
 
     // Device Switching
