@@ -149,7 +149,19 @@ export async function sessionRecordingState(
   sessionId: string,
 ): Promise<SessionRecordingState> {
   const token = await tokenOrLogin();
-  return api<SessionRecordingState>(`/sessions/${sessionId}/recording`, { token });
+  try {
+    return await api<SessionRecordingState>(`/sessions/${sessionId}/recording`, {
+      token,
+      timeoutMs: 3_000,
+    });
+  } catch {
+    return {
+      available: false,
+      micLive: false,
+      recording: null,
+      last: null,
+    };
+  }
 }
 
 export async function startSessionRecording(

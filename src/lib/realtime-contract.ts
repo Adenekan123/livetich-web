@@ -681,12 +681,36 @@ export interface CodeFocusPayload {
   sessionId: string;
   path: string;
   cursor?: { line: number; ch: number };
+  selection?: {
+    anchor: { line: number; ch: number };
+    active: { line: number; ch: number };
+  };
+  content?: string;
+  openFiles?: string[];
 }
 
 export interface CodePermissionPayload {
   sessionId: string;
   mode: CodeWritePermissionMode;
   delegatedUserIds?: string[];
+}
+
+export interface CodePointerPayload {
+  sessionId: string;
+  target?: string;
+  isFolder?: boolean;
+  x?: number;
+  y?: number;
+  surface?: 'sidebar' | 'editor';
+  isClick?: boolean;
+  line?: number;
+  ch?: number;
+}
+
+export interface CodeSpotlightPayload {
+  sessionId: string;
+  path: string;
+  line: number;
 }
 
 export interface CodeClientToServerEvents {
@@ -696,7 +720,15 @@ export interface CodeClientToServerEvents {
   'code:awareness': (p: { sessionId: string; update: BoardBinary }) => void;
   'code:tree': (p: { sessionId: string; tree: CodeFileTreeNode[] }) => void;
   'code:focus': (p: CodeFocusPayload) => void;
+  'code:edit': (p: { sessionId: string; path: string; content: string; cursor?: { line: number; ch: number } }) => void;
+  'code:scroll': (p: { sessionId: string; path: string; line: number }) => void;
+  'code:folder-toggle': (p: { sessionId: string; path: string; collapsed: boolean }) => void;
+  'code:collapse-all': (p: { sessionId: string; collapsed: boolean }) => void;
+  'code:folders-state': (p: { sessionId: string; expanded: string[] }) => void;
+  'code:pointer': (p: CodePointerPayload) => void;
+  'code:spotlight': (p: CodeSpotlightPayload) => void;
   'code:permission': (p: CodePermissionPayload) => void;
+  'code:tab-close': (p: { sessionId: string; path?: string; nextActive?: string; all?: boolean }) => void;
 }
 
 export interface CodeServerToClientEvents {
@@ -705,7 +737,15 @@ export interface CodeServerToClientEvents {
   'code:awareness': (p: { sessionId: string; update: BoardBinary }) => void;
   'code:tree': (p: { sessionId: string; tree: CodeFileTreeNode[] }) => void;
   'code:focus': (p: CodeFocusPayload) => void;
+  'code:edit': (p: { sessionId: string; path: string; content: string; cursor?: { line: number; ch: number } }) => void;
+  'code:scroll': (p: { sessionId: string; path: string; line: number }) => void;
+  'code:folder-toggle': (p: { sessionId: string; path: string; collapsed: boolean }) => void;
+  'code:collapse-all': (p: { sessionId: string; collapsed: boolean }) => void;
+  'code:folders-state': (p: { sessionId: string; expanded: string[] }) => void;
+  'code:pointer': (p: CodePointerPayload) => void;
+  'code:spotlight': (p: CodeSpotlightPayload) => void;
   'code:permission': (p: CodePermissionPayload) => void;
+  'code:tab-close': (p: { sessionId: string; path?: string; nextActive?: string; all?: boolean }) => void;
 
   error: (p: { code: string; message: string }) => void;
 }

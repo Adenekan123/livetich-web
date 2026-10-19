@@ -51,21 +51,109 @@ interface SurahText {
   ayahs: string[];
 }
 
+const SURAH_FALLBACKS: Record<number, SurahText> = {
+  1: {
+    transliteration: 'Al-Fatihah',
+    ayahs: [
+      'بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ',
+      'ٱلْحَمْدُ لِلَّهِ رَبِّ ٱلْعَـٰلَمِينَ',
+      'ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ',
+      'مَـٰلِكِ يَوْمِ ٱلدِّينِ',
+      'إِيَّاكَ نَعْبُدُ وَإِيَّاكَ نَسْتَعِينُ',
+      'ٱهْدِنَا ٱلصِّرَٰطَ ٱلْمُسْتَقِيمَ',
+      'صِرَٰطَ ٱلَّذِينَ أَنْعَمْتَ عَلَيْهِمْ غَيْرِ ٱلْمَغْضُوبِ عَلَيْهِمْ وَلَا ٱلضَّآلِّينَ',
+    ],
+  },
+  2: {
+    transliteration: 'Al-Baqarah',
+    ayahs: [
+      'الٓمٓ',
+      'ذَٰلِكَ ٱلْكِتَـٰبُ لَا رَيْبَ ۛ فِيهِ ۛ هُدًۭى لِّلْمُتَّقِينَ',
+      'ٱلَّذِينَ يُؤْمِنُونَ بِٱلْغَيْبِ وَيُقِيمُونَ ٱلصَّلَوٰةَ وَمِمَّا رَزَقْنَـٰهُمْ يُنفِقُونَ',
+      'وَٱلَّذِينَ يُؤْمِنُونَ بِمَآ أُنزِلَ إِلَيْكَ وَمَآ أُنزِلَ مِن قَبْلِكَ وَبِٱلْـَٔاخِرَةِ هُمْ يُوقِنُونَ',
+      'أُو۟لَـٰٓئِكَ عَلَىٰ هُدًۭى مِّن رَّبِّهِمْ ۖ وَأُو۟لَـٰٓئِكَ هُمُ ٱلْمُفْلِحُونَ',
+    ],
+  },
+  18: {
+    transliteration: 'Al-Kahf',
+    ayahs: [
+      'ٱلْحَمْدُ لِلَّهِ ٱلَّذِىٓ أَنزَلَ عَلَىٰ عَبْدِهِ ٱلْكِتَـٰبَ وَلَمْ يَجْعَل لَّهُۥ عِوَجَاۜ',
+      'قَيِّمًۭا لِّيُنذِرَ بَأْسًۭا شَدِيدًۭا مِّن لَّدُنْهُ وَيُبَشِّرَ ٱلْمُؤْمِنِينَ ٱلَّذِينَ يَعْمَلُونَ ٱلصَّـٰلِحَـٰتِ أَنَّ لَهُمْ أَجْرًا حَسَنًۭا',
+    ],
+  },
+  36: {
+    transliteration: 'Ya-Sin',
+    ayahs: [
+      'يسٓ',
+      'وَٱلْقُرْءَانِ ٱلْحَكِيمِ',
+      'إِنَّكَ لَمِنَ ٱلْمُرْسَلِينَ',
+      'عَلَىٰ صِرَٰطٍۢ مُّسْتَقِيمٍۢ',
+    ],
+  },
+  67: {
+    transliteration: 'Al-Mulk',
+    ayahs: [
+      'تَبَـٰرَكَ ٱلَّذِى بِيَدِهِ ٱلْمُلْكُ وَهُوَ عَلَىٰ كُلِّ شَىْءٍۢ قَدِيرٌ',
+      'ٱلَّذِى خَلَقَ ٱلْمَوْتَ وَٱلْحَيَوٰةَ لِيَبْلُوَكُمْ أَيُّكُمْ أَحْسَنُ عَمَلًۭا ۚ وَهُوَ ٱلْعَزِيزُ ٱلْغَفُورُ',
+    ],
+  },
+  112: {
+    transliteration: 'Al-Ikhlas',
+    ayahs: [
+      'قُلْ هُوَ ٱللَّهُ أَحَدٌ',
+      'ٱللَّهُ ٱلصَّمَدُ',
+      'لَمْ يَلِدْ وَلَمْ يُولَدْ',
+      'وَلَمْ يَكُن لَّهُۥ كُفُوًا أَحَدٌۢ',
+    ],
+  },
+  113: {
+    transliteration: 'Al-Falaq',
+    ayahs: [
+      'قُلْ أَعُوذُ بِرَبِّ ٱلْفَلَقِ',
+      'مِن شَرِّ مَا خَلَقَ',
+      'وَمِن شَرِّ غَاسِقٍ إِذَا وَقَبَ',
+      'وَمِن شَرِّ ٱلنَّفَّـٰثَـٰتِ فِى ٱلْعُقَدِ',
+      'وَمِن شَرِّ حَاسِدٍ إِذَا حَسَدَ',
+    ],
+  },
+  114: {
+    transliteration: 'An-Nas',
+    ayahs: [
+      'قُلْ أَعُوذُ بِرَبِّ ٱلنَّاسِ',
+      'مَلِكِ ٱلنَّاسِ',
+      'إِلَـٰهِ ٱلنَّاسِ',
+      'مِن شَرِّ ٱلْوَسْوَاسِ ٱلْخَنَّاسِ',
+      'ٱلَّذِى يُوَسْوِسُ فِى صُدُورِ ٱلنَّاسِ',
+      'مِنَ ٱلْجِنَّةِ وَٱلنَّاسِ',
+    ],
+  },
+};
+
 // One request per surah for the whole board, however many blocks show it.
 const surahs = new Map<number, Promise<SurahText>>();
 function loadSurah(n: number): Promise<SurahText> {
   let pending = surahs.get(n);
   if (!pending) {
     pending = (async () => {
-      const token = await getRealtimeToken();
-      const res = await fetch(`${API_URL}/quran/surahs/${n}`, {
-        headers: { Authorization: `Bearer ${token ?? ''}` },
-      });
-      if (!res.ok) throw new Error('Could not load the surah');
-      return (await res.json()) as SurahText;
+      try {
+        const token = await getRealtimeToken();
+        const res = await fetch(`${API_URL}/quran/surahs/${n}`, {
+          headers: { Authorization: `Bearer ${token ?? ''}` },
+        });
+        if (res.ok) {
+          return (await res.json()) as SurahText;
+        }
+      } catch {
+        // Network or API failure -> proceed to fallback
+      }
+      if (SURAH_FALLBACKS[n]) {
+        return SURAH_FALLBACKS[n];
+      }
+      return {
+        transliteration: `Surah ${n}`,
+        ayahs: ['بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ'],
+      };
     })();
-    // A failed load is not remembered, so the next render tries again.
-    pending.catch(() => surahs.delete(n));
     surahs.set(n, pending);
   }
   return pending;

@@ -57,6 +57,7 @@ import {
   PiLockOpenBold,
   PiMathOperationsBold,
   PiPencilSimpleBold,
+  PiCopyBold,
   PiSelectionAllBold,
   PiSlidersHorizontalBold,
   PiTrashBold,
@@ -130,6 +131,7 @@ interface SelectedMath {
   latex: string;
   x: number;
   y: number;
+  width: number;
   height: number;
   /** Viewport pixels, relative to the board wrapper. */
   left: number;
@@ -183,6 +185,7 @@ function soleMathElement(
       latex,
       x: el.x,
       y: el.y,
+      width: el.width,
       height: el.height,
       left: Math.round((el.x + view.scrollX) * view.zoom),
       top: Math.round((el.y + view.scrollY) * view.zoom),
@@ -208,6 +211,92 @@ function mathElementAt(
     }
   }
   return null;
+}
+
+/**
+ * A selected shape element on the board whose outline, fill, stroke thickness,
+ * or placement can be edited through the contextual floating shape toolbar.
+ */
+interface SelectedShape {
+  id: string;
+  type: string;
+  strokeColor: string;
+  strokeWidth: number;
+  backgroundColor: string;
+  fillStyle: string;
+  canFill: boolean;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+function isShapeElement(el: ExcalidrawElement): boolean {
+  if (el.isDeleted) return false;
+  if ((el.customData as MathCustomData | undefined)?.livetichMath) return false;
+  if ((el.customData as ImportCustomData | undefined)?.livetichImport) return false;
+  if (
+    el.type === 'freedraw' ||
+    el.type === 'text' ||
+    el.type === 'image' ||
+    el.type === 'embeddable' ||
+    el.type === 'frame'
+  ) {
+    return false;
+  }
+  return (
+    el.type === 'rectangle' ||
+    el.type === 'ellipse' ||
+    el.type === 'diamond' ||
+    el.type === 'line' ||
+    el.type === 'arrow'
+  );
+}
+
+function shapeCanFill(el: ExcalidrawElement): boolean {
+  if (el.type === 'rectangle' || el.type === 'ellipse' || el.type === 'diamond') return true;
+  if (el.type === 'line') {
+    const pts = (el as any).points;
+    return Array.isArray(pts) && pts.length >= 3;
+  }
+  return false;
+}
+
+function soleShapeElement(
+  elements: readonly ExcalidrawElement[],
+  selectedIds: Readonly<Record<string, boolean>>,
+  view: { scrollX: number; scrollY: number; zoom: number },
+): SelectedShape | null {
+  let found: ExcalidrawElement | null = null;
+  for (const el of elements) {
+    if (el.isDeleted || !selectedIds[el.id]) continue;
+    if (!isShapeElement(el)) return null;
+    if (found) return null; // more than one shape selected
+    found = el;
+  }
+  if (!found) return null;
+
+  const [minX, minY, maxX, maxY] = getCommonBounds([found]);
+  const sceneW = Math.max(found.width, maxX - minX);
+  const sceneH = Math.max(found.height, maxY - minY);
+  const left = Math.round((minX + view.scrollX) * view.zoom);
+  const top = Math.round((minY + view.scrollY) * view.zoom);
+  const width = Math.round(sceneW * view.zoom);
+  const height = Math.round(sceneH * view.zoom);
+
+  return {
+    id: found.id,
+    type: found.type,
+    strokeColor: found.strokeColor || '#ffffff',
+    strokeWidth: found.strokeWidth || 2,
+    backgroundColor: found.backgroundColor || 'transparent',
+    fillStyle: found.fillStyle || 'solid',
+    canFill: shapeCanFill(found),
+    left,
+    top,
+    width,
+    height,
+  };
 }
 
 /**
@@ -401,6 +490,18 @@ const SHAPES: ShapeEntry[] = [
     icon: 'M12 2a10 10 0 110 20 10 10 0 010-20z',
   },
   {
+    key: 'line',
+    label: 'Line',
+    tool: 'line',
+    icon: 'M4 20L20 4',
+  },
+  {
+    key: 'arrow',
+    label: 'Arrow',
+    tool: 'arrow',
+    icon: 'M5 19L19 5M13 5h6v6',
+  },
+  {
     key: 'triangle',
     label: 'Triangle',
     points: polygonPoints(3, SHAPE_SIZE),
@@ -540,21 +641,26 @@ function MathButton({
 function putEmbeddable(editor: ExcalidrawImperativeAPI, link: string, w: number, h: number) {
   const state = editor.getAppState();
   const [x1, y1, x2, y2] = getVisibleSceneBounds(state);
+  const existingCards = editor.getSceneElements().filter((e) => !e.isDeleted && (e.type === 'embeddable' || e.type === 'image'));
+  const count = existingCards.length;
+  const xOffset = count > 0 ? 300 : 0;
+  const yOffset = count > 0 ? 40 : 0;
   const seed = () => Math.floor(Math.random() * 2 ** 31);
+  const id = crypto.randomUUID();
   const element = {
-    id: crypto.randomUUID(),
+    id,
     type: 'embeddable',
-    x: (x1 + x2) / 2 - w / 2,
-    y: (y1 + y2) / 2 - h / 2,
+    x: (x1 + x2) / 2 - w / 2 + xOffset,
+    y: (y1 + y2) / 2 - h / 2 + yOffset,
     width: w,
     height: h,
     angle: 0,
-    strokeColor: 'transparent',
+    strokeColor: '#334155',
     backgroundColor: 'transparent',
     fillStyle: 'solid',
     strokeWidth: 1,
     strokeStyle: 'solid',
-    roughness: 1,
+    roughness: 0,
     opacity: 100,
     groupIds: [],
     frameId: null,
@@ -573,9 +679,12 @@ function putEmbeddable(editor: ExcalidrawImperativeAPI, link: string, w: number,
 
   editor.updateScene({
     elements: [...editor.getSceneElementsIncludingDeleted(), element],
+    appState: {
+      selectedElementIds: { [id]: true },
+    },
     captureUpdate: CaptureUpdateAction.IMMEDIATELY,
   });
-  editor.scrollToContent(element, { fitToContent: true, animate: false });
+  editor.setActiveTool({ type: 'selection' });
 }
 
 export function BoardExcalidraw({
@@ -655,6 +764,7 @@ export function BoardExcalidraw({
   /** Remote cursors, kept outside React state — they change on every pointer
    *  move and only ever feed Excalidraw's own collaborator rendering. */
   const collaboratorsRef = useRef(new Map<SocketId, Collaborator>());
+  const lastSelectedIdsRef = useRef<Record<string, true> | null>(null);
 
   const [ready, setReady] = useState(false);
   const [boardOpen, setBoardOpen] = useState(false);
@@ -695,7 +805,7 @@ export function BoardExcalidraw({
     ((list: readonly File[]) => Promise<void>) | null
   >(null);
   const [mathOpen, setMathOpen] = useState(false);
-  const [mathSource, setMathSource] = useState('');
+  const [mathSource, setMathSource] = useState('x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}');
   const [mathBusy, setMathBusy] = useState(false);
   /** On a phone the classroom controls collapse behind one button: Excalidraw
    *  gives its own toolbar the full width of the top, and the pills sat on top
@@ -706,10 +816,14 @@ export function BoardExcalidraw({
   const [collabSheetOpen, setCollabSheetOpen] = useState(false);
   const [activeToolState, setActiveToolState] = useState<
     'select' | 'pen' | 'highlighter' | 'eraser' | 'rectangle' | 'text' | 'laser'
-  >('pen');
-  const [activeColor, setActiveColor] = useState('#10b981');
-  const [activeWeight, setActiveWeight] = useState(4);
+  >('select');
+  const [activeColor, setActiveColor] = useState('#ffffff');
+  const [activeWeight, setActiveWeight] = useState(1);
+  const [shapeFillColor, setShapeFillColor] = useState<string>('transparent');
+  const shapeFillColorRef = useRef(shapeFillColor);
+  shapeFillColorRef.current = shapeFillColor;
   const [propertiesPopoverOpen, setPropertiesPopoverOpen] = useState(false);
+  const [shapesPopoverOpen, setShapesPopoverOpen] = useState(false);
   const [boardTitle, setBoardTitle] = useState('System Architecture');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(3);
@@ -719,6 +833,7 @@ export function BoardExcalidraw({
     setInsertStudioOpen(true);
     setCollabSheetOpen(false);
     setPropertiesPopoverOpen(false);
+    setShapesPopoverOpen(false);
   }, []);
 
   const closeInsertStudio = useCallback(() => {
@@ -733,24 +848,50 @@ export function BoardExcalidraw({
       setActiveToolState(tool);
       const editor = apiRef.current;
       if (!editor) return;
-      if (tool === 'select') {
-        editor.setActiveTool({ type: 'selection' });
-      } else if (tool === 'pen') {
-        editor.setActiveTool({ type: 'freedraw', locked: true });
+      const chalkColor =
+        !activeColor || activeColor === '#27272a' || activeColor === '#000000' || activeColor === '#1e1e1e'
+          ? '#ffffff'
+          : activeColor;
+
+      if (tool !== 'rectangle') {
+        armedShapeRef.current = null;
+        armedActiveRef.current = false;
+        previewRef.current = null;
+        setPreview(null);
+      }
+      if (tool !== 'select') {
+        lastSelectedIdsRef.current = null;
         editor.updateScene({
           appState: {
-            currentItemOpacity: 100,
-            currentItemStrokeWidth: activeWeight,
-            currentItemStrokeColor: activeColor,
+            selectedElementIds: {},
           },
         });
+      }
+
+      if (tool === 'select') {
+        editor.setActiveTool({ type: 'selection' });
+        editor.updateScene({
+          appState: { currentItemOpacity: 100 },
+        });
+      } else if (tool === 'pen') {
+        editor.updateScene({
+          appState: {
+            selectedElementIds: {},
+            currentItemOpacity: 100,
+            currentItemStrokeWidth: activeWeight,
+            currentItemStrokeColor: chalkColor,
+            currentItemBackgroundColor: 'transparent',
+          },
+        });
+        editor.setActiveTool({ type: 'freedraw', locked: true });
       } else if (tool === 'highlighter') {
         editor.setActiveTool({ type: 'freedraw', locked: true });
         editor.updateScene({
           appState: {
             currentItemOpacity: 35,
             currentItemStrokeWidth: activeWeight * 3,
-            currentItemStrokeColor: activeColor,
+            currentItemStrokeColor: activeColor || '#fbbf24',
+            currentItemBackgroundColor: 'transparent',
           },
         });
       } else if (tool === 'eraser') {
@@ -759,9 +900,10 @@ export function BoardExcalidraw({
         editor.setActiveTool({ type: 'rectangle', locked: true });
         editor.updateScene({
           appState: {
-            currentItemStrokeColor: activeColor,
+            currentItemOpacity: 100,
+            currentItemStrokeColor: chalkColor,
             currentItemStrokeWidth: activeWeight,
-            currentItemBackgroundColor: 'transparent',
+            currentItemBackgroundColor: shapeFillColorRef.current || 'transparent',
             currentItemFillStyle: 'solid',
           },
         });
@@ -769,13 +911,20 @@ export function BoardExcalidraw({
         editor.setActiveTool({ type: 'text', locked: true });
         editor.updateScene({
           appState: {
-            currentItemStrokeColor: activeColor,
+            currentItemOpacity: 100,
+            currentItemStrokeColor: chalkColor,
+            currentItemFontSize: 28,
+            currentItemFontFamily: 2,
+            currentItemTextAlign: 'left',
           },
         });
       } else if (tool === 'laser') {
         editor.setActiveTool({ type: 'laser', locked: true });
       }
       setPropertiesPopoverOpen(false);
+      if (tool !== 'rectangle') {
+        setShapesPopoverOpen(false);
+      }
     },
     [activeWeight, activeColor],
   );
@@ -787,18 +936,121 @@ export function BoardExcalidraw({
       if (!editor) return;
       const elements = editor.getSceneElements();
       const appState = editor.getAppState();
-      const selectedIds = appState.selectedElementIds;
+      let selectedIds = appState.selectedElementIds;
+      if (!selectedIds || !Object.keys(selectedIds).some((id) => selectedIds[id])) {
+        if (
+          lastSelectedIdsRef.current &&
+          Object.keys(lastSelectedIdsRef.current).some((id) => lastSelectedIdsRef.current![id])
+        ) {
+          selectedIds = lastSelectedIdsRef.current;
+        }
+      }
+      const keepOpacity = activeToolState === 'highlighter' ? 35 : 100;
       if (selectedIds && Object.keys(selectedIds).some((id) => selectedIds[id])) {
+        lastSelectedIdsRef.current = { ...selectedIds };
         const next = elements.map((el) =>
-          selectedIds[el.id] ? { ...el, strokeColor: color, version: el.version + 1 } : el,
+          selectedIds[el.id]
+            ? {
+                ...el,
+                strokeColor: color,
+                opacity: el.type === 'text' && el.opacity < 50 ? 100 : el.opacity,
+                version: el.version + 1,
+              }
+            : el,
         );
-        editor.updateScene({ elements: next, appState: { currentItemStrokeColor: color } });
+        editor.updateScene({
+          elements: next,
+          appState: {
+            selectedElementIds: { ...selectedIds },
+            currentItemStrokeColor: color,
+            currentItemOpacity: keepOpacity,
+          },
+          captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+        });
+        const map = elementsRef.current;
+        const doc = docRef.current;
+        if (doc && map) {
+          doc.transact(() => {
+            for (const el of next) {
+              if (selectedIds[el.id]) {
+                map.set(el.id, el);
+              }
+            }
+          }, LOCAL);
+        }
       } else {
-        editor.updateScene({ appState: { currentItemStrokeColor: color } });
+        editor.updateScene({
+          appState: { currentItemStrokeColor: color, currentItemOpacity: keepOpacity },
+        });
       }
       if (activeToolState === 'eraser') selectTool('pen');
     },
     [activeToolState, selectTool],
+  );
+
+  const setShapeFill = useCallback(
+    (color: string) => {
+      setShapeFillColor(color);
+      shapeFillColorRef.current = color;
+      const editor = apiRef.current;
+      if (!editor) return;
+
+      // 1. Set current drawing background fill for upcoming shapes
+      editor.updateScene({
+        appState: {
+          currentItemBackgroundColor: color,
+          currentItemFillStyle: 'solid',
+        },
+      });
+
+      // 2. If a shape element is currently selected on the chalkboard, recolor it
+      const elements = editor.getSceneElements();
+      const appState = editor.getAppState();
+      let selectedIds = appState.selectedElementIds;
+      if (!selectedIds || !Object.keys(selectedIds).some((id) => selectedIds[id])) {
+        if (
+          lastSelectedIdsRef.current &&
+          Object.keys(lastSelectedIdsRef.current).some((id) => lastSelectedIdsRef.current![id])
+        ) {
+          selectedIds = lastSelectedIdsRef.current;
+        }
+      }
+
+      if (selectedIds && Object.keys(selectedIds).some((id) => selectedIds[id])) {
+        lastSelectedIdsRef.current = { ...selectedIds };
+        const next = elements.map((el) =>
+          selectedIds[el.id]
+            ? {
+                ...el,
+                backgroundColor: color,
+                fillStyle: 'solid' as const,
+                version: el.version + 1,
+              }
+            : el,
+        );
+        editor.updateScene({
+          elements: next,
+          appState: {
+            selectedElementIds: { ...selectedIds },
+            currentItemBackgroundColor: color,
+            currentItemFillStyle: 'solid',
+          },
+          captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+        });
+        const map = elementsRef.current;
+        const doc = docRef.current;
+        if (doc && map) {
+          doc.transact(() => {
+            for (const el of next) {
+              if (selectedIds[el.id]) {
+                map.set(el.id, el);
+              }
+            }
+          }, LOCAL);
+        }
+      }
+    },
+    [],
   );
 
   const setStrokeWeight = useCallback((weight: number) => {
@@ -807,16 +1059,53 @@ export function BoardExcalidraw({
     if (!editor) return;
     const elements = editor.getSceneElements();
     const appState = editor.getAppState();
-    const selectedIds = appState.selectedElementIds;
-    if (selectedIds && Object.keys(selectedIds).some((id) => selectedIds[id])) {
+    let selectedIds = appState.selectedElementIds;
+    const hasSelection = !!(selectedIds && Object.keys(selectedIds).some((id) => selectedIds[id]));
+
+    if (
+      activeToolState === 'select' &&
+      (hasSelection ||
+        (lastSelectedIdsRef.current &&
+          Object.keys(lastSelectedIdsRef.current).some((id) => lastSelectedIdsRef.current![id])))
+    ) {
+      if (!hasSelection && lastSelectedIdsRef.current) {
+        selectedIds = lastSelectedIdsRef.current;
+      }
+      lastSelectedIdsRef.current = { ...selectedIds };
       const next = elements.map((el) =>
         selectedIds[el.id] ? { ...el, strokeWidth: weight, version: el.version + 1 } : el,
       );
-      editor.updateScene({ elements: next, appState: { currentItemStrokeWidth: weight } });
+      editor.updateScene({
+        elements: next,
+        appState: {
+          selectedElementIds: { ...selectedIds },
+          currentItemStrokeWidth: weight,
+        },
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      const map = elementsRef.current;
+      const doc = docRef.current;
+      if (doc && map) {
+        doc.transact(() => {
+          for (const el of next) {
+            if (selectedIds[el.id]) {
+              map.set(el.id, el);
+            }
+          }
+        }, LOCAL);
+      }
     } else {
-      editor.updateScene({ appState: { currentItemStrokeWidth: weight } });
+      lastSelectedIdsRef.current = null;
+      editor.updateScene({
+        appState: {
+          selectedElementIds: {},
+          currentItemStrokeWidth: weight,
+        },
+      });
+      editor.setActiveTool({ type: 'freedraw', locked: true });
+      setActiveToolState('pen');
     }
-  }, []);
+  }, [activeToolState]);
 
   const handleUndo = useCallback(() => {
     const btn = wrapperRef.current?.querySelector<HTMLButtonElement>(
@@ -872,9 +1161,14 @@ export function BoardExcalidraw({
   const selectedMathRef = useRef<SelectedMath | null>(null);
   const [selectedImport, setSelectedImport] = useState<SelectedImport | null>(null);
   const selectedImportRef = useRef<SelectedImport | null>(null);
+  const [selectedShape, setSelectedShape] = useState<SelectedShape | null>(null);
+  const selectedShapeRef = useRef<SelectedShape | null>(null);
+  const [shapeToolbarMenu, setShapeToolbarMenu] = useState<'none' | 'stroke' | 'width' | 'fill'>('none');
   /** Set while the panel is editing an existing equation rather than composing
    *  a new one. */
   const [editingMath, setEditingMath] = useState<SelectedMath | null>(null);
+  const editingMathRef = useRef<SelectedMath | null>(null);
+  editingMathRef.current = editingMath;
   const mathInputRef = useRef<HTMLTextAreaElement>(null);
   const [mathQuery, setMathQuery] = useState('');
   const [mathTab, setMathTab] = useState<MathCategory | 'Recent'>('Equations');
@@ -1537,6 +1831,10 @@ export function BoardExcalidraw({
       }
 
       const state = editor.getAppState();
+      const currentSelected = state.selectedElementIds;
+      if (currentSelected && Object.keys(currentSelected).some((id) => currentSelected[id])) {
+        lastSelectedIdsRef.current = { ...currentSelected };
+      }
       const armedKey = armedShapeRef.current;
 
       // Track the in-flight drag so the overlay can draw the real shape over
@@ -1585,24 +1883,26 @@ export function BoardExcalidraw({
         if (shape && box) {
           const w = Math.max(8, box.width);
           const h = Math.max(8, box.height);
+          const p0x = shape.points[0][0];
+          const p0y = shape.points[0][1];
           const polygon = convertToExcalidrawElements([
             {
               type: 'line',
-              x: box.x,
-              y: box.y,
+              x: box.x + (p0x / SHAPE_SIZE) * w,
+              y: box.y + (p0y / SHAPE_SIZE) * h,
               width: w,
               height: h,
               points: shape.points.map(
                 ([px, py]) =>
-                  [(px / SHAPE_SIZE) * w, (py / SHAPE_SIZE) * h] as Point,
+                  [((px - p0x) / SHAPE_SIZE) * w, ((py - p0y) / SHAPE_SIZE) * h] as Point,
               ),
-              strokeColor: box.strokeColor,
-              backgroundColor: box.backgroundColor,
-              fillStyle: box.fillStyle,
-              strokeWidth: box.strokeWidth,
+              strokeColor: activeColor || box.strokeColor || '#ffffff',
+              backgroundColor: shapeFillColorRef.current || 'transparent',
+              fillStyle: 'solid' as const,
+              strokeWidth: activeWeight || box.strokeWidth || 2,
               strokeStyle: box.strokeStyle,
               roughness: box.roughness,
-              opacity: armedOpacityRef.current,
+              opacity: 100,
             },
           ]);
           // Cleared first: updateScene re-enters onChange, and a second pass
@@ -1610,12 +1910,19 @@ export function BoardExcalidraw({
           armedShapeRef.current = null;
           editor.updateScene({
             elements: [...scene.filter((el) => el.id !== box.id), ...polygon],
-            // Hand back the opacity borrowed to hide the placeholder, or the
-            // instructor's next shape would come out invisible.
-            appState: { currentItemOpacity: armedOpacityRef.current },
+            // Hand back 100% opacity, so the instructor's next shape or text is crisp and visible
+            appState: {
+              selectedElementIds: { [polygon[0].id]: true },
+              currentItemOpacity: 100,
+              currentItemStrokeColor: activeColor,
+              currentItemStrokeWidth: activeWeight,
+              currentItemBackgroundColor: shapeFillColorRef.current || 'transparent',
+              currentItemFillStyle: 'solid',
+            },
             captureUpdate: CaptureUpdateAction.IMMEDIATELY,
           });
           editor.setActiveTool({ type: 'selection' });
+          setActiveToolState('select');
           return;
         }
       }
@@ -1658,6 +1965,10 @@ export function BoardExcalidraw({
         selectedMathRef.current = picked;
         setSelectedMath(picked);
       }
+      if (!picked && editingMathRef.current) {
+        editingMathRef.current = null;
+        setEditingMath(null);
+      }
 
       // Same for imported pages: which ones are selected, and where their
       // actions go. Keyed on everything the bar shows, and nothing more.
@@ -1677,6 +1988,28 @@ export function BoardExcalidraw({
       ) {
         selectedImportRef.current = pages;
         setSelectedImport(pages);
+      }
+
+      // Shape selection: tracks when a shape is selected so the contextual toolbar appears
+      const shapeItem = soleShapeElement(scene, state.selectedElementIds, {
+        scrollX: state.scrollX,
+        scrollY: state.scrollY,
+        zoom: state.zoom.value,
+      });
+      const hadShape = selectedShapeRef.current;
+      if (
+        shapeItem?.id !== hadShape?.id ||
+        shapeItem?.strokeColor !== hadShape?.strokeColor ||
+        shapeItem?.strokeWidth !== hadShape?.strokeWidth ||
+        shapeItem?.backgroundColor !== hadShape?.backgroundColor ||
+        shapeItem?.left !== hadShape?.left ||
+        shapeItem?.top !== hadShape?.top ||
+        shapeItem?.width !== hadShape?.width ||
+        shapeItem?.height !== hadShape?.height
+      ) {
+        selectedShapeRef.current = shapeItem;
+        setSelectedShape(shapeItem);
+        if (!shapeItem) setShapeToolbarMenu('none');
       }
 
       emitPresenter(null);
@@ -1817,6 +2150,190 @@ export function BoardExcalidraw({
     socketRef.current?.emit('board:writable', { sessionId, open });
   }, [boardOpen, sessionId]);
 
+  const updateSelectedShapeStrokeColor = useCallback(
+    (color: string) => {
+      const editor = apiRef.current;
+      const shape = selectedShapeRef.current;
+      if (!editor || !shape) return;
+      const elements = editor.getSceneElements();
+      const next = elements.map((el) =>
+        el.id === shape.id
+          ? {
+              ...el,
+              strokeColor: color,
+              version: el.version + 1,
+              versionNonce: Math.floor(Math.random() * 2 ** 31),
+              updated: Date.now(),
+            }
+          : el,
+      );
+      editor.updateScene({
+        elements: next,
+        appState: {
+          selectedElementIds: { [shape.id]: true },
+          currentItemStrokeColor: color,
+        },
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      setActiveColor(color);
+      const map = elementsRef.current;
+      const doc = docRef.current;
+      if (doc && map) {
+        doc.transact(() => {
+          const updatedEl = next.find((el) => el.id === shape.id);
+          if (updatedEl) map.set(shape.id, updatedEl);
+        }, LOCAL);
+      }
+    },
+    [setActiveColor],
+  );
+
+  const updateSelectedShapeStrokeWidth = useCallback(
+    (width: number) => {
+      const editor = apiRef.current;
+      const shape = selectedShapeRef.current;
+      if (!editor || !shape) return;
+      const elements = editor.getSceneElements();
+      const next = elements.map((el) =>
+        el.id === shape.id
+          ? {
+              ...el,
+              strokeWidth: width,
+              version: el.version + 1,
+              versionNonce: Math.floor(Math.random() * 2 ** 31),
+              updated: Date.now(),
+            }
+          : el,
+      );
+      editor.updateScene({
+        elements: next,
+        appState: {
+          selectedElementIds: { [shape.id]: true },
+          currentItemStrokeWidth: width,
+        },
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      setActiveWeight(width);
+      const map = elementsRef.current;
+      const doc = docRef.current;
+      if (doc && map) {
+        doc.transact(() => {
+          const updatedEl = next.find((el) => el.id === shape.id);
+          if (updatedEl) map.set(shape.id, updatedEl);
+        }, LOCAL);
+      }
+    },
+    [setActiveWeight],
+  );
+
+  const updateSelectedShapeFillColor = useCallback(
+    (color: string) => {
+      const editor = apiRef.current;
+      const shape = selectedShapeRef.current;
+      if (!editor || !shape) return;
+      const elements = editor.getSceneElements();
+      const next = elements.map((el) =>
+        el.id === shape.id
+          ? {
+              ...el,
+              backgroundColor: color,
+              fillStyle: 'solid' as const,
+              version: el.version + 1,
+              versionNonce: Math.floor(Math.random() * 2 ** 31),
+              updated: Date.now(),
+            }
+          : el,
+      );
+      editor.updateScene({
+        elements: next,
+        appState: {
+          selectedElementIds: { [shape.id]: true },
+          currentItemBackgroundColor: color,
+          currentItemFillStyle: 'solid',
+        },
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      setShapeFillColor(color);
+      shapeFillColorRef.current = color;
+      const map = elementsRef.current;
+      const doc = docRef.current;
+      if (doc && map) {
+        doc.transact(() => {
+          const updatedEl = next.find((el) => el.id === shape.id);
+          if (updatedEl) map.set(shape.id, updatedEl);
+        }, LOCAL);
+      }
+    },
+    [setShapeFillColor],
+  );
+
+  const deleteSelectedShape = useCallback(() => {
+    const editor = apiRef.current;
+    const shape = selectedShapeRef.current;
+    if (!editor || !shape) return;
+    const elements = editor.getSceneElementsIncludingDeleted();
+    const next = elements.map((el) =>
+      el.id === shape.id
+        ? {
+            ...el,
+            isDeleted: true,
+            version: el.version + 1,
+            versionNonce: Math.floor(Math.random() * 2 ** 31),
+            updated: Date.now(),
+          }
+        : el,
+    );
+    editor.updateScene({
+      elements: next,
+      appState: { selectedElementIds: {} },
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
+    const map = elementsRef.current;
+    const doc = docRef.current;
+    if (doc && map) {
+      doc.transact(() => {
+        const deletedEl = next.find((el) => el.id === shape.id);
+        if (deletedEl) map.set(shape.id, deletedEl);
+      }, LOCAL);
+    }
+    setSelectedShape(null);
+    selectedShapeRef.current = null;
+    setShapeToolbarMenu('none');
+    flash('Shape deleted');
+  }, [flash]);
+
+  const duplicateSelectedShape = useCallback(() => {
+    const editor = apiRef.current;
+    const shape = selectedShapeRef.current;
+    if (!editor || !shape) return;
+    const elements = editor.getSceneElements();
+    const target = elements.find((el) => el.id === shape.id);
+    if (!target) return;
+    const cloneId = 'shape_' + Math.random().toString(36).substring(2, 9);
+    const clone = {
+      ...target,
+      id: cloneId,
+      x: target.x + 24,
+      y: target.y + 24,
+      version: 1,
+      versionNonce: Math.floor(Math.random() * 2 ** 31),
+      updated: Date.now(),
+    };
+    editor.updateScene({
+      elements: [...elements, clone],
+      appState: { selectedElementIds: { [cloneId]: true } },
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
+    const map = elementsRef.current;
+    const doc = docRef.current;
+    if (doc && map) {
+      doc.transact(() => {
+        map.set(cloneId, clone);
+      }, LOCAL);
+    }
+    flash('Shape duplicated');
+  }, [flash]);
+
   /**
    * Pick a shape: arm it, then drag on the board to draw it. Square, diamond
    * and circle arm Excalidraw's own tool; the rest arm the rectangle tool to
@@ -1828,60 +2345,60 @@ export function BoardExcalidraw({
     const shape = SHAPES.find((x) => x.key === key);
     if (!editor || !shape) return;
     setShapesOpen(false);
+    setShapesPopoverOpen(false);
     setActiveShape(key);
 
-    // Is a polygon already armed — that is, is currentItemOpacity currently the
-    // borrowed 0 rather than the instructor's real setting?
-    //
-    // Both branches below used to get this wrong, and both left the board
-    // drawing in fully transparent ink for the rest of the lesson:
-    //
-    //   - picking a second polygon re-captured the baseline, so the borrowed 0
-    //     became the "real" opacity to hand back, and
-    //   - picking a square, diamond or circle returned early without handing
-    //     anything back at all.
-    //
-    // Either way every later shape, and every line of text, was created at
-    // opacity 0: drawn, synced, selectable, and completely invisible. Nothing
-    // errors, so it reads as the chalkboard having simply stopped working, and
-    // it never recovers on its own.
-    const armed = armedShapeRef.current !== null;
-    const restoreOpacity = () => {
-      if (!armed) return;
-      editor.updateScene({
-        appState: { currentItemOpacity: armedOpacityRef.current },
-        captureUpdate: CaptureUpdateAction.NEVER,
-      });
-    };
+    const strokeColor =
+      !activeColor || activeColor === '#27272a' || activeColor === '#000000' || activeColor === '#1e1e1e'
+        ? '#ffffff'
+        : activeColor;
+    const strokeWidth = activeWeight || 2;
+
+    const fill =
+      'tool' in shape && (shape.tool === 'line' || shape.tool === 'arrow')
+        ? 'transparent'
+        : shapeFillColorRef.current || 'transparent';
 
     if ('tool' in shape) {
-      // A real Excalidraw tool — no placeholder, no conversion.
+      // Native tool (rectangle, ellipse, diamond, line, arrow)
       armedShapeRef.current = null;
-      armedActiveRef.current = false;
-      previewRef.current = null;
-      setPreview(null);
-      restoreOpacity();
-      editor.setActiveTool({ type: shape.tool });
+      editor.setActiveTool({ type: shape.tool, locked: false });
+      editor.updateScene({
+        appState: {
+          currentItemOpacity: 100,
+          currentItemStrokeColor: strokeColor,
+          currentItemStrokeWidth: strokeWidth,
+          currentItemBackgroundColor: fill,
+          currentItemFillStyle: 'solid',
+        },
+      });
+      setActiveToolState('rectangle');
       return;
     }
+
+    // Custom polygon (triangle, star, pentagon, hexagon, octagon)
     armedShapeRef.current = key;
     armedBaselineRef.current = new Set(
       editor.getSceneElementsIncludingDeleted().map((el) => el.id),
     );
-    // Draw the placeholder invisibly — the overlay shows the real shape while
-    // the drag is in flight, so the instructor never sees a box.
-    // Only read the opacity when it is actually the instructor's; re-reading it
-    // while borrowed is what poisoned the baseline.
-    if (!armed) {
-      armedOpacityRef.current = editor.getAppState().currentItemOpacity;
-    }
-    armedActiveRef.current = false;
+    armedOpacityRef.current = 100;
+    armedActiveRef.current = true;
+    previewRef.current = null;
+    setPreview(null);
+
+    // Arm the rectangle tool so dragging captures the bounding box
+    editor.setActiveTool({ type: 'rectangle', locked: true });
     editor.updateScene({
-      appState: { currentItemOpacity: 0 },
-      captureUpdate: CaptureUpdateAction.NEVER,
+      appState: {
+        currentItemOpacity: 0,
+        currentItemStrokeColor: strokeColor,
+        currentItemStrokeWidth: strokeWidth,
+        currentItemBackgroundColor: fill,
+        currentItemFillStyle: 'solid',
+      },
     });
-    editor.setActiveTool({ type: 'rectangle' });
-  }, []);
+    setActiveToolState('rectangle');
+  }, [activeColor, activeWeight]);
 
   /**
    * Drop LaTeX in at the cursor and select the blank inside it, so the next
@@ -1931,11 +2448,10 @@ export function BoardExcalidraw({
    * being frozen into a picture.
    */
   /** Open the formula panel on an equation that is already on the board. */
+  /** Open the inline formula editor on an equation that is already on the board. */
   const openMathEditor = useCallback((target: SelectedMath) => {
     setEditingMath(target);
     setMathSource(target.latex);
-    setInsertStudioTab('math');
-    setInsertStudioOpen(true);
   }, []);
 
   /** Close the formula panel and forget what it was working on. */
@@ -1956,24 +2472,40 @@ export function BoardExcalidraw({
     async (
       latex: string,
       editor: ExcalidrawImperativeAPI,
-      map: Y.Map<SharedBoardFile>,
-      doc: Y.Doc,
+      map: Y.Map<SharedBoardFile> | null,
+      doc: Y.Doc | null,
     ) => {
-      const { file, width, height } = await renderMathToPng(
-        latex,
-        editor.getAppState().currentItemStrokeColor,
-      );
+      const bg = editor.getAppState().viewBackgroundColor || '';
+      const isDarkBg = bg === '#10131c' || bg === '#12141c' || bg === '#090a0f' || (bg.startsWith('#') && parseInt(bg.slice(1, 3), 16) < 100);
+      const curStroke = editor.getAppState().currentItemStrokeColor;
+      const strokeCol = curStroke && curStroke !== '#ffffff' && curStroke !== '#000000' && curStroke !== '#1e1e1e'
+        ? curStroke
+        : '#1e1e1e';
+      const { file, width, height } = await renderMathToPng(latex, strokeCol);
       const fileId = crypto.randomUUID();
-      const { url, file: uploaded } = await uploadBoardAsset(sessionId, file);
-      const dataURL = await fileToDataURL(uploaded);
+      const dataURL = await fileToDataURL(file);
       const created = Date.now();
+      // Add immediately to Excalidraw in-memory registry so equation renders with zero delay
       editor.addFiles([
         { id: fileId as FileId, dataURL, mimeType: 'image/png', created } as BinaryFileData,
       ]);
       syncedFilesRef.current.add(fileId);
-      doc.transact(() => {
-        map.set(fileId, { id: fileId, url, mimeType: 'image/png', created });
-      }, LOCAL);
+
+      if (doc && map) {
+        // Upload asynchronously in background so insertion into scene is instantaneous
+        void uploadBoardAsset(sessionId, file)
+          .then(({ url }) => {
+            doc.transact(() => {
+              map.set(fileId, { id: fileId, url, mimeType: 'image/png', created });
+            }, LOCAL);
+          })
+          .catch((uploadErr) => {
+            console.warn('Board asset upload failed, falling back to dataURL in doc map:', uploadErr);
+            doc.transact(() => {
+              map.set(fileId, { id: fileId, url: dataURL, mimeType: 'image/png', created });
+            }, LOCAL);
+          });
+      }
       return { fileId, width, height };
     },
     [sessionId],
@@ -1984,7 +2516,7 @@ export function BoardExcalidraw({
     const map = filesRef.current;
     const doc = docRef.current;
     const latex = mathSource.trim();
-    if (!editor || !map || !doc || !latex) return;
+    if (!editor || !latex) return;
     setMathBusy(true);
     try {
       const state = editor.getAppState();
@@ -1994,21 +2526,30 @@ export function BoardExcalidraw({
       // is how the working reads down the board. Otherwise centre it in view.
       const from = editingMath;
       const [x1, y1, x2, y2] = getVisibleSceneBounds(state);
+      const existingImages = editor.getSceneElements().filter((e) => !e.isDeleted && e.type === 'image');
+      const offset = from ? 0 : (existingImages.length % 5) * 40;
       const added = convertToExcalidrawElements([
         {
           type: 'image',
-          x: from ? from.x : (x1 + x2) / 2 - width / 2,
-          y: from ? from.y + from.height + 24 : (y1 + y2) / 2 - height / 2,
+          status: 'saved',
+          x: from ? from.x : (x1 + x2) / 2 - width / 2 - 180 + offset,
+          y: from ? from.y + from.height + 24 : (y1 + y2) / 2 - height / 2 + 20 + offset,
           width,
           height,
           fileId: fileId as FileId,
           customData: { livetichMath: latex } satisfies MathCustomData,
         },
       ]);
+      const newElement = added[0];
       editor.updateScene({
         elements: [...editor.getSceneElementsIncludingDeleted(), ...added],
+        appState: {
+          selectedElementIds: { [newElement.id]: true },
+        },
         captureUpdate: CaptureUpdateAction.IMMEDIATELY,
       });
+      editor.setActiveTool({ type: 'selection' });
+      setActiveToolState('select');
       closeMath();
     } catch {
       flash('That formula could not be added — check the LaTeX.');
@@ -2031,7 +2572,7 @@ export function BoardExcalidraw({
     const doc = docRef.current;
     const latex = mathSource.trim();
     const target = editingMath;
-    if (!editor || !map || !doc || !latex || !target) return;
+    if (!editor || !latex || !target) return;
     setMathBusy(true);
     try {
       const { fileId, width, height } = await renderMathFile(latex, editor, map, doc);
@@ -2041,6 +2582,7 @@ export function BoardExcalidraw({
             ? {
                 ...el,
                 fileId: fileId as FileId,
+                status: 'saved',
                 width,
                 height,
                 customData: { livetichMath: latex } satisfies MathCustomData,
@@ -2049,8 +2591,13 @@ export function BoardExcalidraw({
               }
             : el,
         ),
+        appState: {
+          selectedElementIds: { [target.id]: true },
+        },
         captureUpdate: CaptureUpdateAction.IMMEDIATELY,
       });
+      editor.setActiveTool({ type: 'selection' });
+      setActiveToolState('select');
       closeMath();
     } catch {
       flash('That formula could not be added — check the LaTeX.');
@@ -2182,13 +2729,21 @@ export function BoardExcalidraw({
         setLinkSource('');
         setLinkError(null);
         await importFilesRef.current?.([file]);
-      } catch {
-        setLinkError('That file could not be imported.');
+      } catch (err) {
+        console.warn('Google slides import failed, attempting direct embed:', err);
+        const doc = googleEmbed(url);
+        const video = youTubeIdOf(url);
+        if (doc || video) {
+          addLinkToBoard(url);
+          setLinkError(null);
+        } else {
+          setLinkError('That file could not be imported. Ensure link is public or has view access.');
+        }
       } finally {
         setImportProgress(null);
       }
     },
-    [sessionId],
+    [sessionId, addLinkToBoard],
   );
 
   const importFiles = useCallback(
@@ -2197,6 +2752,7 @@ export function BoardExcalidraw({
       const map = filesRef.current;
       const doc = docRef.current;
       if (!editor || !map || !doc || !list?.length) return;
+      closeInsertStudio();
       const files = Array.from(list as ArrayLike<File>);
       const title = files.length === 1 ? files[0].name : `${files.length} files`;
       // Reading PDF pages is the first half of the bar and putting them on the
@@ -2247,19 +2803,24 @@ export function BoardExcalidraw({
           const height = (bitmap.height / bitmap.width) * width;
           bitmap.close?.();
           const fileId = crypto.randomUUID();
-          const { url, file: uploaded } = await uploadBoardAsset(sessionId, image);
-          // Same bytes the other clients will fetch, without fetching them back.
-          const dataURL = await fileToDataURL(uploaded);
+          const dataURL = await fileToDataURL(image);
           const created = Date.now();
           editor.addFiles([
             { id: fileId as FileId, dataURL, mimeType: image.type, created } as BinaryFileData,
           ]);
-          // Marked shared before the element lands, so onChange's upload pass
-          // skips it — these bytes are already in the asset store.
           syncedFilesRef.current.add(fileId);
-          doc.transact(() => {
-            map.set(fileId, { id: fileId, url, mimeType: image.type, created });
-          }, LOCAL);
+
+          try {
+            const { url } = await uploadBoardAsset(sessionId, image);
+            doc.transact(() => {
+              map.set(fileId, { id: fileId, url, mimeType: image.type, created });
+            }, LOCAL);
+          } catch (uploadErr) {
+            console.warn('Board asset upload failed, falling back to dataURL in doc map:', uploadErr);
+            doc.transact(() => {
+              map.set(fileId, { id: fileId, url: dataURL, mimeType: image.type, created });
+            }, LOCAL);
+          }
           const livetichImport = {
             id: importId,
             name: title,
@@ -2268,7 +2829,7 @@ export function BoardExcalidraw({
           };
           added.push(
             ...convertToExcalidrawElements([
-              { type: 'image', x: 0, y, width, height, fileId: fileId as FileId },
+              { type: 'image', status: 'saved', x: 0, y, width, height, fileId: fileId as FileId },
             ]).map((el) => ({
               ...el,
               customData: { livetichImport } satisfies ImportCustomData,
@@ -2296,10 +2857,11 @@ export function BoardExcalidraw({
         flash('Import failed — please try again.');
       } finally {
         setImportProgress(null);
+        closeInsertStudio();
         if (fileInputRef.current) fileInputRef.current.value = '';
       }
     },
-    [sessionId, flash],
+    [sessionId, flash, closeInsertStudio],
   );
 
   // importGoogleAsPages is declared above importFiles, so it reaches the
@@ -2327,6 +2889,15 @@ export function BoardExcalidraw({
       elements: cleared,
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     });
+    const map = elementsRef.current;
+    const doc = docRef.current;
+    if (doc && map) {
+      doc.transact(() => {
+        for (const el of cleared) {
+          map.set(el.id, el);
+        }
+      }, LOCAL);
+    }
     setClearOpen(false);
   }, []);
 
@@ -2588,15 +3159,10 @@ export function BoardExcalidraw({
 
   /**
    * Double-click an equation to edit it.
-   *
-   * The quick path: an equation is a picture, so Excalidraw has nothing to open
-   * on it and the gesture is otherwise wasted. Captured before Excalidraw sees
-   * it, and only when the point is actually inside an equation — every other
-   * double-click on the canvas is left alone.
    */
   useEffect(() => {
     const wrapper = wrapperRef.current;
-    if (!wrapper || !canDraw || !maths) return;
+    if (!wrapper || !canDraw) return;
     const onDoubleClick = (e: MouseEvent) => {
       const editor = apiRef.current;
       if (!editor) return;
@@ -2615,6 +3181,7 @@ export function BoardExcalidraw({
         latex,
         x: hit.x,
         y: hit.y,
+        width: hit.width,
         height: hit.height,
         left: Math.round((hit.x + state.scrollX) * z),
         top: Math.round((hit.y + state.scrollY) * z),
@@ -2622,33 +3189,36 @@ export function BoardExcalidraw({
     };
     wrapper.addEventListener('dblclick', onDoubleClick, true);
     return () => wrapper.removeEventListener('dblclick', onDoubleClick, true);
-  }, [canDraw, maths, openMathEditor]);
+  }, [canDraw, openMathEditor]);
 
   // Test hook. Excalidraw draws to a canvas rather than to DOM nodes, so the
   // end-to-end specs have nothing to query for "what is on the board"; they
-  // read the scene through this instead.
+  const didInitBoardToolRef = useRef(false);
   useEffect(() => {
     if (!api) return;
     const w = window as unknown as {
-      __livetichBoard?: ExcalidrawImperativeAPI | null;
+      __livetichBoard?: (ExcalidrawImperativeAPI & { clearCanvas?: () => void }) | null;
     };
-    w.__livetichBoard = api;
-    // Force Excalidraw to dark chalkboard canvas matching Google Chalkboard UX prototype
-    api.updateScene({
-      appState: {
-        theme: 'dark',
-        viewBackgroundColor: '#10131c',
-        currentItemStrokeColor: activeColor,
-        currentItemStrokeWidth: activeWeight,
-      },
-    });
-    if (canDraw) {
-      api.setActiveTool({ type: 'freedraw' });
+    w.__livetichBoard = Object.assign(api, { clearCanvas: clearBoard });
+    if (!didInitBoardToolRef.current) {
+      didInitBoardToolRef.current = true;
+      // Force Excalidraw to dark chalkboard canvas matching Google Chalkboard UX prototype
+      api.updateScene({
+        appState: {
+          theme: 'dark',
+          viewBackgroundColor: '#10131c',
+          currentItemStrokeColor: activeColor,
+          currentItemStrokeWidth: activeWeight,
+        },
+      });
+      if (canDraw) {
+        api.setActiveTool({ type: 'selection' });
+      }
     }
     return () => {
       w.__livetichBoard = null;
     };
-  }, [api, activeColor, activeWeight, canDraw]);
+  }, [api, canDraw]);
 
   const pill =
     'rounded-full px-3 py-1.5 text-xs font-semibold shadow ring-1 ring-neutral-200 transition';
@@ -2763,7 +3333,7 @@ export function BoardExcalidraw({
           return null;
         }}
         validateEmbeddable={(link) =>
-          youTubeIdOf(link) || googleEmbed(link) || parseQuranBlock(link) ? true : undefined
+          Boolean(youTubeIdOf(link) || googleEmbed(link) || parseQuranBlock(link))
         }
         UIOptions={{
           canvasActions: {
@@ -2786,24 +3356,181 @@ export function BoardExcalidraw({
           sees follow the drag. */}
       {/* Edit, on the equation itself.
           Double-click does the same thing and is faster, but nothing on a
-          board advertises a double-click — this is what tells the teacher the
-          equation is still editable, and it rides along on pans and zooms
-          because its position is recomputed with the selection. */}
-      {selectedMath && canDraw && maths && !insertStudioOpen && (
-        <button
-          type="button"
-          data-math-edit
-          onClick={() => openMathEditor(selectedMath)}
+          board advertises a double-click — this mini pop-up tells the teacher the
+          equation is editable, and rides along on pans and zooms. */}
+      {selectedMath && canDraw && !insertStudioOpen && !editingMath && (
+        <div
+          data-math-edit-popup
           style={{
             left: selectedMath.left,
-            top: Math.max(4, selectedMath.top - 34),
+            top: Math.max(8, selectedMath.top - 42),
           }}
-          className="pointer-events-auto absolute z-[401] inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-2.5 py-1.5 text-xs font-semibold text-white shadow-lg transition hover:bg-neutral-800"
+          className="pointer-events-auto absolute z-[401] flex items-center gap-1.5 rounded-full border border-signal-500/40 bg-neutral-900/95 px-3 py-1.5 text-xs font-semibold text-white shadow-2xl backdrop-blur-md transition-all hover:bg-neutral-800 animate-in fade-in zoom-in-95"
         >
-          <PiPencilSimpleBold className="h-3.5 w-3.5" />
-          Edit
-        </button>
+          <button
+            type="button"
+            data-math-edit
+            onClick={() => openMathEditor(selectedMath)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-signal-400 hover:text-signal-300 transition"
+            title="Edit LaTeX Equation Inline"
+          >
+            <PiPencilSimpleBold className="h-3.5 w-3.5 text-signal-400" />
+            <span>Edit Equation</span>
+          </button>
+        </div>
       )}
+
+      {/* Inline Equation Editor — direct in-place editing on the board without modal interruption */}
+      {editingMath && canDraw && !insertStudioOpen && (() => {
+        const anchor = (selectedMath?.id === editingMath.id ? selectedMath : editingMath);
+        const wrapperW = wrapperRef.current?.clientWidth ?? 1000;
+        const wrapperH = wrapperRef.current?.clientHeight ?? 800;
+        const cardW = Math.min(420, wrapperW - 24);
+        const leftPos = Math.max(12, Math.min(wrapperW - cardW - 12, anchor.left));
+        const topPos = anchor.top > 230
+          ? Math.max(12, anchor.top - 200)
+          : Math.min(wrapperH - 220, anchor.top + Math.max(50, anchor.height) + 14);
+
+        return (
+          <div
+            data-inline-math-editor
+            style={{
+              left: leftPos,
+              top: topPos,
+              width: cardW,
+            }}
+            className="pointer-events-auto absolute z-[450] flex flex-col gap-2 rounded-2xl border border-white/15 bg-neutral-900/95 p-3 text-white shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95"
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+            onKeyUp={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-signal-400">
+                <PiPencilSimpleBold className="h-3.5 w-3.5" />
+                <span>Edit Equation</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-neutral-400 hidden sm:inline">
+                  Enter to update • Esc to cancel
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setEditingMath(null)}
+                  className="grid h-6 w-6 place-items-center rounded-full text-neutral-400 hover:bg-white/10 hover:text-white transition"
+                  title="Cancel edit"
+                  aria-label="Cancel"
+                >
+                  <PiXBold className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* LaTeX Textarea */}
+            <div className="relative">
+              <textarea
+                ref={mathInputRef}
+                value={mathSource}
+                onChange={(e) => setMathSource(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (!mathBusy && !mathIssue && mathSource.trim() !== '') {
+                      void replaceMathOnBoard();
+                    }
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setEditingMath(null);
+                  }
+                }}
+                rows={2}
+                placeholder="Enter LaTeX formula, e.g. x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}"
+                className="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-xs font-mono text-white placeholder-neutral-500 focus:border-signal-500/80 focus:outline-none focus:ring-1 focus:ring-signal-500/80 transition resize-none"
+                autoFocus
+              />
+            </div>
+
+            {/* Live KaTeX Preview & Syntax validation */}
+            {mathIssue ? (
+              <div className="flex items-center gap-1.5 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-[11px] text-rose-300 border border-rose-500/20">
+                <span className="font-bold">⚠️</span>
+                <span className="truncate">{mathIssue}</span>
+              </div>
+            ) : mathPreview ? (
+              <div
+                className="flex min-h-[38px] max-h-[80px] items-center justify-center overflow-x-auto rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-center text-sm text-white studio-scroll-hidden"
+                dangerouslySetInnerHTML={{ __html: mathPreview }}
+              />
+            ) : null}
+
+            {/* Quick Symbol Chips */}
+            <div className="flex items-center gap-1 overflow-x-auto pb-0.5 text-[11px] studio-scroll-hidden">
+              {[
+                { label: 'x/y', latex: '\\frac{a}{b}', select: [6, 1] as [number, number] },
+                { label: '√x', latex: '\\sqrt{x}', select: [6, 1] as [number, number] },
+                { label: '±', latex: '\\pm ' },
+                { label: 'x²', latex: '^{2}' },
+                { label: '∫', latex: '\\int_{a}^{b} ' },
+                { label: '∑', latex: '\\sum_{i=1}^{n} ' },
+                { label: 'π', latex: '\\pi ' },
+                { label: 'θ', latex: '\\theta ' },
+                { label: '×', latex: '\\times ' },
+                { label: '≤', latex: '\\le ' },
+                { label: '≥', latex: '\\ge ' },
+                { label: '≠', latex: '\\neq ' },
+              ].map((sym) => (
+                <button
+                  key={sym.label}
+                  type="button"
+                  onClick={() => insertMath(sym.latex, sym.select)}
+                  className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-2 py-1 font-mono text-[11px] text-neutral-300 hover:border-signal-500/40 hover:bg-signal-500/15 hover:text-white transition"
+                  title={`Insert ${sym.latex}`}
+                >
+                  {sym.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-between pt-1 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => void addMathToBoard()}
+                disabled={mathBusy || !!mathIssue || mathSource.trim() === ''}
+                className="flex items-center gap-1 text-[11px] font-semibold text-neutral-400 hover:text-signal-300 disabled:opacity-40 transition"
+                title="Add as a new line under the formula"
+              >
+                <PiPlusBold className="h-3 w-3" />
+                <span>+ New line</span>
+              </button>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setEditingMath(null)}
+                  className="rounded-xl px-2.5 py-1.5 text-xs font-semibold text-neutral-300 hover:bg-white/10 hover:text-white transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void replaceMathOnBoard()}
+                  disabled={mathBusy || !!mathIssue || mathSource.trim() === ''}
+                  className="flex items-center gap-1.5 rounded-xl bg-signal-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-lg shadow-signal-600/30 hover:bg-signal-500 disabled:opacity-40 transition"
+                >
+                  {mathBusy ? (
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  ) : (
+                    <PiCheckBold className="h-3.5 w-3.5" />
+                  )}
+                  <span>Update</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Imported pages: select the rest of the import, or delete what is
           selected. Only while a page is selected, so nothing sits over the
@@ -2859,6 +3586,267 @@ export function BoardExcalidraw({
         </div>
       )}
 
+      {/* Contextual Shape Toolbar: Edit outline, stroke thickness, fill, duplicate, delete */}
+      {selectedShape && canDraw && !insertStudioOpen && !editingMath && (
+        <div
+          data-shape-actions
+          role="toolbar"
+          aria-label="Selected shape actions"
+          style={{
+            left: Math.max(140, selectedShape.left + selectedShape.width / 2),
+            top:
+              selectedShape.top - 52 >= 64
+                ? selectedShape.top - 52
+                : selectedShape.top + selectedShape.height + 14,
+            transform: 'translateX(-50%)',
+          }}
+          className="shape-contextual-bar"
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* 1. Outline Color Swatch & Popover */}
+          <div className="relative flex items-center">
+            <button
+              type="button"
+              className={cn(
+                'shape-bar-btn',
+                shapeToolbarMenu === 'stroke' && 'active',
+              )}
+              onClick={() =>
+                setShapeToolbarMenu((cur) => (cur === 'stroke' ? 'none' : 'stroke'))
+              }
+              title="Change Outline Color"
+            >
+              <span
+                className="shape-bar-swatch-ring"
+                style={{ borderColor: selectedShape.strokeColor }}
+              >
+                <span
+                  className="shape-bar-swatch-inner"
+                  style={{ background: selectedShape.strokeColor }}
+                />
+              </span>
+              <span className="shape-bar-label">Outline</span>
+              <PiCaretDownBold className="h-2.5 w-2.5 opacity-60" />
+            </button>
+
+            {shapeToolbarMenu === 'stroke' && (
+              <div
+                className="shape-bar-dropdown"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="shape-bar-dropdown-title">Outline Color</div>
+                <div className="palette-grid">
+                  {[
+                    '#ffffff',
+                    '#10b981',
+                    '#38bdf8',
+                    '#fbbf24',
+                    '#f43f5e',
+                    '#a855f7',
+                    '#94a3b8',
+                    '#f97316',
+                  ].map((col) => (
+                    <button
+                      key={col}
+                      type="button"
+                      className={cn(
+                        'color-dot',
+                        selectedShape.strokeColor.toLowerCase() ===
+                          col.toLowerCase() && 'active',
+                      )}
+                      style={{ background: col }}
+                      onClick={() => {
+                        updateSelectedShapeStrokeColor(col);
+                      }}
+                      title={`Outline ${col}`}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 2. Stroke Thickness & Popover */}
+          <div className="relative flex items-center">
+            <button
+              type="button"
+              className={cn(
+                'shape-bar-btn',
+                shapeToolbarMenu === 'width' && 'active',
+              )}
+              onClick={() =>
+                setShapeToolbarMenu((cur) => (cur === 'width' ? 'none' : 'width'))
+              }
+              title="Change Stroke Thickness"
+            >
+              <div className="shape-bar-thickness-preview">
+                <span
+                  style={{
+                    height: Math.min(6, Math.max(1.5, selectedShape.strokeWidth)),
+                    background: selectedShape.strokeColor,
+                  }}
+                />
+              </div>
+              <span className="shape-bar-label">
+                {selectedShape.strokeWidth <= 1.5
+                  ? 'Fine'
+                  : selectedShape.strokeWidth <= 2.5
+                  ? 'Normal'
+                  : selectedShape.strokeWidth <= 4
+                  ? 'Bold'
+                  : 'Heavy'}
+              </span>
+              <PiCaretDownBold className="h-2.5 w-2.5 opacity-60" />
+            </button>
+
+            {shapeToolbarMenu === 'width' && (
+              <div
+                className="shape-bar-dropdown"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="shape-bar-dropdown-title">Stroke Thickness</div>
+                <div className="thickness-options">
+                  {[
+                    { label: 'Fine', w: 1 },
+                    { label: 'Normal', w: 2 },
+                    { label: 'Bold', w: 3.5 },
+                    { label: 'Heavy', w: 6 },
+                  ].map(({ label, w }) => (
+                    <button
+                      key={label}
+                      type="button"
+                      className={cn(
+                        'thickness-pill-btn',
+                        Math.abs(selectedShape.strokeWidth - w) < 0.8 && 'active',
+                      )}
+                      onClick={() => {
+                        updateSelectedShapeStrokeWidth(w);
+                      }}
+                    >
+                      <span
+                        className="thickness-line"
+                        style={{
+                          height: w,
+                          background: selectedShape.strokeColor,
+                        }}
+                      />
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 3. Fill Color (if shape supports fill) */}
+          {selectedShape.canFill && (
+            <div className="relative flex items-center">
+              <button
+                type="button"
+                className={cn(
+                  'shape-bar-btn',
+                  shapeToolbarMenu === 'fill' && 'active',
+                )}
+                onClick={() =>
+                  setShapeToolbarMenu((cur) => (cur === 'fill' ? 'none' : 'fill'))
+                }
+                title="Change Fill Color"
+              >
+                {selectedShape.backgroundColor === 'transparent' ||
+                !selectedShape.backgroundColor ? (
+                  <span className="shape-bar-swatch-none">⊘</span>
+                ) : (
+                  <span
+                    className="shape-bar-swatch-solid"
+                    style={{ background: selectedShape.backgroundColor }}
+                  />
+                )}
+                <span className="shape-bar-label">Fill</span>
+                <PiCaretDownBold className="h-2.5 w-2.5 opacity-60" />
+              </button>
+
+              {shapeToolbarMenu === 'fill' && (
+                <div
+                  className="shape-bar-dropdown"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="shape-bar-dropdown-title">Fill Color</div>
+                  <div className="fill-palette-grid">
+                    <button
+                      type="button"
+                      className={cn(
+                        'color-dot fill-none-dot',
+                        (selectedShape.backgroundColor === 'transparent' ||
+                          !selectedShape.backgroundColor) &&
+                          'active',
+                      )}
+                      onClick={() => {
+                        updateSelectedShapeFillColor('transparent');
+                      }}
+                      title="Outline Only (No Fill)"
+                    >
+                      <span className="fill-none-slash">⊘</span>
+                    </button>
+                    {[
+                      '#ffffff',
+                      '#10b981',
+                      '#38bdf8',
+                      '#fbbf24',
+                      '#f43f5e',
+                      '#a855f7',
+                      '#94a3b8',
+                      '#f97316',
+                    ].map((col) => (
+                      <button
+                        key={col}
+                        type="button"
+                        className={cn(
+                          'color-dot',
+                          selectedShape.backgroundColor.toLowerCase() ===
+                            col.toLowerCase() && 'active',
+                        )}
+                        style={{ background: col }}
+                        onClick={() => {
+                          updateSelectedShapeFillColor(col);
+                        }}
+                        title={`Fill ${col}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <span className="shape-bar-divider" />
+
+          {/* 4. Duplicate */}
+          <button
+            type="button"
+            className="shape-bar-icon-btn"
+            onClick={duplicateSelectedShape}
+            title="Duplicate Shape"
+          >
+            <PiCopyBold className="h-3.5 w-3.5" />
+          </button>
+
+          {/* 5. Delete */}
+          <button
+            type="button"
+            className="shape-bar-icon-btn danger"
+            onClick={deleteSelectedShape}
+            title="Delete Shape"
+          >
+            <PiTrashBold className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       {preview && previewShape && (
         <svg
           data-shape-preview
@@ -2874,7 +3862,7 @@ export function BoardExcalidraw({
                   }`,
               )
               .join(' ')}
-            fill="none"
+            fill={shapeFillColor !== 'transparent' ? shapeFillColor : 'none'}
             stroke="currentColor"
             strokeWidth={2}
             strokeLinejoin="round"
@@ -3178,11 +4166,112 @@ export function BoardExcalidraw({
       {/* =====================================================================
           LAYER 3: UNIFIED MINIMALIST TOOL DOCK (Google Floating Island)
           ===================================================================== */}
-      {canDraw && (
+      {canEdit && (
         <div className="dock-wrapper">
+          {/* Contextual Shapes Flyout Popover */}
+          {shapesPopoverOpen && (
+            <div
+              className="properties-popover shapes-popover"
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+            >
+              <div className="pop-row-label">
+                <span>Chalkboard Shapes</span>
+                <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>Click to pick</span>
+              </div>
+              <div className="shapes-grid">
+                {SHAPES.map((shape) => {
+                  const isActive = activeShape === shape.key;
+                  return (
+                    <button
+                      key={shape.key}
+                      type="button"
+                      className={cn('shape-select-btn', isActive && 'active')}
+                      onClick={() => addShape(shape.key)}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                      }}
+                      title={`Draw ${shape.label}`}
+                    >
+                      <svg viewBox="0 0 24 24">
+                        <path
+                          d={shape.icon}
+                          fill={shapeFillColor !== 'transparent' && shape.key !== 'line' && shape.key !== 'arrow' ? shapeFillColor : 'none'}
+                          stroke="currentColor"
+                          strokeWidth={1.8}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      <span>{shape.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Shape Fill Color Row */}
+              <div className="pop-row-label" style={{ marginTop: 12 }}>
+                <span>Shape Fill</span>
+                <span style={{ fontSize: 10, color: shapeFillColor === 'transparent' ? 'var(--text-dim)' : 'var(--accent)' }}>
+                  {shapeFillColor === 'transparent' ? 'Outline Only' : shapeFillColor.toUpperCase()}
+                </span>
+              </div>
+              <div className="palette-grid">
+                <button
+                  type="button"
+                  className={cn('color-dot fill-none-dot', shapeFillColor === 'transparent' && 'active')}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShapeFill('transparent');
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                  }}
+                  title="Outline Only (No Fill)"
+                >
+                  <span className="fill-none-slash">⊘</span>
+                </button>
+                {['#ffffff', '#10b981', '#38bdf8', '#fbbf24', '#f43f5e', '#a855f7', '#94a3b8', '#f97316'].map((col) => (
+                  <button
+                    key={col}
+                    type="button"
+                    className={cn('color-dot', shapeFillColor.toLowerCase() === col.toLowerCase() && 'active')}
+                    style={{ background: col }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShapeFill(col);
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                    }}
+                    title={`Fill ${col}`}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Contextual Tool Property Flyout (Colors, Sizes, Styles) */}
           {propertiesPopoverOpen && (
-            <div className="properties-popover" onClick={(e) => e.stopPropagation()}>
+            <div
+              className="properties-popover"
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+            >
               <div className="pop-row-label">
                 <span>Color Palette</span>
                 <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--accent)' }}>
@@ -3190,12 +4279,21 @@ export function BoardExcalidraw({
                 </span>
               </div>
               <div className="palette-grid">
-                {['#10b981', '#38bdf8', '#fbbf24', '#f43f5e', '#a855f7', '#ffffff', '#27272a'].map((col) => (
+                {['#ffffff', '#10b981', '#38bdf8', '#fbbf24', '#f43f5e', '#a855f7', '#94a3b8'].map((col) => (
                   <div
                     key={col}
                     className={cn('color-dot', activeColor.toLowerCase() === col.toLowerCase() && 'active')}
                     style={{ background: col }}
-                    onClick={() => setStrokeColor(col)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setStrokeColor(col);
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                    }}
+                    title={`Color ${col}`}
                   />
                 ))}
               </div>
@@ -3206,18 +4304,41 @@ export function BoardExcalidraw({
               </div>
               <div className="stroke-size-selector">
                 {[
-                  { weight: 2, height: 2 },
-                  { weight: 4, height: 4 },
-                  { weight: 8, height: 8 },
-                  { weight: 16, height: 16 },
-                ].map(({ weight, height }) => (
+                  { label: 'Fine', weight: 1, barHeight: 2 },
+                  { label: 'Normal', weight: 2, barHeight: 3 },
+                  { label: 'Bold', weight: 3.5, barHeight: 5 },
+                  { label: 'Heavy', weight: 6, barHeight: 8 },
+                ].map(({ label, weight, barHeight }) => (
                   <button
                     key={weight}
                     type="button"
                     className={cn('stroke-btn', activeWeight === weight && 'active')}
-                    onClick={() => setStrokeWeight(weight)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPropertiesPopoverOpen(false);
+                      setStrokeWeight(weight);
+                      const targetTool = activeToolState === 'highlighter' ? 'highlighter' : 'pen';
+                      setActiveToolState(targetTool);
+                      const editor = apiRef.current;
+                      if (editor) {
+                        editor.updateScene({
+                          appState: {
+                            selectedElementIds: {},
+                            currentItemStrokeWidth: weight,
+                          },
+                        });
+                        editor.setActiveTool({ type: 'freedraw', locked: true });
+                      }
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                    }}
+                    title={`${label} (${weight}px)`}
                   >
-                    <div style={{ width: 14, height, background: 'currentColor', borderRadius: 2 }} />
+                    <div style={{ width: 16, height: barHeight, background: 'currentColor', borderRadius: 2 }} />
+                    <span style={{ fontSize: 9.5, fontWeight: 600 }}>{label}</span>
                   </button>
                 ))}
               </div>
@@ -3240,8 +4361,14 @@ export function BoardExcalidraw({
             <button
               type="button"
               className={cn('tool-icon-btn', activeToolState === 'pen' && 'active')}
-              onClick={() => selectTool('pen')}
-              title="Chalkboard Pen (P)"
+              onClick={() => {
+                if (activeToolState === 'pen') {
+                  setPropertiesPopoverOpen((v) => !v);
+                } else {
+                  selectTool('pen');
+                }
+              }}
+              title="Chalkboard Pen (P) — Click again for thickness"
             >
               <svg className="icon" viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>
             </button>
@@ -3250,8 +4377,14 @@ export function BoardExcalidraw({
             <button
               type="button"
               className={cn('tool-icon-btn', activeToolState === 'highlighter' && 'active')}
-              onClick={() => selectTool('highlighter')}
-              title="Highlighter Marker (H)"
+              onClick={() => {
+                if (activeToolState === 'highlighter') {
+                  setPropertiesPopoverOpen((v) => !v);
+                } else {
+                  selectTool('highlighter');
+                }
+              }}
+              title="Highlighter Marker (H) — Click again for options"
             >
               <svg className="icon" viewBox="0 0 24 24"><path d="M14 2l4 4L7 17H3v-4L14 2z"/><line x1="3" y1="22" x2="21" y2="22"/></svg>
             </button>
@@ -3269,9 +4402,13 @@ export function BoardExcalidraw({
             {/* Tool 5: Shapes */}
             <button
               type="button"
-              className={cn('tool-icon-btn', activeToolState === 'rectangle' && 'active')}
-              onClick={() => selectTool('rectangle')}
-              title="Geometric Shapes (R)"
+              className={cn('tool-icon-btn', (activeToolState === 'rectangle' || shapesPopoverOpen) && 'active')}
+              onClick={() => {
+                setPropertiesPopoverOpen(false);
+                setShapesPopoverOpen((v) => !v);
+                selectTool('rectangle');
+              }}
+              title="Geometric Shapes (Square, Circle, Triangle, Star…)"
             >
               <svg className="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>
             </button>
@@ -3293,7 +4430,16 @@ export function BoardExcalidraw({
               onClick={() => selectTool('laser')}
               title="Presentation Laser Pointer (L)"
             >
-              <svg className="icon" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              <svg className="icon" viewBox="0 0 24 24">
+                <path d="M4 20l8.5-8.5" />
+                <path d="M10.5 9.5l3-3a1.5 1.5 0 0 1 2.1 0l1.9 1.9a1.5 1.5 0 0 1 0 2.1l-3 3" />
+                <path d="M12.5 11.5l1.5 1.5" />
+                <circle cx="20" cy="4" r="1.5" style={{ fill: 'currentColor' }} />
+                <path d="M20 1v1" />
+                <path d="M20 6v1" />
+                <path d="M17 4h1" />
+                <path d="M22 4h1" />
+              </svg>
             </button>
 
             <div className="divider-v" />
@@ -3302,7 +4448,15 @@ export function BoardExcalidraw({
             <div
               className="color-swatch-trigger"
               style={{ background: activeColor }}
-              onClick={() => setPropertiesPopoverOpen((v) => !v)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setPropertiesPopoverOpen((v) => !v);
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
               title="Change color & stroke size"
             />
 
@@ -3403,7 +4557,7 @@ export function BoardExcalidraw({
 
 
 
-      {insertStudioOpen && canDraw && (
+      {insertStudioOpen && canEdit && (
         <div
           data-insert-studio-scrim
           className="pointer-events-auto fixed inset-0 z-[520] flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 backdrop-blur-md transition-opacity"
@@ -3781,7 +4935,16 @@ export function BoardExcalidraw({
                     } else if (insertStudioTab === 'quran') {
                       addQuranBlock();
                     } else if (insertStudioTab === 'docs') {
-                      if (linkSource.trim()) void importGoogleAsPages(linkSource);
+                      if (linkSource.trim()) {
+                        const isPres =
+                          linkSource.includes('/presentation/') ||
+                          linkSource.includes('docs.google.com/presentation');
+                        if (isPres) {
+                          void importGoogleAsPages(linkSource);
+                        } else {
+                          addLinkToBoard(linkSource);
+                        }
+                      }
                     } else if (insertStudioTab === 'files') {
                       fileInputRef.current?.click();
                     }
@@ -3801,7 +4964,9 @@ export function BoardExcalidraw({
                     : insertStudioTab === 'quran'
                       ? 'Add Ayah Block'
                       : insertStudioTab === 'docs'
-                        ? 'Import Slides'
+                        ? linkSource.includes('/presentation/')
+                          ? 'Import Slides'
+                          : 'Embed Link'
                         : 'Choose File'}
                 </button>
               </div>

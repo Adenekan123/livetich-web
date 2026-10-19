@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { API_URL } from '@/lib/api';
-import { getRealtimeToken } from '@/lib/client-token';
+import { getRealtimeToken, clearRealtimeToken } from '@/lib/client-token';
 import type {
   ForwardedPortInfo,
   TunnelClientToServerEvents,
@@ -40,11 +40,37 @@ export function PortPreviewView({
     const socket: TunnelSocket = io(`${API_URL}/tunnel`, {
       auth: (cb) =>
         void getRealtimeToken().then((tok) => cb({ token: tok ?? '' })),
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 25,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
 
     socket.on('connect', () => {
       socket.emit('tunnel:join', { sessionId });
+    });
+
+    socket.on('disconnect', (reason) => {
+      if (reason === 'io server disconnect') {
+        clearRealtimeToken();
+        setTimeout(() => socket.connect(), 1000);
+      }
+    });
+
+    socket.on('connect_error', (err) => {
+      const msg = err.message || '';
+      if (msg.toLowerCase().includes('unauthorized') || msg.toLowerCase().includes('token')) {
+        clearRealtimeToken();
+      }
+    });
+
+    socket.on('error' as unknown as keyof TunnelServerToClientEvents, (err: unknown) => {
+      const parsed = typeof err === 'object' && err !== null ? (err as { code?: string }) : null;
+      if (parsed?.code === 'UNAUTHORIZED') {
+        clearRealtimeToken();
+        setTimeout(() => socket.connect(), 800);
+      }
     });
 
     socket.on('tunnel:ports', (p) => {

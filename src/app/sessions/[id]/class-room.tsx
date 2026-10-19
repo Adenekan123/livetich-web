@@ -6,6 +6,7 @@ import { io, type Socket } from 'socket.io-client';
 import { endSession } from '@/app/actions/courses';
 import { API_URL } from '@/lib/api';
 import { clearRealtimeToken, getRealtimeToken } from '@/lib/client-token';
+import { useNetworkStatus } from '@/lib/network-status';
 import { avatarColor, btn, cn, initials } from '@/lib/ui';
 import type {
   BuzzerState,
@@ -45,6 +46,7 @@ import {
   PiVideoCamera,
   PiVideoCameraSlash,
   PiX,
+  PiWifiSlash,
 } from 'react-icons/pi';
 import { VideoStage, type VideoControls } from './video-stage';
 import {
@@ -264,6 +266,7 @@ export function ClassRoom({
   const [ending, startEnding] = useTransition();
   const socketRef = useRef<RoomSocket | null>(null);
   const [connected, setConnected] = useState(false);
+  const { isOnline } = useNetworkStatus();
   const [users, setUsers] = useState<RoomUser[]>([]);
   const [hands, setHands] = useState<RoomUser[]>([]);
   // Student ids the instructor has granted the mic. Students are muted by
@@ -485,7 +488,11 @@ export function ClassRoom({
       // Async auth: the httpOnly cookie is fetched from a same-origin route.
       auth: (cb) =>
         void getRealtimeToken().then((token) => cb({ token: token ?? '' })),
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 25,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
     socketRef.current = socket;
     // A stale realtime token makes the gateway reject auth and disconnect us.
@@ -1135,7 +1142,13 @@ export function ClassRoom({
               the /code socket. Kept mounted across view switches once present. */}
           {codeInstruction && (
             <div className={cn('absolute inset-3', view === 'code' ? '' : 'hidden')}>
-              <CodeBoard sessionId={sessionId} canEdit={isInstructor} />
+              <CodeBoard
+                sessionId={sessionId}
+                canEdit={isInstructor}
+                isInstructor={isInstructor}
+                currentUserId={me.userId}
+                users={users}
+              />
             </div>
           )}
 
@@ -2286,6 +2299,14 @@ export function ClassRoom({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Offline Alert Banner */}
+      {!isOnline && (
+        <div className="fixed top-4 left-1/2 z-50 -translate-x-1/2 flex items-center gap-2 rounded-full border border-amber-500/30 bg-neutral-900/95 px-4 py-2 text-xs font-semibold text-amber-300 shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-2">
+          <PiWifiSlash className="h-4 w-4 text-amber-400 animate-pulse shrink-0" />
+          <span>You are currently offline. Check your internet connection.</span>
         </div>
       )}
 
