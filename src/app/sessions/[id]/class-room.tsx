@@ -81,6 +81,25 @@ import {
   stopQuestionTone,
 } from './tone-player';
 
+function extendHifzDraftRange(
+  draft: HifzDraft | null,
+  position: { surah: number; ayah: number },
+): HifzDraft | null {
+  if (!draft) return draft;
+  if (position.surah !== draft.surah) {
+    return {
+      ...draft,
+      surah: position.surah,
+      ayahStart: position.ayah,
+      ayahEnd: position.ayah,
+    };
+  }
+  const ayahStart = Math.min(draft.ayahStart, position.ayah);
+  const ayahEnd = Math.max(draft.ayahEnd, position.ayah);
+  if (ayahStart === draft.ayahStart && ayahEnd === draft.ayahEnd) return draft;
+  return { ...draft, ayahStart, ayahEnd };
+}
+
 // Excalidraw touches browser-only APIs, so it must not render on the server.
 const BoardExcalidraw = dynamic(
   () => import('./board-excalidraw').then((m) => m.BoardExcalidraw),
@@ -550,9 +569,11 @@ export function ClassRoom({
     });
     socket.on('view:changed', (p) => setView(p.view));
     socket.on('theme:changed', (p) => setScheme(p.scheme));
-    socket.on('quran:position', (p) =>
-      setQuranPos({ surah: p.surah, ayah: p.ayah }),
-    );
+    socket.on('quran:position', (p) => {
+      const position = { surah: p.surah, ayah: p.ayah };
+      setQuranPos(position);
+      setHifzDraft((draft) => extendHifzDraftRange(draft, position));
+    });
     socket.on('tajweed:annotation:created', (p) =>
       tajweedRef.current.receiveSaved(p.annotation),
     );
@@ -711,6 +732,71 @@ export function ClassRoom({
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // A coding task announcement is a live socket event, so someone who joins
+  // after it was sent would otherwise miss the task banner and VS Code link.
+  // Seed the room from the caller's own coding list on entry; the socket event
+  // above remains the immediate update path for students already in class.
+  useEffect(() => {
+    if (!codeInstruction) return;
+    let current = true;
+    void (async () => {
+      try {
+        const token = await getRealtimeToken();
+        const endpoint = isInstructor ? '/coding/teaching' : '/coding/mine';
+        const res = await fetch(`${API_URL}${endpoint}`, {
+          headers: { Authorization: `Bearer ${token ?? ''}` },
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const assignments = (await res.json()) as {
+          id: string;
+          title: string;
+          kind?: string;
+          status: string;
+          sessionId: string | null;
+          language: string | null;
+          requirementCount?: number;
+          requirements?: unknown[];
+        }[];
+        const active = assignments
+          .filter(
+            (assignment) =>
+              assignment.sessionId === sessionId &&
+              (!assignment.kind || assignment.kind === 'LIVE') &&
+              assignment.status === 'LIVE',
+          )
+          [0];
+        if (!current || !active) return;
+        let requirementCount =
+          active.requirementCount ?? active.requirements?.length;
+        if (requirementCount === undefined) {
+          const detail = await fetch(
+            `${API_URL}/coding/assignments/${active.id}`,
+            { headers: { Authorization: `Bearer ${token ?? ''}` }, cache: 'no-store' },
+          );
+          if (detail.ok) {
+            const data = (await detail.json()) as {
+              requirements?: unknown[];
+            };
+            requirementCount = data.requirements?.length;
+          }
+        }
+        if (!current) return;
+        setCodingTask({
+          assignmentId: active.id,
+          title: active.title,
+          language: active.language,
+          requirementCount: requirementCount ?? 0,
+        });
+      } catch {
+        // The room remains usable if the coding list is temporarily offline.
+      }
+    })();
+    return () => {
+      current = false;
+    };
+  }, [codeInstruction, isInstructor, sessionId]);
+
   // Keep the ref in sync so the (once-registered) socket handler reads the live
   // panel. Clearing the unread badge is done where chat is opened (openChat), not
   // here, to avoid a setState-in-effect cascade.
@@ -736,27 +822,6 @@ export function ClassRoom({
     setPanel('chat');
     clearUnread();
   };
-
-  // Grow the active recitation to cover wherever the mushaf goes: same surah →
-  // widen the ayah span to include the current ayah; a new surah → restart the
-  // span there. The draft's range thus tracks the whole session's reading.
-  useEffect(() => {
-    setHifzDraft((d) => {
-      if (!d) return d;
-      if (quranPos.surah !== d.surah) {
-        return {
-          ...d,
-          surah: quranPos.surah,
-          ayahStart: quranPos.ayah,
-          ayahEnd: quranPos.ayah,
-        };
-      }
-      const ayahStart = Math.min(d.ayahStart, quranPos.ayah);
-      const ayahEnd = Math.max(d.ayahEnd, quranPos.ayah);
-      if (ayahStart === d.ayahStart && ayahEnd === d.ayahEnd) return d;
-      return { ...d, ayahStart, ayahEnd };
-    });
-  }, [quranPos.surah, quranPos.ayah]);
 
   // Buzzer questions for this session (instructor-only endpoint).
   useEffect(() => {
@@ -899,7 +964,9 @@ export function ClassRoom({
   // Instructor turns the shared mushaf; the position broadcasts to everyone.
   const navigateQuran = (surah: number, ayah: number) => {
     if (!isInstructor) return;
-    setQuranPos({ surah, ayah });
+    const position = { surah, ayah };
+    setQuranPos(position);
+    setHifzDraft((draft) => extendHifzDraftRange(draft, position));
     socketRef.current?.emit('quran:navigate', { sessionId, surah, ayah });
   };
 

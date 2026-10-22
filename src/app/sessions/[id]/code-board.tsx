@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { EditorState, StateEffect, StateField, type Extension, type Range } from '@codemirror/state';
 import {
   EditorView,
@@ -21,7 +21,11 @@ import { css } from '@codemirror/lang-css';
 import { json } from '@codemirror/lang-json';
 import { markdown } from '@codemirror/lang-markdown';
 import { yCollab } from 'y-codemirror.next';
-import { Awareness } from 'y-protocols/awareness';
+import {
+  applyAwarenessUpdate,
+  Awareness,
+  encodeAwarenessUpdate,
+} from 'y-protocols/awareness';
 import { io, type Socket } from 'socket.io-client';
 import * as Y from 'yjs';
 import { API_URL } from '@/lib/api';
@@ -30,6 +34,7 @@ import { useNetworkStatus } from '@/lib/network-status';
 import type {
   CodeClientToServerEvents,
   CodeFileTreeNode,
+  CodeCursorPayload,
   CodeFocusPayload,
   CodePermissionPayload,
   CodePointerPayload,
@@ -321,17 +326,23 @@ export function CodeBoard({
   const hostRef = useRef<HTMLDivElement>(null);
   const [lang, setLang] = useState<string>(DEFAULT_LANG);
   const [activeTab, setActiveTab] = useState<BottomTab>('editor');
+  const [previewReloadSignal, setPreviewReloadSignal] = useState(0);
+  const previewReloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showTerminalDrawer, setShowTerminalDrawer] = useState<boolean>(true);
   const [showFileTree, setShowFileTree] = useState<boolean>(true);
 
   const [tree, setTree] = useState<CodeFileTreeNode[]>([]);
   const [openFiles, setOpenFiles] = useState<string[]>([]);
+  const latestTabCloseRequestRef = useRef<string | null>(null);
   const [activeFile, setActiveFile] = useState<string>('');
   const [permissionMode, setPermissionMode] = useState<CodeWritePermissionMode>('INSTRUCTOR_ONLY');
   const [delegatedUserIds, setDelegatedUserIds] = useState<string[]>([]);
   const [showPermissionMenu, setShowPermissionMenu] = useState<boolean>(false);
   const [cursorPos, setCursorPos] = useState<{ line: number; ch: number } | null>(null);
   const cursorPosRef = useRef<{ line: number; ch: number } | null>(null);
+  const cursorPathRef = useRef('');
+  const localCursorByPathRef = useRef(new Map<string, { anchor: number; head: number }>());
+  const suppressNextCursorEmitRef = useRef(false);
   const [totalLines, setTotalLines] = useState<number>(1);
   const selectionRef = useRef<{
     anchor: { line: number; ch: number };
@@ -346,6 +357,15 @@ export function CodeBoard({
   } | null>(null);
   const treeRef = useRef<CodeFileTreeNode[]>([]);
   const socketRef = useRef<CodeSocket | null>(null);
+  const cursorSourceIdRef = useRef(`web:${useId()}`);
+  const cursorSequenceRef = useRef(0);
+  const lastCursorSentAtRef = useRef(0);
+  const cursorSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingCursorRef = useRef<{ path: string; line: number; ch: number; selection?: CodeCursorPayload['selection'] } | null>(null);
+  const latestRemoteSequencesRef = useRef(new Map<string, number>());
+  const remotePointerLocationRef = useRef<{ path: string; line: number; ch: number } | null>(null);
+  const lastPointerSentAtRef = useRef(0);
+  const sidebarPointerHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const docRef = useRef<Y.Doc | null>(null);
   const metaRef = useRef<Y.Map<string> | null>(null);
@@ -361,6 +381,7 @@ export function CodeBoard({
 
   // Google-grade Smooth Floating Remote Cursor Layer State
   const [floatingCursor, setFloatingCursor] = useState<{
+    path: string;
     x: number;
     y: number;
     visible: boolean;
@@ -369,6 +390,7 @@ export function CodeBoard({
     name: string;
     isMoving: boolean;
   }>({
+    path: '',
     x: 0,
     y: 0,
     visible: false,
@@ -382,6 +404,7 @@ export function CodeBoard({
   const [editorRipples, setEditorRipples] = useState<{ id: string; x: number; y: number; color?: string }[]>([]);
   const [activeRippleRow, setActiveRippleRow] = useState<{ path: string; x: number; y: number } | null>(null);
   const cursorHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cursorFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastRippleTimeRef = useRef<{ time: number; x: number; y: number }>({ time: 0, x: 0, y: 0 });
 
   const triggerEditorRipple = useCallback((x: number, y: number, color = '#10b981') => {
@@ -406,14 +429,20 @@ export function CodeBoard({
 
   // Calculates 2D pixel coordinates inside CodeMirror for smooth floating cursor gliding
   const updateFloatingCursorCoords = useCallback(
-    (line: number, ch: number, name = 'Instructor', triggerClick = false) => {
+    (path: string, line: number, ch: number, name = 'Instructor', triggerClick = false, refreshLifetime = true) => {
+      const normalizePath = (value: string) => value.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').toLowerCase();
+      if (!path || normalizePath(path) !== normalizePath(activeFileRef.current)) {
+        setFloatingCursor((prev) => ({ ...prev, visible: false, isMoving: false }));
+        return;
+      }
       const view = viewRef.current;
       const host = hostRef.current;
       if (!view || !host) return;
 
       try {
         const doc = view.state.doc;
-        const safeLine = Math.max(1, Math.min(line + 1, doc.lines));
+        if (!Number.isFinite(line) || !Number.isFinite(ch)) return;
+        const safeLine = Math.max(1, Math.min(Math.trunc(line) + 1, doc.lines));
         const lineObj = doc.line(safeLine);
         const pos = Math.min(lineObj.from + Math.max(0, ch), lineObj.to);
         const coords = view.coordsAtPos(pos, ch > 0 ? -1 : 1) || view.coordsAtPos(pos);
@@ -431,25 +460,37 @@ export function CodeBoard({
           return;
         }
 
-        setFloatingCursor({
+        setFloatingCursor((prev) => ({
+          ...prev,
+          path,
           x,
           y,
           visible: true,
           line,
           ch,
           name,
-          isMoving: true,
-        });
+          isMoving: refreshLifetime ? true : prev.isMoving,
+        }));
 
         if (triggerClick) {
           const yCenter = y + (coords.bottom - coords.top) / 2;
           triggerEditorRipple(x, yCenter);
         }
 
-        if (cursorHideTimerRef.current) clearTimeout(cursorHideTimerRef.current);
-        cursorHideTimerRef.current = setTimeout(() => {
-          setFloatingCursor((prev) => ({ ...prev, isMoving: false }));
-        }, 2600);
+        remotePointerLocationRef.current = { path, line, ch };
+        if (refreshLifetime) {
+          if (cursorHideTimerRef.current) clearTimeout(cursorHideTimerRef.current);
+          if (cursorFadeTimerRef.current) clearTimeout(cursorFadeTimerRef.current);
+          cursorHideTimerRef.current = setTimeout(() => {
+            cursorHideTimerRef.current = null;
+            remotePointerLocationRef.current = null;
+            setFloatingCursor((prev) => ({ ...prev, isMoving: false }));
+            cursorFadeTimerRef.current = setTimeout(() => {
+              cursorFadeTimerRef.current = null;
+              setFloatingCursor((prev) => ({ ...prev, visible: false }));
+            }, 160);
+          }, 950);
+        }
       } catch {
         setFloatingCursor((prev) => ({ ...prev, visible: false }));
       }
@@ -469,8 +510,10 @@ export function CodeBoard({
     if (!view) return;
     const scrollDom = view.scrollDOM;
     const onScroll = () => {
-      if (instructorLocation) {
-        updateFloatingCursorCoords(instructorLocation.line, instructorLocation.ch, 'Instructor', false);
+      const pointer = remotePointerLocationRef.current;
+      const normalizePath = (value: string) => value.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').toLowerCase();
+      if (pointer && normalizePath(pointer.path) === normalizePath(activeFileRef.current)) {
+        updateFloatingCursorCoords(pointer.path, pointer.line, pointer.ch, 'Instructor', false, false);
       }
     };
     scrollDom.addEventListener('scroll', onScroll, { passive: true });
@@ -698,9 +741,6 @@ export function CodeBoard({
           ...(shouldScroll ? [EditorView.scrollIntoView(headPos, { y: 'nearest' })] : []),
         ],
       });
-      setTimeout(() => {
-        updateFloatingCursorCoords(cursor.line, cursor.ch, 'Instructor', false);
-      }, 20);
     } catch {}
   };
 
@@ -865,11 +905,6 @@ export function CodeBoard({
       });
     }
 
-    setSidebarPointer({
-      target: targetNorm,
-      isFolder: true,
-    });
-
     if (isWritable && socketRef.current?.connected) {
       socketRef.current.emit('code:folder-toggle' as unknown as keyof CodeClientToServerEvents, {
         sessionId,
@@ -894,10 +929,10 @@ export function CodeBoard({
     return a === b || a.endsWith('/' + b) || b.endsWith('/' + a);
   };
 
+  const sameCodePath = (pathA?: string, pathB?: string): boolean =>
+    Boolean(pathA && pathB && normalizeFolderPath(pathA) === normalizeFolderPath(pathB));
+
   const activeFileRef = useRef(activeFile);
-  useEffect(() => {
-    activeFileRef.current = activeFile;
-  }, [activeFile]);
 
   // Whenever activeFile changes, gently scroll the tree node into view if it is visible
   useEffect(() => {
@@ -921,6 +956,99 @@ export function CodeBoard({
         : permissionMode === 'DELEGATED'
           ? delegatedUserIds.includes(currentUserId)
           : false;
+  const canControlMirror =
+    isInstructor || users.some((user) => user.userId === currentUserId && user.role === 'ORG_ADMIN');
+
+  const ensureCursorSourceId = () => cursorSourceIdRef.current;
+
+  const selectFile = (filePath: string, e?: React.MouseEvent) => {
+    if (remotePointerLocationRef.current && !sameCodePath(remotePointerLocationRef.current.path, filePath)) {
+      remotePointerLocationRef.current = null;
+      setFloatingCursor((prev) => ({ ...prev, visible: false, isMoving: false }));
+      if (cursorHideTimerRef.current) clearTimeout(cursorHideTimerRef.current);
+      if (cursorFadeTimerRef.current) clearTimeout(cursorFadeTimerRef.current);
+    }
+    if (e) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      triggerSidebarRipple(filePath, e.clientX - rect.left, e.clientY - rect.top);
+    }
+    // Keep the mutable path in step with the user's event before async editor/socket callbacks run.
+    // eslint-disable-next-line react-hooks/immutability
+    activeFileRef.current = filePath;
+    setActiveFile(filePath);
+    const nextOpenFiles = openFiles.includes(filePath) ? openFiles : [...openFiles, filePath];
+    setOpenFiles(nextOpenFiles);
+    setLang(detectLangFromPath(filePath));
+    const cached = fileContentsRef.current.get(filePath);
+    if (cached) setTotalLines(cached.split('\n').length);
+    expandAncestorsOfFile(filePath);
+    if (isWritable && socketRef.current?.connected) {
+      socketRef.current.emit('code:pointer', {
+        sessionId,
+        target: filePath,
+        isFolder: false,
+        surface: 'sidebar',
+        isClick: true,
+      });
+    }
+    if (canControlMirror && socketRef.current?.connected) {
+      socketRef.current.emit('code:focus', { sessionId, path: filePath, openFiles: nextOpenFiles });
+    }
+  };
+
+  const emitCodeCursor = (
+    path: string,
+    line: number,
+    ch: number,
+    selection?: CodeCursorPayload['selection'],
+  ) => {
+    const socket = socketRef.current;
+    if (!canControlMirror || !socket?.connected || !path) return;
+    socket.emit('code:cursor', {
+      sessionId,
+      sourceId: ensureCursorSourceId(),
+      sequence: ++cursorSequenceRef.current,
+      path,
+      line,
+      ch,
+      selection,
+    });
+  };
+
+  const queueCodeCursor = (
+    path: string,
+    line: number,
+    ch: number,
+    selection?: CodeCursorPayload['selection'],
+    requestedAt = 0,
+  ) => {
+    pendingCursorRef.current = { path, line, ch, selection };
+    if (cursorSendTimerRef.current) return;
+    const wait = Math.max(0, 50 - (requestedAt - lastCursorSentAtRef.current));
+    cursorSendTimerRef.current = setTimeout(() => {
+      cursorSendTimerRef.current = null;
+      const pending = pendingCursorRef.current;
+      pendingCursorRef.current = null;
+      if (!pending) return;
+      lastCursorSentAtRef.current = requestedAt + wait;
+      emitCodeCursor(pending.path, pending.line, pending.ch, pending.selection);
+    }, wait);
+  };
+
+  const clearRemoteCursor = () => {
+    cursorPosRef.current = null;
+    cursorPathRef.current = '';
+    selectionRef.current = null;
+    setCursorPos(null);
+    setInstructorLocation(null);
+    viewRef.current?.dispatch({ effects: setRemoteSelectionEffect.of(null) });
+    setFloatingCursor((prev) => ({ ...prev, visible: false, isMoving: false }));
+    remotePointerLocationRef.current = null;
+    setSidebarPointer(null);
+    if (cursorHideTimerRef.current) clearTimeout(cursorHideTimerRef.current);
+    if (cursorFadeTimerRef.current) clearTimeout(cursorFadeTimerRef.current);
+    if (sidebarPointerHideTimerRef.current) clearTimeout(sidebarPointerHideTimerRef.current);
+  };
 
   const updatePermission = (mode: CodeWritePermissionMode, studentId?: string) => {
     const targetDelegated = studentId ? [studentId] : [];
@@ -959,13 +1087,41 @@ export function CodeBoard({
       timeout: 10000,
     });
 
+    const onAwarenessUpdate = (
+      changes: { added: number[]; updated: number[]; removed: number[] },
+      origin: unknown,
+    ) => {
+      if (origin === 'remote' || !socket.connected) return;
+      const clients = [...changes.added, ...changes.updated, ...changes.removed];
+      if (clients.length === 0) return;
+      socket.emit('code:awareness', {
+        sessionId,
+        update: encodeAwarenessUpdate(awareness, clients),
+      });
+    };
+    awareness.on('update', onAwarenessUpdate);
+
     let authRetries = 0;
     socket.on('connect', () => {
       authRetries = 0;
       socket.emit('code:join', { sessionId });
     });
 
+    socket.on('code:joined' as unknown as keyof CodeServerToClientEvents, (p: unknown) => {
+      const payload = p as { sessionId?: string };
+      if (payload?.sessionId !== sessionId || !canControlMirror || !viewRef.current || !activeFileRef.current) return;
+      const view = viewRef.current;
+      const selection = view.state.selection.main;
+      const activeLine = view.state.doc.lineAt(selection.head);
+      const anchorLine = view.state.doc.lineAt(selection.anchor);
+      queueCodeCursor(activeFileRef.current, activeLine.number - 1, selection.head - activeLine.from, {
+        anchor: { line: anchorLine.number - 1, ch: selection.anchor - anchorLine.from },
+        active: { line: activeLine.number - 1, ch: selection.head - activeLine.from },
+      }, performance.now());
+    });
+
     socket.on('disconnect', (reason) => {
+      clearRemoteCursor();
       if (reason === 'io server disconnect') {
         clearRealtimeToken();
         if (authRetries < 5) {
@@ -995,6 +1151,16 @@ export function CodeBoard({
       }
     });
 
+    socket.on('code:awareness', (payload) => {
+      if (payload.sessionId !== sessionId) return;
+      try {
+        const update = payload.update instanceof Uint8Array
+          ? payload.update
+          : new Uint8Array(payload.update);
+        applyAwarenessUpdate(awareness, update, 'remote');
+      } catch {}
+    });
+
     const applyRemote = (u: unknown) => {
       let bytes: Uint8Array | null = null;
       if (u instanceof Uint8Array) bytes = u;
@@ -1005,16 +1171,45 @@ export function CodeBoard({
         bytes = Uint8Array.from((u as { data: number[] }).data);
       }
       if (bytes) {
+        // Remote Yjs edits update CodeMirror synchronously. The resulting
+        // updateListener callback must not echo its mapped cursor back to the
+        // IDE, where that stale position can pull the local caret backwards.
+        const wasApplyingRemote = isApplyingRemoteRef.current;
+        isApplyingRemoteRef.current = true;
+        if (cursorSendTimerRef.current) clearTimeout(cursorSendTimerRef.current);
+        cursorSendTimerRef.current = null;
+        pendingCursorRef.current = null;
         try {
           Y.applyUpdate(doc, bytes, 'remote');
         } catch {}
+        finally {
+          isApplyingRemoteRef.current = wasApplyingRemote;
+        }
       }
+    };
+
+    const refreshFileContents = () => {
+      // Applying a Yjs update leaves named roots as generic AbstractType
+      // instances until their typed getter is called. Materialize file roots
+      // before reading them so remote IDE updates reach the editor cache.
+      let changed = false;
+      for (const name of doc.share.keys()) {
+        if (!name.startsWith('file:') || name === 'file:initialized') continue;
+        const path = name.slice('file:'.length);
+        if (!path) continue;
+        const content = doc.getText(name).toString();
+        if (fileContentsRef.current.get(path) !== content) {
+          fileContentsRef.current.set(path, content);
+          changed = true;
+        }
+      }
+      return changed;
     };
 
     const syncLang = () => {
       const stored = meta.get('lang');
       if (stored && stored in LANGUAGES) setLang(stored);
-      else if (initialCanEdit && !stored) meta.set('lang', DEFAULT_LANG);
+      else if (canControlMirror && !stored) meta.set('lang', DEFAULT_LANG);
     };
     meta.observe(syncLang);
 
@@ -1023,6 +1218,38 @@ export function CodeBoard({
       syncLang();
       readyRef.current = true;
       setReady(true);
+    });
+
+    socket.on('code:cursor' as unknown as keyof CodeServerToClientEvents, (p: unknown) => {
+      const payload = p as CodeCursorPayload;
+      if (
+        payload?.sessionId !== sessionId ||
+        !payload.controllerUserId ||
+        // The IDE and live editor share the instructor identity. Drawing the
+        // IDE caret back over its own live editor creates a duplicate cursor.
+        payload.controllerUserId === currentUserId ||
+        payload.sourceId === cursorSourceIdRef.current ||
+        !payload.sourceId ||
+        payload.sourceId === cursorSourceIdRef.current ||
+        !Number.isSafeInteger(payload.sequence)
+      ) return;
+      if (!isWritable && !followInstructorRef.current) return;
+      const previous = latestRemoteSequencesRef.current.get(payload.sourceId) ?? 0;
+      if (payload.sequence <= previous) return;
+      latestRemoteSequencesRef.current.set(payload.sourceId, payload.sequence);
+
+      if (!sameCodePath(activeFileRef.current, payload.path)) {
+        if (!followInstructorRef.current && !isWritable) return;
+        suppressNextCursorEmitRef.current = true;
+        selectFile(payload.path);
+      } else if (viewRef.current) {
+        applyRemoteCursorAndSelection(viewRef.current, payload, payload.selection, followInstructorRef.current);
+      }
+      setCursorPos({ line: payload.line, ch: payload.ch });
+      cursorPosRef.current = { line: payload.line, ch: payload.ch };
+      cursorPathRef.current = payload.path;
+      selectionRef.current = payload.selection ?? null;
+      setInstructorLocation({ path: payload.path, line: payload.line, ch: payload.ch });
     });
 
     socket.on('code:update', (p) => applyRemote(p.update));
@@ -1040,7 +1267,12 @@ export function CodeBoard({
     });
 
     socket.on('code:focus', (p: CodeFocusPayload) => {
-      if (Array.isArray(p.openFiles)) {
+      const freeRoamStudent =
+        !isInstructor &&
+        p.controllerUserId !== currentUserId &&
+        !followInstructorRef.current;
+      if (freeRoamStudent) return;
+      if (!freeRoamStudent && Array.isArray(p.openFiles)) {
         setOpenFiles(p.openFiles);
       }
 
@@ -1052,6 +1284,7 @@ export function CodeBoard({
         cursorPosRef.current = null;
         selectionRef.current = null;
         setSidebarPointer(null);
+        clearRemoteCursor();
         return;
       }
 
@@ -1061,30 +1294,17 @@ export function CodeBoard({
         ch: p.cursor?.ch ?? 0,
       });
 
-      setSidebarPointer({
-        target: p.path,
-        isFolder: false,
-      });
-      expandAncestorsOfFile(p.path);
+      if (!freeRoamStudent) expandAncestorsOfFile(p.path);
 
       if (p.content !== undefined) {
         fileContentsRef.current.set(p.path, p.content);
-        const yText = doc.getText(`file:${p.path}`);
-        if (yText.toString() !== p.content) {
-          doc.transact(() => {
-            yText.delete(0, yText.length);
-            yText.insert(0, p.content!);
-          });
-        }
       }
 
-      // If student is in Free Roam mode and viewing a different file, don't yank their view
-      if (!isWritable && !followInstructorRef.current && activeFileRef.current && !matchesPath(activeFileRef.current, p.path)) {
-        return;
+      if (!sameCodePath(activeFileRef.current, p.path)) {
+        suppressNextCursorEmitRef.current = true;
+        activeFileRef.current = p.path;
+        setActiveFile(p.path);
       }
-
-      activeFileRef.current = p.path;
-      setActiveFile((prev) => (matchesPath(prev, p.path) ? prev : p.path));
 
       if (!Array.isArray(p.openFiles)) {
         setOpenFiles((prev) => (prev.includes(p.path) ? prev : [...prev, p.path]));
@@ -1149,18 +1369,13 @@ export function CodeBoard({
       if (p.cursor) {
         setCursorPos(p.cursor);
         cursorPosRef.current = p.cursor;
+        cursorPathRef.current = p.path;
         selectionRef.current = p.selection ?? null;
         setInstructorLocation({
           path: p.path,
           line: p.cursor.line,
           ch: p.cursor.ch,
         });
-        updateFloatingCursorCoords(
-          p.cursor.line,
-          p.cursor.ch,
-          'Instructor',
-          false,
-        );
       }
     });
 
@@ -1177,15 +1392,7 @@ export function CodeBoard({
 
       fileContentsRef.current.set(payload.path, payload.content);
 
-      const yText = doc.getText(`file:${payload.path}`);
-      if (yText.toString() !== payload.content) {
-        doc.transact(() => {
-          yText.delete(0, yText.length);
-          yText.insert(0, payload.content);
-        });
-      }
-
-      if (matchesPath(payload.path, activeFileRef.current) && viewRef.current) {
+      if (sameCodePath(payload.path, activeFileRef.current) && viewRef.current) {
         const view = viewRef.current;
         const curDoc = view.state.doc.toString();
         const prevScrollTop = view.scrollDOM?.scrollTop;
@@ -1232,14 +1439,12 @@ export function CodeBoard({
       if (payload.cursor) {
         setCursorPos(payload.cursor);
         cursorPosRef.current = payload.cursor;
+        cursorPathRef.current = payload.path;
         setInstructorLocation({
           path: payload.path,
           line: payload.cursor.line,
           ch: payload.cursor.ch,
         });
-        setTimeout(() => {
-          updateFloatingCursorCoords(payload.cursor!.line, payload.cursor!.ch, 'Instructor', false);
-        }, 30);
       }
     });
 
@@ -1251,9 +1456,10 @@ export function CodeBoard({
       if (!isWritable && !followInstructorRef.current) return;
 
       const currentActive = activeFileRef.current;
-      const isMatch = matchesPath(scrollPayload.path, currentActive);
+      const isMatch = sameCodePath(scrollPayload.path, currentActive);
 
       if (!isMatch && scrollPayload.path) {
+        suppressNextCursorEmitRef.current = true;
         selectFile(scrollPayload.path);
         return;
       }
@@ -1274,10 +1480,6 @@ export function CodeBoard({
       const payload = p as { path: string; collapsed: boolean };
       if (!payload?.path) return;
       const targetNorm = normalizeFolderPath(payload.path);
-      setSidebarPointer({
-        target: targetNorm,
-        isFolder: true,
-      });
       setCollapsedFolders((prev) => {
         const next = new Set<string>();
         for (const item of prev) {
@@ -1299,26 +1501,33 @@ export function CodeBoard({
 
     socket.on('code:pointer' as unknown as keyof CodeServerToClientEvents, (p: unknown) => {
       const payload = p as CodePointerPayload;
-      if (!payload) return;
+      if (
+        !payload ||
+        payload.sessionId !== sessionId ||
+        !payload.controllerUserId ||
+        payload.controllerUserId === currentUserId ||
+        payload.sourceId === cursorSourceIdRef.current ||
+        (!isWritable && !followInstructorRef.current)
+      ) return;
 
       if (payload.surface === 'editor') {
-        if (payload.line !== undefined && payload.ch !== undefined) {
-          updateFloatingCursorCoords(payload.line, payload.ch, 'Instructor', Boolean(payload.isClick));
-        } else if (payload.x !== undefined && payload.y !== undefined) {
-          setFloatingCursor((prev) => ({
-            ...prev,
-            x: payload.x!,
-            y: payload.y!,
-            visible: true,
-            isMoving: true,
-          }));
-          if (payload.isClick) {
-            triggerEditorRipple(payload.x, payload.y);
-          }
-        }
+        if (
+          !payload.path ||
+          !payload.sourceId ||
+          !Number.isSafeInteger(payload.sequence) ||
+          payload.line === undefined ||
+          payload.ch === undefined
+        ) return;
+        const previous = latestRemoteSequencesRef.current.get(payload.sourceId) ?? 0;
+        if (payload.sequence! <= previous) return;
+        latestRemoteSequencesRef.current.set(payload.sourceId, payload.sequence!);
+        if (!sameCodePath(payload.path, activeFileRef.current)) return;
+        setInstructorLocation({ path: payload.path, line: payload.line, ch: payload.ch });
+        updateFloatingCursorCoords(payload.path, payload.line, payload.ch, 'Instructor', payload.kind === 'click');
         return;
       }
 
+      if (payload.surface !== 'sidebar') return;
       setSidebarPointer({
         target: payload.target,
         isFolder: payload.isFolder,
@@ -1340,19 +1549,22 @@ export function CodeBoard({
           }
         }, 120);
       }
+      if (sidebarPointerHideTimerRef.current) clearTimeout(sidebarPointerHideTimerRef.current);
+      sidebarPointerHideTimerRef.current = setTimeout(() => setSidebarPointer(null), 1400);
     });
 
     socket.on('code:spotlight' as unknown as keyof CodeServerToClientEvents, (p: unknown) => {
       const payload = p as CodeSpotlightPayload;
       if (!payload?.path) return;
 
-      if (!matchesPath(payload.path, activeFileRef.current)) {
+      if (!sameCodePath(payload.path, activeFileRef.current)) {
         if (followInstructorRef.current) {
+          suppressNextCursorEmitRef.current = true;
           selectFile(payload.path);
         }
       }
 
-      if (viewRef.current && matchesPath(payload.path, activeFileRef.current)) {
+      if (viewRef.current && sameCodePath(payload.path, activeFileRef.current)) {
         try {
           const view = viewRef.current;
           const targetLine = Math.max(1, Math.min(payload.line + 1, view.state.doc.lines));
@@ -1390,8 +1602,19 @@ export function CodeBoard({
     });
 
     socket.on('code:tab-close' as unknown as keyof CodeServerToClientEvents, (p: unknown) => {
-      const payload = p as { path?: string; nextActive?: string; all?: boolean };
+      const payload = p as {
+        path?: string;
+        nextActive?: string;
+        openFiles?: string[];
+        all?: boolean;
+        controllerUserId?: string;
+      };
       if (!payload) return;
+      if (
+        !isInstructor &&
+        payload.controllerUserId !== currentUserId &&
+        !followInstructorRef.current
+      ) return;
       if (payload.all) {
         setOpenFiles([]);
         setActiveFile('');
@@ -1399,12 +1622,43 @@ export function CodeBoard({
         return;
       }
       if (payload.path) {
-        setOpenFiles((prev) => prev.filter((f) => !matchesPath(f, payload.path!) && f !== payload.path));
+        if (Array.isArray(payload.openFiles)) {
+          setOpenFiles(payload.openFiles);
+        } else {
+          setOpenFiles((prev) => prev.filter((f) => !matchesPath(f, payload.path!) && f !== payload.path));
+        }
         if (payload.nextActive !== undefined) {
           setActiveFile(payload.nextActive);
           activeFileRef.current = payload.nextActive;
           if (payload.nextActive) setLang(detectLangFromPath(payload.nextActive));
         }
+      }
+    });
+
+    socket.on('code:tab-close-result' as unknown as keyof CodeServerToClientEvents, (p: unknown) => {
+      const payload = p as {
+        sessionId?: string;
+        requestId?: string;
+        activePath?: string;
+        openFiles?: string[];
+        controllerUserId?: string;
+      };
+      if (
+        payload?.sessionId !== sessionId ||
+        !payload.requestId ||
+        !Array.isArray(payload.openFiles) ||
+        !payload.controllerUserId
+      ) return;
+      if (!isInstructor && payload.controllerUserId !== currentUserId && !followInstructorRef.current) return;
+      if (canControlMirror && latestTabCloseRequestRef.current !== payload.requestId) return;
+
+      const actualActive = payload.activePath ?? '';
+      setOpenFiles(payload.openFiles);
+      setActiveFile(actualActive);
+      activeFileRef.current = actualActive;
+      if (actualActive) setLang(detectLangFromPath(actualActive));
+      if (payload.requestId === latestTabCloseRequestRef.current) {
+        latestTabCloseRequestRef.current = null;
       }
     });
 
@@ -1419,13 +1673,32 @@ export function CodeBoard({
     }, 1200);
 
     const onDocUpdate = (update: Uint8Array, origin: unknown) => {
+      if (refreshFileContents()) {
+        if (previewReloadTimerRef.current) clearTimeout(previewReloadTimerRef.current);
+        previewReloadTimerRef.current = setTimeout(() => {
+          previewReloadTimerRef.current = null;
+          setPreviewReloadSignal((value) => value + 1);
+        }, 750);
+      }
       if (origin !== 'remote') socket.emit('code:update', { sessionId, update });
     };
     doc.on('update', onDocUpdate);
 
     return () => {
       clearTimeout(initTimer);
+      if (previewReloadTimerRef.current) clearTimeout(previewReloadTimerRef.current);
+      previewReloadTimerRef.current = null;
+      if (cursorSendTimerRef.current) clearTimeout(cursorSendTimerRef.current);
+      if (cursorHideTimerRef.current) clearTimeout(cursorHideTimerRef.current);
+      if (cursorFadeTimerRef.current) clearTimeout(cursorFadeTimerRef.current);
+      if (sidebarPointerHideTimerRef.current) clearTimeout(sidebarPointerHideTimerRef.current);
+      cursorSendTimerRef.current = null;
+      cursorHideTimerRef.current = null;
+      cursorFadeTimerRef.current = null;
+      sidebarPointerHideTimerRef.current = null;
+      pendingCursorRef.current = null;
       meta.unobserve(syncLang);
+      awareness.off('update', onAwarenessUpdate);
       doc.off('update', onDocUpdate);
       socket.emit('code:leave', { sessionId });
       socket.disconnect();
@@ -1434,7 +1707,7 @@ export function CodeBoard({
       awareness.destroy();
       doc.destroy();
     };
-  }, [sessionId, initialCanEdit]);
+  }, [sessionId, initialCanEdit, canControlMirror]);
 
   // ---- Editor view rebuild ----
   useEffect(() => {
@@ -1445,9 +1718,7 @@ export function CodeBoard({
 
     // Use specific Y.Text for active file (with fallback to default 'code' buffer)
     const yText = doc.getText(`file:${activeFile}`) || doc.getText('code');
-    const initialDoc =
-      fileContentsRef.current.get(activeFile) ??
-      (yText.toString() || '');
+    const initialDoc = yText.toString();
 
     const extensions: Extension[] = [
       lineNumbers(),
@@ -1455,6 +1726,7 @@ export function CodeBoard({
       history(),
       bracketMatching(),
       indentOnInput(),
+      yCollab(yText, awareness),
       remoteCursorField,
       spotlightField,
       diffFlashField,
@@ -1532,24 +1804,30 @@ export function CodeBoard({
           const pos = { line: line.number - 1, ch: head - line.from };
           setCursorPos(pos);
           cursorPosRef.current = pos;
+          cursorPathRef.current = activeFile;
+          const selection = update.state.selection.main;
+          localCursorByPathRef.current.set(activeFile, { anchor: selection.anchor, head: selection.head });
+          if (canControlMirror) {
+            const anchorInfo = update.state.doc.lineAt(selection.anchor);
+            const activeInfo = update.state.doc.lineAt(selection.head);
+            if (!isApplyingRemoteRef.current && !suppressNextCursorEmitRef.current) {
+              queueCodeCursor(activeFile, pos.line, pos.ch, {
+                anchor: { line: anchorInfo.number - 1, ch: selection.anchor - anchorInfo.from },
+                active: { line: activeInfo.number - 1, ch: selection.head - activeInfo.from },
+              }, performance.now());
+            }
+          }
         }
-        if (
-          update.docChanged &&
-          isWritable &&
-          !isApplyingRemoteRef.current &&
-          socketRef.current?.connected &&
-          activeFileRef.current
-        ) {
-          const newContent = update.state.doc.toString();
-          fileContentsRef.current.set(activeFileRef.current, newContent);
-          const head = update.state.selection.main.head;
-          const line = update.state.doc.lineAt(head);
-          socketRef.current.emit('code:edit' as unknown as keyof CodeClientToServerEvents, {
-            sessionId,
-            path: activeFileRef.current,
-            content: newContent,
-            cursor: { line: line.number - 1, ch: head - line.from },
-          } as unknown as never);
+        if (update.docChanged && activeFile) {
+          fileContentsRef.current.set(activeFile, update.state.doc.toString());
+          const remotePointer = remotePointerLocationRef.current;
+      if (remotePointer && sameCodePath(remotePointer.path, activeFile)) {
+            requestAnimationFrame(() => {
+              if (remotePointerLocationRef.current === remotePointer) {
+                updateFloatingCursorCoords(remotePointer.path, remotePointer.line, remotePointer.ch, 'Instructor', false, false);
+              }
+            });
+          }
         }
       }),
     ];
@@ -1557,15 +1835,34 @@ export function CodeBoard({
     const view = new EditorView({
       state: EditorState.create({
         doc: initialDoc,
+        selection: (() => {
+          const saved = localCursorByPathRef.current.get(activeFile);
+          if (!saved) return undefined;
+          return {
+            anchor: Math.max(0, Math.min(saved.anchor, initialDoc.length)),
+            head: Math.max(0, Math.min(saved.head, initialDoc.length)),
+          };
+        })(),
         extensions,
       }),
       parent: host,
     });
     viewRef.current = view;
     setTotalLines(view.state.doc.lines);
+    const skipCursorEcho = suppressNextCursorEmitRef.current;
+    suppressNextCursorEmitRef.current = false;
+    if (canControlMirror && !skipCursorEcho) {
+      const selection = view.state.selection.main;
+      const activeLine = view.state.doc.lineAt(selection.head);
+      const anchorLine = view.state.doc.lineAt(selection.anchor);
+      queueCodeCursor(activeFile, activeLine.number - 1, selection.head - activeLine.from, {
+        anchor: { line: anchorLine.number - 1, ch: selection.anchor - anchorLine.from },
+        active: { line: activeLine.number - 1, ch: selection.head - activeLine.from },
+      }, performance.now());
+    }
 
     // Restore cursor position and scroll into view when view is rebuilt for activeFile
-    if (cursorPosRef.current) {
+    if (cursorPosRef.current && sameCodePath(cursorPathRef.current, activeFile)) {
       applyRemoteCursorAndSelection(view, cursorPosRef.current, selectionRef.current ?? undefined, followInstructorRef.current);
     }
 
@@ -1573,35 +1870,27 @@ export function CodeBoard({
       view.destroy();
       viewRef.current = null;
     };
-  }, [ready, lang, isWritable, activeFile, fontSize]);
+  }, [ready, lang, isWritable, activeFile, fontSize, canControlMirror]);
 
-  const selectFile = (filePath: string, e?: React.MouseEvent) => {
-    if (e) {
-      const rect = e.currentTarget.getBoundingClientRect();
-      triggerSidebarRipple(filePath, e.clientX - rect.left, e.clientY - rect.top);
-    }
-    activeFileRef.current = filePath;
-    setActiveFile(filePath);
-    setOpenFiles((prev) => (prev.includes(filePath) ? prev : [...prev, filePath]));
-    setLang(detectLangFromPath(filePath));
-    const cached = fileContentsRef.current.get(filePath);
-    if (cached) {
-      setTotalLines(cached.split('\n').length);
-    }
-    setSidebarPointer({
-      target: filePath,
-      isFolder: false,
+  const handleEditorPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!canControlMirror || !socketRef.current?.connected || !viewRef.current || !hostRef.current) return;
+    if (event.pointerType === 'touch' || !hostRef.current.contains(event.target as Node)) return;
+    const now = performance.now();
+    if (now - lastPointerSentAtRef.current < 50) return;
+    const offset = viewRef.current.posAtCoords({ x: event.clientX, y: event.clientY });
+    if (offset === null) return;
+    lastPointerSentAtRef.current = now;
+    const lineInfo = viewRef.current.state.doc.lineAt(offset);
+    socketRef.current.emit('code:pointer', {
+      sessionId,
+      sourceId: ensureCursorSourceId(),
+      sequence: ++cursorSequenceRef.current,
+      path: activeFileRef.current,
+      surface: 'editor',
+      kind: 'move',
+      line: lineInfo.number - 1,
+      ch: offset - lineInfo.from,
     });
-    expandAncestorsOfFile(filePath);
-    if (isWritable && socketRef.current?.connected) {
-      socketRef.current.emit('code:pointer', {
-        sessionId,
-        target: filePath,
-        isFolder: false,
-        surface: 'sidebar',
-        isClick: true,
-      });
-    }
   };
 
   const closeFileTab = (filePath: string, e: React.MouseEvent) => {
@@ -1612,6 +1901,8 @@ export function CodeBoard({
     let nextActive = activeFile;
     if (matchesPath(activeFile, filePath) || activeFile === filePath) {
       nextActive = filtered.length > 0 ? filtered[filtered.length - 1] : '';
+      // Update synchronously so immediately queued socket events use the new tab.
+      // eslint-disable-next-line react-hooks/immutability
       activeFileRef.current = nextActive;
       setActiveFile(nextActive);
       if (nextActive) {
@@ -1619,16 +1910,15 @@ export function CodeBoard({
       }
     }
     // Broadcast tab closure to session so connected students and local IDE mirror tab state
-    if (socketRef.current?.connected) {
-      socketRef.current.emit('code:focus', {
-        sessionId,
-        path: nextActive,
-        openFiles: filtered,
-      });
+    if (canControlMirror && socketRef.current?.connected) {
+      const requestId = crypto.randomUUID();
+      latestTabCloseRequestRef.current = requestId;
       socketRef.current.emit('code:tab-close' as unknown as keyof CodeClientToServerEvents, {
         sessionId,
+        requestId,
         path: filePath,
         nextActive,
+        openFiles: filtered,
         all: filtered.length === 0,
       } as unknown as never);
     }
@@ -1686,13 +1976,12 @@ export function CodeBoard({
 
       const isFileTarget = Boolean(
         !isDir &&
-          (isSelected ||
-            (sidebarPointer &&
-              !sidebarPointer.isFolder &&
-              sidebarPointer?.target &&
-              (normalizeFolderPath(sidebarPointer.target) === normNodePath ||
-                normalizeFolderPath(sidebarPointer.target).endsWith('/' + normNodePath) ||
-                normNodePath.endsWith('/' + normalizeFolderPath(sidebarPointer.target))))),
+          sidebarPointer &&
+          !sidebarPointer.isFolder &&
+          sidebarPointer.target &&
+          (normalizeFolderPath(sidebarPointer.target) === normNodePath ||
+            normalizeFolderPath(sidebarPointer.target).endsWith('/' + normNodePath) ||
+            normNodePath.endsWith('/' + normalizeFolderPath(sidebarPointer.target))),
       );
 
       const containsActiveFile = Boolean(
@@ -1780,8 +2069,10 @@ export function CodeBoard({
             onClick={(e) => selectFile(node.path, e)}
             style={{ paddingLeft: `${depth * 12 + 18}px` }}
             className={`flex w-full items-center justify-between py-1 text-xs text-left transition select-none pr-2.5 relative overflow-hidden active:scale-[0.985] duration-150 ${
-              isFileTarget
+              isSelected
                 ? 'bg-emerald-500/20 text-emerald-400 font-semibold border-l-2 border-l-emerald-400'
+                : isFileTarget
+                ? 'bg-emerald-500/10 text-emerald-300 border-l-2 border-l-emerald-400/70'
                 : 'text-neutral-400 hover:bg-white/5 hover:text-neutral-200'
             }`}
           >
@@ -1798,7 +2089,7 @@ export function CodeBoard({
               />
             )}
             <div className="flex items-center gap-1.5 min-w-0">
-              {getFileIcon(node.name, isFileTarget)}
+              {getFileIcon(node.name, isSelected || isFileTarget)}
               <span className="truncate">{node.name}</span>
               {isFileTarget && (
                 <span
@@ -1872,7 +2163,14 @@ export function CodeBoard({
           {/* Student Follow / Free Roam Switch */}
           {!isWritable && (
             <button
-              onClick={() => setFollowInstructor(!followInstructor)}
+              onClick={() => {
+                const nextFollowing = !followInstructorRef.current;
+                followInstructorRef.current = nextFollowing;
+                setFollowInstructor(nextFollowing);
+                if (!nextFollowing) {
+                  clearRemoteCursor();
+                }
+              }}
               className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition border shrink-0 ${
                 followInstructor
                   ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400 shadow-sm'
@@ -2161,9 +2459,9 @@ export function CodeBoard({
 
       {/* Main Surface Body */}
       {activeTab === 'preview' ? (
-        <PortPreviewView sessionId={sessionId} />
+        <PortPreviewView sessionId={sessionId} reloadSignal={previewReloadSignal} />
       ) : activeTab === 'terminal' ? (
-        <TerminalView sessionId={sessionId} canEdit={initialCanEdit} />
+        <TerminalView sessionId={sessionId} canEdit={isWritable} />
       ) : (
         /* Editor Mode (with optional Split Terminal) */
         <div className="flex flex-1 overflow-hidden relative">
@@ -2399,6 +2697,7 @@ export function CodeBoard({
             ) : (
               /* CodeMirror Lines Area with Google-grade smooth cursor glide and radiant click ripples */
               <div
+                onPointerMove={handleEditorPointerMove}
                 onClick={(e) => {
                   if (!hostRef.current) return;
                   const rect = hostRef.current.getBoundingClientRect();
@@ -2411,22 +2710,19 @@ export function CodeBoard({
                   // If instructor, broadcast click shockwave to all students
                   if (isWritable && socketRef.current?.connected && viewRef.current) {
                     const pos = viewRef.current.posAtCoords({ x: e.clientX, y: e.clientY });
-                    let line = 0;
-                    let ch = 0;
-                    if (pos !== null) {
+                    if (pos !== null && canControlMirror) {
                       const lineObj = viewRef.current.state.doc.lineAt(pos);
-                      line = lineObj.number - 1;
-                      ch = pos - lineObj.from;
+                      socketRef.current.emit('code:pointer', {
+                        sessionId,
+                        sourceId: ensureCursorSourceId(),
+                        sequence: ++cursorSequenceRef.current,
+                        path: activeFileRef.current,
+                        surface: 'editor',
+                        kind: 'click',
+                        line: lineObj.number - 1,
+                        ch: pos - lineObj.from,
+                      });
                     }
-                    socketRef.current.emit('code:pointer', {
-                      sessionId,
-                      surface: 'editor',
-                      isClick: true,
-                      x,
-                      y,
-                      line,
-                      ch,
-                    });
                   }
                 }}
                 className={`overflow-hidden transition-all duration-200 relative ${
@@ -2436,19 +2732,22 @@ export function CodeBoard({
                 <div ref={hostRef} className="h-full w-full" />
 
                 {/* Smooth Floating Remote Cursor Layer (Spring Gliding Physics) */}
-                {floatingCursor.visible && (
+                {floatingCursor.visible &&
+                  sameCodePath(floatingCursor.path, activeFile) &&
+                  (isWritable || followInstructor) && (
                   <div
                     className="pointer-events-none absolute top-0 left-0 z-40 will-change-transform"
                     style={{
                       transform: `translate3d(${floatingCursor.x}px, ${floatingCursor.y}px, 0)`,
+                      opacity: floatingCursor.isMoving ? 0.82 : 0,
                       transition: 'transform 110ms cubic-bezier(0.16, 1, 0.3, 1), opacity 150ms ease',
                     }}
                   >
-                    <div style={{ position: 'relative', top: '-2.7px', left: '-4.6px' }}>
+                    <div style={{ position: 'relative', top: '2px', left: '9px', opacity: 0.82 }}>
                       {/* SVG Cursor Pointer with 3D drop-shadow */}
                       <svg
-                        width="20"
-                        height="20"
+                        width="16"
+                        height="16"
                         viewBox="0 0 24 24"
                         fill="none"
                         xmlns="http://www.w3.org/2000/svg"
@@ -2543,7 +2842,7 @@ export function CodeBoard({
             {/* Collapsible Bottom Terminal Split Drawer */}
             {showTerminalDrawer && (
               <div className="h-48 border-t border-white/8 bg-[#090c10]">
-                <TerminalView sessionId={sessionId} canEdit={initialCanEdit} />
+                <TerminalView sessionId={sessionId} canEdit={isWritable} />
               </div>
             )}
           </div>

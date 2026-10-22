@@ -24,8 +24,11 @@ type ViewportMode = 'desktop' | 'tablet' | 'mobile';
 
 export function PortPreviewView({
   sessionId,
+  reloadSignal = 0,
 }: {
   sessionId: string;
+  /** Refresh the app after a shared IDE/editor document has settled. */
+  reloadSignal?: number;
 }) {
   const [ports, setPorts] = useState<ForwardedPortInfo[]>([]);
   const [activePort, setActivePort] = useState<number | null>(null);
@@ -33,6 +36,13 @@ export function PortPreviewView({
   const [reloadKey, setReloadKey] = useState<number>(0);
   const [token, setToken] = useState<string>('');
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const lastReloadSignalRef = useRef(reloadSignal);
+
+  useEffect(() => {
+    if (lastReloadSignalRef.current === reloadSignal) return;
+    lastReloadSignalRef.current = reloadSignal;
+    setReloadKey((key) => key + 1);
+  }, [reloadSignal]);
 
   useEffect(() => {
     void getRealtimeToken().then((t) => setToken(t ?? ''));
@@ -89,8 +99,18 @@ export function PortPreviewView({
   }, [sessionId]);
 
   const activePortInfo = ports.find((p) => p.port === activePort);
-  const previewUrl = activePort
-    ? `${API_URL}/proxy/${sessionId}/${activePort}/?token=${encodeURIComponent(token)}`
+  const previewUrl = activePortInfo
+    ? (() => {
+        // New host-based previews give each forwarded app its own origin, so
+        // Vite/Next asset and HMR paths remain rooted at `/`. Keep the legacy
+        // path proxy as a compatibility fallback for older API deployments.
+        const base = activePortInfo.previewUrl
+          ? activePortInfo.previewUrl
+          : `${API_URL}/proxy/${sessionId}/${activePortInfo.port}/`;
+        const url = new URL(base, window.location.href);
+        if (token) url.searchParams.set('token', token);
+        return url.toString();
+      })()
     : '';
 
   const viewportWidthClass =

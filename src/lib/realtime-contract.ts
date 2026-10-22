@@ -679,6 +679,10 @@ export interface CodeFileTreeNode {
 
 export interface CodeFocusPayload {
   sessionId: string;
+  /** Set by the server after validating that the sender controls this session. */
+  controllerUserId?: string;
+  /** True only for the snapshot returned to a newly joined client. */
+  isSnapshot?: boolean;
   path: string;
   cursor?: { line: number; ch: number };
   selection?: {
@@ -695,8 +699,27 @@ export interface CodePermissionPayload {
   delegatedUserIds?: string[];
 }
 
+export interface CodeCursorPayload {
+  sessionId: string;
+  controllerUserId?: string;
+  sourceId: string;
+  sequence: number;
+  path: string;
+  line: number;
+  ch: number;
+  selection?: {
+    anchor: { line: number; ch: number };
+    active: { line: number; ch: number };
+  };
+}
+
 export interface CodePointerPayload {
   sessionId: string;
+  controllerUserId?: string;
+  sourceId?: string;
+  sequence?: number;
+  path?: string;
+  kind?: 'move' | 'click';
   target?: string;
   isFolder?: boolean;
   x?: number;
@@ -720,6 +743,7 @@ export interface CodeClientToServerEvents {
   'code:awareness': (p: { sessionId: string; update: BoardBinary }) => void;
   'code:tree': (p: { sessionId: string; tree: CodeFileTreeNode[] }) => void;
   'code:focus': (p: CodeFocusPayload) => void;
+  'code:cursor': (p: CodeCursorPayload) => void;
   'code:edit': (p: { sessionId: string; path: string; content: string; cursor?: { line: number; ch: number } }) => void;
   'code:scroll': (p: { sessionId: string; path: string; line: number }) => void;
   'code:folder-toggle': (p: { sessionId: string; path: string; collapsed: boolean }) => void;
@@ -728,15 +752,18 @@ export interface CodeClientToServerEvents {
   'code:pointer': (p: CodePointerPayload) => void;
   'code:spotlight': (p: CodeSpotlightPayload) => void;
   'code:permission': (p: CodePermissionPayload) => void;
-  'code:tab-close': (p: { sessionId: string; path?: string; nextActive?: string; all?: boolean }) => void;
+  'code:tab-close': (p: { sessionId: string; requestId?: string; path?: string; nextActive?: string; openFiles?: string[]; all?: boolean }) => void;
+  'code:tab-close-result': (p: { sessionId: string; requestId: string; activePath: string; openFiles: string[] }) => void;
 }
 
 export interface CodeServerToClientEvents {
   'code:state': (p: { sessionId: string; update: BoardBinary }) => void;
+  'code:joined': (p: { sessionId: string }) => void;
   'code:update': (p: { sessionId: string; update: BoardBinary }) => void;
   'code:awareness': (p: { sessionId: string; update: BoardBinary }) => void;
   'code:tree': (p: { sessionId: string; tree: CodeFileTreeNode[] }) => void;
   'code:focus': (p: CodeFocusPayload) => void;
+  'code:cursor': (p: CodeCursorPayload) => void;
   'code:edit': (p: { sessionId: string; path: string; content: string; cursor?: { line: number; ch: number } }) => void;
   'code:scroll': (p: { sessionId: string; path: string; line: number }) => void;
   'code:folder-toggle': (p: { sessionId: string; path: string; collapsed: boolean }) => void;
@@ -745,7 +772,8 @@ export interface CodeServerToClientEvents {
   'code:pointer': (p: CodePointerPayload) => void;
   'code:spotlight': (p: CodeSpotlightPayload) => void;
   'code:permission': (p: CodePermissionPayload) => void;
-  'code:tab-close': (p: { sessionId: string; path?: string; nextActive?: string; all?: boolean }) => void;
+  'code:tab-close': (p: { sessionId: string; requestId?: string; path?: string; nextActive?: string; openFiles?: string[]; all?: boolean; controllerUserId?: string }) => void;
+  'code:tab-close-result': (p: { sessionId: string; requestId: string; activePath: string; openFiles: string[]; controllerUserId: string }) => void;
 
   error: (p: { code: string; message: string }) => void;
 }
@@ -760,6 +788,7 @@ export interface TerminalSessionInfo {
   cols: number;
   rows: number;
   interactive: boolean;
+  sandboxed?: boolean;
   writableBy: TerminalWritableMode;
   delegatedUserIds?: string[];
 }
@@ -829,6 +858,8 @@ export interface ForwardedPortInfo {
   port: number;
   label?: string;
   targetUrl?: string;
+  /** Origin-isolated preview host; preserves app-root paths and WebSocket URLs. */
+  previewUrl?: string;
   registeredAt: string;
 }
 
