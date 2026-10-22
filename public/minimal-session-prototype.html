@@ -1,0 +1,2388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Livetich — Minimalist Live Session Architecture</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #09090b;
+      --bg-stage: #0f0f14;
+      --surface: #14141a;
+      --surface-border: rgba(255, 255, 255, 0.08);
+      --glass: rgba(18, 18, 24, 0.82);
+      --glass-hover: rgba(30, 30, 40, 0.9);
+      --accent: #10b981;
+      --accent-soft: rgba(16, 185, 129, 0.15);
+      --accent-glow: rgba(16, 185, 129, 0.3);
+      --danger: #ef4444;
+      --danger-soft: rgba(239, 68, 68, 0.15);
+      --text: #f4f4f5;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --radius-dock: 9999px;
+      --radius-card: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      height: 100vh;
+      width: 100vw;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Ambient Subtle Background */
+    .ambient-mesh {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      background: radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.06) 0%, transparent 65%);
+    }
+
+    /* SVG Icon base */
+    .icon {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+      flex-shrink: 0;
+    }
+    .icon-lg { width: 20px; height: 20px; }
+    .icon-sm { width: 15px; height: 15px; }
+
+    /* =========================================================================
+       1. TOP AMBIENT HEADER (Metadata, Surface Switcher & Role Controls)
+       ========================================================================= */
+    header.ambient-header {
+      position: absolute;
+      top: 14px;
+      left: 18px;
+      right: 18px;
+      height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 30;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+
+    .header-zone {
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .pill-card {
+      background: var(--glass);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-dock);
+      padding: 5px 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+
+    .live-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #ef4444;
+      background: rgba(239, 68, 68, 0.12);
+      padding: 3px 8px;
+      border-radius: var(--radius-dock);
+    }
+    .live-indicator .pulse-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #ef4444;
+      animation: livePulse 1.4s infinite;
+    }
+
+    .course-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #f1f5f9;
+      max-width: 240px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .rec-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #f43f5e;
+      background: rgba(244, 63, 94, 0.1);
+      border: 1px solid rgba(244, 63, 94, 0.25);
+      padding: 3px 10px;
+      border-radius: var(--radius-dock);
+    }
+    .rec-indicator.hidden { display: none; }
+
+    /* Surface Segmented Control (Stage / Board / Quran / Code) */
+    .surface-segmented {
+      background: var(--glass);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-dock);
+      padding: 3px;
+      display: flex;
+      gap: 3px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+
+    .surface-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: var(--radius-dock);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .surface-btn:hover { color: var(--text); }
+    .surface-btn.active {
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Role Simulation Selector */
+    .role-toggle {
+      background: var(--glass);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-dock);
+      padding: 3px;
+      display: flex;
+      gap: 2px;
+    }
+    .role-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 5px 10px;
+      border-radius: var(--radius-dock);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .role-btn.active {
+      background: var(--accent);
+      color: #022c22;
+    }
+
+    /* =========================================================================
+       2. WORKSPACE LAYOUT (Stage + Collapsible Sliding Drawer)
+       ========================================================================= */
+    .workspace-layout {
+      flex: 1;
+      position: relative;
+      margin: 12px 18px 84px 18px;
+      display: flex;
+      gap: 14px;
+      overflow: hidden;
+      z-index: 10;
+    }
+
+    .stage-wrapper {
+      flex: 1;
+      position: relative;
+      background: var(--bg-stage);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-card);
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+      display: flex;
+    }
+
+    .stage-canvas {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      pointer-events: none;
+      transform: scale(0.98);
+      transition: opacity 0.35s ease, transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+    }
+    .stage-canvas.active {
+      opacity: 1;
+      pointer-events: auto;
+      transform: scale(1);
+    }
+
+    /* -------------------------------------------------------------
+       SURFACE 1: VIDEO STAGE (Live Video Stream & Filmstrip)
+       ------------------------------------------------------------- */
+    .video-grid-view {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 280px;
+      gap: 14px;
+      padding: 16px;
+      height: 100%;
+    }
+    .instructor-main-card {
+      background: #141418;
+      border: 1px solid var(--surface-border);
+      border-radius: 14px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.7);
+    }
+    .instructor-avatar {
+      width: 96px;
+      height: 96px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #059669, #10b981);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 34px;
+      font-weight: 800;
+      color: white;
+      box-shadow: 0 10px 30px var(--accent-glow);
+      border: 3px solid rgba(255, 255, 255, 0.15);
+      position: relative;
+    }
+    .audio-pulse-ring {
+      position: absolute;
+      inset: -12px;
+      border-radius: 50%;
+      border: 2px solid var(--accent);
+      animation: ringWave 2s infinite ease-out;
+      opacity: 0.7;
+    }
+    .stream-tag {
+      position: absolute;
+      bottom: 14px;
+      left: 14px;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(10px);
+      padding: 5px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .stream-tag-right {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(10px);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .cohort-filmstrip {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
+    }
+    .student-feed-tile {
+      height: 120px;
+      background: #18181f;
+      border: 1px solid var(--surface-border);
+      border-radius: 12px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .student-tag {
+      position: absolute;
+      bottom: 8px;
+      left: 8px;
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(8px);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* -------------------------------------------------------------
+       SURFACE 2: COLLABORATIVE CHALKBOARD (Working vector drawing canvas)
+       ------------------------------------------------------------- */
+    .board-container {
+      flex: 1;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      background: #0f1219;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    /* Google Chalkboard Dock in Live Session */
+    .board-dock-wrapper {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 35;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .board-floating-island {
+      background: rgba(18, 20, 28, 0.92);
+      backdrop-filter: blur(28px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 9999px;
+      padding: 6px 10px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      box-shadow: 0 16px 40px -8px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.06);
+      pointer-events: auto;
+      white-space: nowrap;
+    }
+
+    .board-tool-icon-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .board-tool-icon-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      transform: translateY(-1px);
+    }
+    .board-tool-icon-btn.active {
+      background: rgba(255, 255, 255, 0.95);
+      color: #090a0f;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+    }
+
+    .board-divider-v {
+      width: 1px;
+      height: 22px;
+      background: rgba(255, 255, 255, 0.12);
+      margin: 0 3px;
+      flex-shrink: 0;
+    }
+
+    .board-color-swatch-trigger {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 2px solid #ffffff;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .board-color-swatch-trigger:hover { transform: scale(1.15); }
+
+    .board-btn-insert-hero {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #ffffff;
+      border: none;
+      border-radius: 9999px;
+      padding: 7px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3);
+      transition: all 0.2s;
+    }
+    .board-btn-insert-hero:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+
+    .board-properties-popover {
+      position: absolute;
+      bottom: 70px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 310px;
+      background: rgba(15, 18, 26, 0.96);
+      backdrop-filter: blur(28px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 18px;
+      padding: 14px 16px;
+      box-shadow: 0 24px 60px -10px rgba(0, 0, 0, 0.8);
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+      pointer-events: auto;
+      z-index: 40;
+    }
+    .board-properties-popover.open { display: flex; }
+
+    .board-pop-row-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #64748b;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .board-palette-grid {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .board-color-dot {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: all 0.18s;
+    }
+    .board-color-dot:hover { transform: scale(1.2); }
+    .board-color-dot.active {
+      border-color: #ffffff;
+      transform: scale(1.18);
+      box-shadow: 0 0 12px rgba(255, 255, 255, 0.4);
+    }
+
+    .board-stroke-size-selector {
+      display: flex;
+      gap: 6px;
+    }
+    .board-stroke-btn {
+      flex: 1;
+      height: 30px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      transition: all 0.15s;
+    }
+    .board-stroke-btn:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+    .board-stroke-btn.active {
+      background: rgba(255, 255, 255, 0.2);
+      border-color: rgba(255, 255, 255, 0.3);
+      color: #fff;
+    }
+
+    canvas#chalkboardCanvas {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+      display: block;
+    }
+
+    /* -------------------------------------------------------------
+       SURFACE 3: QUR'AN & TAJWEED READER
+       ------------------------------------------------------------- */
+    .quran-container {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      background: #0c0d12;
+      height: 100%;
+      overflow: hidden;
+    }
+    .mushaf-page {
+      padding: 36px 48px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow-y: auto;
+    }
+    .surah-header-plate {
+      border: 1px solid rgba(251, 191, 36, 0.3);
+      background: rgba(251, 191, 36, 0.05);
+      border-radius: 12px;
+      padding: 10px 32px;
+      margin-bottom: 24px;
+      text-align: center;
+    }
+    .surah-name-ar {
+      font-family: 'Amiri', serif;
+      font-size: 26px;
+      font-weight: 700;
+      color: #fbbf24;
+    }
+    .surah-meta { font-size: 11.5px; color: #94a3b8; margin-top: 2px; }
+
+    .quran-verse-block {
+      font-family: 'Amiri', serif;
+      font-size: 28px;
+      line-height: 2.3;
+      text-align: right;
+      direction: rtl;
+      max-width: 720px;
+      color: #e2e8f0;
+    }
+    .verse-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 1px solid rgba(251, 191, 36, 0.4);
+      color: #fbbf24;
+      font-size: 15px;
+      margin: 0 8px;
+      vertical-align: middle;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    .tajweed-idgham { color: #38bdf8; font-weight: 700; }
+    .tajweed-qalqalah { color: #10b981; font-weight: 700; }
+    .tajweed-ikhfa { color: #f43f5e; font-weight: 700; }
+
+    .tajweed-sidebar {
+      border-left: 1px solid var(--surface-border);
+      background: #111116;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .tajweed-legend-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--surface-border);
+      border-radius: 12px;
+      padding: 14px;
+    }
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      margin-bottom: 8px;
+      color: var(--text-muted);
+    }
+    .legend-chip {
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+    }
+
+    /* -------------------------------------------------------------
+       SURFACE 4: LIVE CODE IDE & TERMINAL
+       ------------------------------------------------------------- */
+    .code-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #0d1117;
+      height: 100%;
+    }
+    .editor-top-bar {
+      height: 40px;
+      background: #161b22;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+    }
+    .editor-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: #e6edf3;
+      background: #0d1117;
+      padding: 6px 14px;
+      border-radius: 6px 6px 0 0;
+      border-top: 2px solid var(--accent);
+    }
+    .code-body-grid {
+      flex: 1;
+      display: grid;
+      grid-template-rows: 1fr 140px;
+      overflow: hidden;
+    }
+    .code-lines-area {
+      padding: 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13.5px;
+      line-height: 1.6;
+      color: #c9d1d9;
+      overflow-y: auto;
+    }
+    .code-line { display: flex; gap: 16px; }
+    .line-number { color: #484f58; width: 28px; text-align: right; user-select: none; }
+    .code-text { flex: 1; white-space: pre; }
+    .token-kw { color: #ff7b72; font-weight: 600; }
+    .token-fn { color: #d2a8ff; }
+    .token-str { color: #a5d6ff; }
+    .token-comm { color: #8b949e; font-style: italic; }
+
+    .terminal-output {
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      background: #090c10;
+      padding: 12px 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: #58a6ff;
+      overflow-y: auto;
+    }
+
+    /* -------------------------------------------------------------
+       COLLAPSIBLE SLIDING SIDEBAR (Unified for all drawers)
+       ------------------------------------------------------------- */
+    .unified-drawer {
+      width: 0;
+      opacity: 0;
+      background: #111116;
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-card);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: width 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+    }
+    .unified-drawer.open {
+      width: 360px;
+      opacity: 1;
+    }
+
+    .drawer-header-bar {
+      height: 52px;
+      border-bottom: 1px solid var(--surface-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .drawer-title-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .drawer-close-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+    .drawer-close-btn:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+
+    .drawer-content-pane {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: none;
+    }
+    .drawer-content-pane.active { display: flex; flex-direction: column; }
+
+    /* Pane 1: Chat */
+    .chat-bubble-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 14px;
+    }
+    .chat-bubble-author {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .chat-bubble-author.instructor { color: var(--accent); }
+    .chat-bubble-body {
+      background: rgba(255, 255, 255, 0.05);
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      color: #e2e8f0;
+      line-height: 1.45;
+    }
+    .chat-input-bar {
+      border-top: 1px solid var(--surface-border);
+      padding: 12px 16px;
+      display: flex;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.01);
+    }
+    .chat-text-input {
+      flex: 1;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--surface-border);
+      border-radius: 10px;
+      padding: 9px 12px;
+      color: #fff;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+    }
+    .chat-send-btn {
+      background: var(--accent);
+      border: none;
+      color: #022c22;
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: filter 0.2s;
+    }
+    .chat-send-btn:hover { filter: brightness(1.1); }
+
+    /* Pane 2: Roster / Hands */
+    .roster-user-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 12px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--surface-border);
+      margin-bottom: 8px;
+    }
+    .roster-avatar-circle {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: #27272a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: #f4f4f5;
+    }
+
+    /* Pane 3: Leaderboard */
+    .rank-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--surface-border);
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+    .rank-card.lead {
+      background: var(--accent-soft);
+      border-color: rgba(16, 185, 129, 0.35);
+      color: #34d399;
+    }
+
+    /* Pane 4: Curriculum */
+    .curriculum-item {
+      padding: 12px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--surface-border);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* Pane 5: Grading */
+    .grading-entry {
+      padding: 14px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--surface-border);
+      margin-bottom: 10px;
+    }
+
+    /* =========================================================================
+       3. THE GOOGLE DOCK (Hyper-Minimalist Floating Islands)
+       ========================================================================= */
+    footer.google-dock {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 30;
+      transition: opacity 0.3s ease;
+      max-width: calc(100vw - 20px);
+      white-space: nowrap;
+    }
+
+    .header-surf-desktop {
+      display: flex;
+    }
+    .dock-surf-desktop {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .dock-collab-desktop {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .dock-surf-mobile {
+      display: none;
+      align-items: center;
+      gap: 4px;
+    }
+    .more-collab-mobile {
+      display: none;
+    }
+    .more-badge-mobile {
+      display: none;
+    }
+
+    @media (max-width: 768px) {
+      .header-surf-desktop {
+        display: none !important;
+      }
+      .dock-surf-desktop {
+        display: none !important;
+      }
+      .dock-collab-desktop {
+        display: none !important;
+      }
+      .dock-surf-mobile {
+        display: flex !important;
+      }
+      .more-collab-mobile {
+        display: block !important;
+      }
+      .more-badge-mobile {
+        display: block !important;
+      }
+      footer.google-dock {
+        bottom: 10px;
+        gap: 6px;
+        flex-wrap: wrap;
+        justify-content: center;
+        max-width: calc(100vw - 16px);
+      }
+      .dock-island {
+        padding: 4px 6px !important;
+        gap: 4px !important;
+      }
+      .dock-btn {
+        width: 38px !important;
+        height: 38px !important;
+      }
+      .ambient-header {
+        top: 8px !important;
+        left: 10px !important;
+        right: 10px !important;
+      }
+      .workspace-layout {
+        margin: 10px 10px 84px 10px !important;
+      }
+      .unified-drawer.open {
+        position: fixed !important;
+        inset: auto 0 0 0 !important;
+        width: 100vw !important;
+        height: 75vh !important;
+        border-radius: 24px 24px 0 0 !important;
+        z-index: 50 !important;
+      }
+    }
+
+    .dock-island {
+      background: var(--glass);
+      backdrop-filter: blur(24px);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-dock);
+      padding: 5px 8px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+      flex-shrink: 0;
+    }
+
+    .dock-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .dock-btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      transform: translateY(-2px);
+    }
+    .dock-btn.active {
+      background: rgba(255, 255, 255, 0.95);
+      color: #09090b;
+    }
+    .dock-btn.muted {
+      background: var(--danger-soft);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .dock-btn.danger {
+      background: var(--danger);
+      color: #ffffff;
+    }
+    .dock-btn.danger:hover {
+      background: #dc2626;
+      box-shadow: 0 0 16px rgba(239, 68, 68, 0.5);
+    }
+
+    .badge-pill {
+      position: absolute;
+      top: 3px;
+      right: 3px;
+      background: #ef4444;
+      color: white;
+      font-size: 10px;
+      font-weight: 800;
+      border-radius: 999px;
+      padding: 1px 5px;
+      border: 2px solid #09090b;
+    }
+
+    /* Context Action Trigger */
+    .btn-action-hero {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #ffffff;
+      border: none;
+      border-radius: var(--radius-dock);
+      padding: 9px 18px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 16px var(--accent-glow);
+      transition: all 0.2s;
+    }
+    .btn-action-hero:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.1);
+    }
+
+    /* Progressive Disclosure Overflow Menu */
+    .overflow-sheet {
+      position: absolute;
+      bottom: 68px;
+      right: 0;
+      width: 280px;
+      background: rgba(18, 18, 24, 0.96);
+      backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 18px;
+      padding: 12px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85);
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      animation: popUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .overflow-sheet.open { display: flex; }
+
+    .category-label {
+      font-size: 10.5px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+      margin-bottom: 2px;
+    }
+    .menu-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #cbd5e1;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .menu-row:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+    }
+    .menu-row-meta {
+      margin-left: auto;
+      font-size: 11px;
+      color: #64748b;
+    }
+
+    /* =========================================================================
+       4. BUZZER COMPETITION MODAL (Interactive Overlay)
+       ========================================================================= */
+    .modal-scrim {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(12px);
+      z-index: 50;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-scrim.open { display: flex; }
+
+    .buzzer-box {
+      width: 500px;
+      background: #141419;
+      border: 1px solid var(--surface-border);
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.9);
+      animation: modalPop 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .buzzer-header {
+      padding: 16px 20px;
+      background: rgba(245, 158, 11, 0.1);
+      border-bottom: 1px solid rgba(245, 158, 11, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .buzzer-drain-line {
+      height: 4px;
+      background: #27272a;
+      overflow: hidden;
+    }
+    .buzzer-drain-fill {
+      height: 100%;
+      width: 100%;
+      background: linear-gradient(90deg, #f59e0b, #ef4444);
+      animation: drainAnim 20s linear forwards;
+    }
+    .buzzer-body {
+      padding: 24px;
+    }
+    .buzzer-option-btn {
+      width: 100%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--surface-border);
+      color: #f4f4f5;
+      font-size: 13.5px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .buzzer-option-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    .buzzer-option-btn.selected {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: #34d399;
+    }
+
+    @keyframes livePulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    @keyframes ringWave {
+      0% { transform: scale(1); opacity: 0.8; }
+      100% { transform: scale(1.4); opacity: 0; }
+    }
+    @keyframes popUp {
+      from { transform: translateY(8px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    @keyframes modalPop {
+      from { transform: scale(0.95); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+    @keyframes drainAnim {
+      from { width: 100%; }
+      to { width: 0%; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="ambient-mesh"></div>
+
+  <!-- =========================================================================
+       ZONE 1: FLOATING AMBIENT HEADER
+       ========================================================================= -->
+  <header class="ambient-header" id="header">
+    <div class="header-zone">
+      <div class="pill-card">
+        <span class="live-indicator">
+          <span class="pulse-dot"></span> LIVE
+        </span>
+        <span class="course-title">Full-Stack Cohort · Stage Architecture</span>
+        <span class="rec-indicator" id="recBadge">
+          <span class="pulse-dot" style="background: #f43f5e;"></span> REC 00:14:28
+        </span>
+      </div>
+    </div>
+
+
+    <!-- Right Controls: Role Simulation Switcher -->
+    <div class="header-zone">
+      <div class="pill-card" style="padding: 3px 6px;">
+        <span style="font-size: 11px; font-weight: 700; color: var(--text-dim); margin-left: 6px;">ROLE:</span>
+        <div class="role-toggle">
+          <button class="role-btn active" id="roleInstructor" onclick="setRole('instructor')">Instructor</button>
+          <button class="role-btn" id="roleStudent" onclick="setRole('student')">Student</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- =========================================================================
+       ZONE 2: WORKSPACE LAYOUT (Stage Canvas + Collapsible Drawer)
+       ========================================================================= -->
+  <main class="workspace-layout">
+    <div class="stage-wrapper">
+
+      <!-- SURFACE 1: VIDEO STAGE -->
+      <div class="stage-canvas active" id="canvas-video">
+        <div class="video-grid-view">
+          <div class="instructor-main-card">
+            <div class="instructor-avatar">
+              <span class="audio-pulse-ring"></span>
+              UA
+            </div>
+            <div class="stream-tag">
+              <span class="pulse-dot" style="background: var(--accent);"></span>
+              <span>Umar Adeyemi (Instructor)</span>
+            </div>
+            <div class="stream-tag-right">1080p · 24ms</div>
+          </div>
+          <div class="cohort-filmstrip">
+            <div class="student-feed-tile">
+              <div class="roster-avatar-circle" style="width: 44px; height: 44px; font-size: 15px; background: #3b82f6;">SJ</div>
+              <div class="student-tag">Sarah Jenkins ✋</div>
+            </div>
+            <div class="student-feed-tile">
+              <div class="roster-avatar-circle" style="width: 44px; height: 44px; font-size: 15px; background: #8b5cf6;">TB</div>
+              <div class="student-tag">Tobi Bello</div>
+            </div>
+            <div class="student-feed-tile">
+              <div class="roster-avatar-circle" style="width: 44px; height: 44px; font-size: 15px; background: #ec4899;">CO</div>
+              <div class="student-tag">Chukwuma Obi</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SURFACE 2: COLLABORATIVE CHALKBOARD (Working vector drawing canvas) -->
+      <div class="stage-canvas" id="canvas-board">
+        <div class="board-container" id="boardContainer">
+          <canvas id="chalkboardCanvas"></canvas>
+          <div class="laser-dot" id="boardLaserPointer" style="position: absolute; width: 10px; height: 10px; border-radius: 50%; background: #f43f5e; box-shadow: 0 0 14px #f43f5e; pointer-events: none; display: none; transform: translate(-50%, -50%); z-index: 30;"></div>
+
+          <!-- The Floating Island Dock -->
+          <div class="board-dock-wrapper" id="boardDockWrapper">
+            <!-- Properties Popover -->
+            <div class="board-properties-popover" id="boardPropertiesPopover">
+              <div class="board-pop-row-label">
+                <span>Color Palette</span>
+                <span id="boardActiveColorHex" style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--accent);">#10B981</span>
+              </div>
+              <div class="board-palette-grid">
+                <div class="board-color-dot active" style="background: #10b981;" onclick="setBoardColor('#10b981', this)"></div>
+                <div class="board-color-dot" style="background: #38bdf8;" onclick="setBoardColor('#38bdf8', this)"></div>
+                <div class="board-color-dot" style="background: #fbbf24;" onclick="setBoardColor('#fbbf24', this)"></div>
+                <div class="board-color-dot" style="background: #f43f5e;" onclick="setBoardColor('#f43f5e', this)"></div>
+                <div class="board-color-dot" style="background: #a855f7;" onclick="setBoardColor('#a855f7', this)"></div>
+                <div class="board-color-dot" style="background: #ffffff;" onclick="setBoardColor('#ffffff', this)"></div>
+                <div class="board-color-dot" style="background: #27272a;" onclick="setBoardColor('#27272a', this)"></div>
+              </div>
+              <div class="board-pop-row-label">
+                <span>Stroke Thickness</span>
+                <span id="boardStrokeWeightLabel">4px</span>
+              </div>
+              <div class="board-stroke-size-selector">
+                <button class="board-stroke-btn" onclick="setBoardStrokeWeight(2, this)">
+                  <div style="width: 14px; height: 2px; background: currentColor; border-radius: 1px;"></div>
+                </button>
+                <button class="board-stroke-btn active" onclick="setBoardStrokeWeight(4, this)">
+                  <div style="width: 14px; height: 4px; background: currentColor; border-radius: 2px;"></div>
+                </button>
+                <button class="board-stroke-btn" onclick="setBoardStrokeWeight(8, this)">
+                  <div style="width: 14px; height: 8px; background: currentColor; border-radius: 4px;"></div>
+                </button>
+                <button class="board-stroke-btn" onclick="setBoardStrokeWeight(16, this)">
+                  <div style="width: 14px; height: 16px; background: currentColor; border-radius: 4px;"></div>
+                </button>
+              </div>
+            </div>
+
+            <!-- Dock Buttons -->
+            <div class="board-floating-island">
+              <button class="board-tool-icon-btn" id="toolSelect" onclick="selectBoardTool('select')" title="Selection Pointer (V)">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M3 3l7 18 3-7 7-3L3 3z"/></svg>
+              </button>
+              <button class="board-tool-icon-btn active" id="toolPen" onclick="selectBoardTool('pen')" title="Chalkboard Pen (P)">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>
+              </button>
+              <button class="board-tool-icon-btn" id="toolHighlighter" onclick="selectBoardTool('highlighter')" title="Highlighter Marker (H)">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M14 2l4 4L7 17H3v-4L14 2z"/><line x1="3" y1="22" x2="21" y2="22"/></svg>
+              </button>
+              <button class="board-tool-icon-btn" id="toolEraser" onclick="selectBoardTool('eraser')" title="Stroke Eraser (E)">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M20 20H7L3 16C2 15 2 13 3 12L13 2L22 11L18 15L20 20Z"/></svg>
+              </button>
+              <button class="board-tool-icon-btn" id="toolShapes" onclick="selectBoardTool('rectangle')" title="Geometric Shapes (R)">
+                <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>
+              </button>
+              <button class="board-tool-icon-btn" id="toolText" onclick="selectBoardTool('text')" title="Text Typography (T)">
+                <svg class="icon" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+              </button>
+              <button class="board-tool-icon-btn" id="toolLaser" onclick="selectBoardTool('laser')" title="Presentation Laser Pointer (L)">
+                <svg class="icon" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              </button>
+              <div class="board-divider-v"></div>
+              <div class="board-color-swatch-trigger" id="boardActiveColorCircle" style="background: #10b981;" onclick="toggleBoardPropertiesPopover()" title="Change color & stroke size"></div>
+              <div class="board-divider-v"></div>
+              <button class="board-btn-insert-hero" onclick="insertVectorCardSample()" title="Insert Pedagogical Block">
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <span>Insert</span>
+              </button>
+              <div class="board-divider-v"></div>
+              <button class="board-tool-icon-btn" onclick="undoBoardStroke()" title="Undo (Ctrl+Z)">
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+              </button>
+              <button class="board-tool-icon-btn" onclick="redoBoardStroke()" title="Redo (Ctrl+Y)">
+                <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SURFACE 3: QUR'AN & TAJWEED RECITER -->
+      <div class="stage-canvas" id="canvas-quran">
+        <div class="quran-container">
+          <div class="mushaf-page">
+            <div class="surah-header-plate">
+              <div class="surah-name-ar">سُورَةُ ٱلْفَاتِحَةِ</div>
+              <div class="surah-meta">Al-Fatihah · Surah 1 · Makkah (7 Verses)</div>
+            </div>
+            <div class="quran-verse-block">
+              بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ <span class="tajweed-idgham">ٱلرَّحِيمِ</span> <span class="verse-num">١</span>
+              ٱلْحَمْدُ لِلَّهِ رَبِّ ٱلْعَـٰلَمِينَ <span class="verse-num">٢</span>
+              <span class="tajweed-qalqalah">ٱلرَّحْمَـٰنِ</span> ٱلرَّحِيمِ <span class="verse-num">٣</span>
+              مَـٰلِكِ يَوْمِ ٱلدِّينِ <span class="verse-num">٤</span>
+              إِيَّاكَ نَعْبُدُ وَإِيَّاكَ <span class="tajweed-ikhfa">نَسْتَعِينُ</span> <span class="verse-num">٥</span>
+            </div>
+          </div>
+          <div class="tajweed-sidebar">
+            <div class="tajweed-legend-card">
+              <div style="font-size: 12px; font-weight: 700; margin-bottom: 10px; color: #f1f5f9;">Tajweed Color Guide</div>
+              <div class="legend-row">
+                <span class="legend-chip" style="background: #38bdf8;"></span>
+                <span>Idgham (Merger)</span>
+              </div>
+              <div class="legend-row">
+                <span class="legend-chip" style="background: #10b981;"></span>
+                <span>Qalqalah (Echo)</span>
+              </div>
+              <div class="legend-row">
+                <span class="legend-chip" style="background: #f43f5e;"></span>
+                <span>Ikhfa (Ghunnah)</span>
+              </div>
+            </div>
+            <button class="btn-action-hero" style="justify-content: center; width: 100%;" onclick="alert('Audio recording started for recitation review.')">
+              <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+              <span>Record Recitation</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SURFACE 4: LIVE CODE IDE -->
+      <div class="stage-canvas" id="canvas-code">
+        <div class="code-container">
+          <div class="editor-top-bar">
+            <div class="editor-tab">
+              <svg class="icon icon-sm" viewBox="0 0 24 24" style="color: #38bdf8;"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              <span>server.ts</span>
+            </div>
+            <button class="btn-action-hero" style="padding: 4px 12px; font-size: 11.5px;" onclick="runCodeSimulation()">
+              <svg class="icon icon-sm" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span>Run Code</span>
+            </button>
+          </div>
+          <div class="code-body-grid">
+            <div class="code-lines-area">
+              <div class="code-line"><span class="line-number">1</span><span class="code-text"><span class="token-kw">import</span> { WebSocketServer } <span class="token-kw">from</span> <span class="token-str">'ws'</span>;</span></div>
+              <div class="code-line"><span class="line-number">2</span><span class="code-text"><span class="token-comm">// Livetich ultra-low latency real-time socket bridge</span></span></div>
+              <div class="code-line"><span class="line-number">3</span><span class="code-text"><span class="token-kw">const</span> wss = <span class="token-kw">new</span> <span class="token-fn">WebSocketServer</span>({ port: <span class="token-str">8080</span> });</span></div>
+              <div class="code-line"><span class="line-number">4</span><span class="code-text">wss.<span class="token-fn">on</span>(<span class="token-str">'connection'</span>, (ws) =&gt; {</span></div>
+              <div class="code-line"><span class="line-number">5</span><span class="code-text">  console.<span class="token-fn">log</span>(<span class="token-str">'⚡ Peer synchronized with 0ms delay.'</span>);</span></div>
+              <div class="code-line"><span class="line-number">6</span><span class="code-text">});</span></div>
+            </div>
+            <div class="terminal-output" id="termOutput">
+              ➜ [Livetich TypeScript Engine v5.6]: Ready. Click 'Run Code' to execute.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================================================
+         COLLAPSIBLE SLIDING SIDEBAR (Unified for all drawers)
+         ========================================================================= -->
+    <aside class="unified-drawer" id="sideDrawer">
+      <div class="drawer-header-bar">
+        <div class="drawer-title-group" id="drawerTitle">
+          <svg class="icon icon-sm" id="drawerIcon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span id="drawerHeading">Cohort Chat</span>
+        </div>
+        <button class="drawer-close-btn" onclick="closeDrawer()">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- PANE 1: CHAT -->
+      <div class="drawer-content-pane active" id="pane-chat">
+        <div style="flex: 1; overflow-y: auto;" id="chatList">
+          <div class="chat-bubble-row">
+            <span class="chat-bubble-author instructor">Umar Adeyemi (Instructor)</span>
+            <div class="chat-bubble-body">Welcome everyone. Switch to the Chalkboard tab to see the WebSocket architecture.</div>
+          </div>
+          <div class="chat-bubble-row">
+            <span class="chat-bubble-author">Sarah Jenkins</span>
+            <div class="chat-bubble-body">Got it! Sound and video are crisp.</div>
+          </div>
+        </div>
+        <div class="chat-input-bar">
+          <input type="text" class="chat-text-input" id="chatInput" placeholder="Send message…" onkeydown="if(event.key==='Enter') sendChatMsg()" />
+          <button class="chat-send-btn" onclick="sendChatMsg()">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- PANE 2: ROSTER & HANDS QUEUE -->
+      <div class="drawer-content-pane" id="pane-people">
+        <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px;">
+          Active Hands Raised (1)
+        </div>
+        <div class="roster-user-item" style="border-color: rgba(245, 158, 11, 0.35); background: rgba(245, 158, 11, 0.08);">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div class="roster-avatar-circle" style="background: #f59e0b; color: #000;">SJ</div>
+            <div>
+              <div style="font-size: 13px; font-weight: 700;">Sarah Jenkins</div>
+              <div style="font-size: 11px; color: #fbbf24;">Raised hand 1m ago</div>
+            </div>
+          </div>
+          <button class="btn-action-hero" style="padding: 4px 10px; font-size: 11px;" onclick="alert('Mic unmuted for Sarah.')">Grant Mic</button>
+        </div>
+
+        <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--text-dim); margin: 16px 0 8px 0;">
+          All Participants (18)
+        </div>
+        <div class="roster-user-item">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div class="roster-avatar-circle">TB</div>
+            <div style="font-size: 13px; font-weight: 600;">Tobi Bello</div>
+          </div>
+          <span style="font-size: 11.5px; color: var(--text-dim);">Student</span>
+        </div>
+        <div class="roster-user-item">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div class="roster-avatar-circle">CO</div>
+            <div style="font-size: 13px; font-weight: 600;">Chukwuma Obi</div>
+          </div>
+          <span style="font-size: 11.5px; color: var(--text-dim);">Student</span>
+        </div>
+      </div>
+
+      <!-- PANE 3: POINTS & LEADERBOARD -->
+      <div class="drawer-content-pane" id="pane-points">
+        <div class="rank-card lead">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-weight: 800; font-size: 15px;">1</span>
+            <div class="roster-avatar-circle" style="background: #10b981; color: #022c22;">TB</div>
+            <div>
+              <div style="font-weight: 700;">Tobi Bello</div>
+              <div style="font-size: 11px; opacity: 0.8;">Buzzer Streak: 3x</div>
+            </div>
+          </div>
+          <div style="font-weight: 800; font-size: 14px;">+350 pts</div>
+        </div>
+        <div class="rank-card">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-weight: 800; font-size: 15px; color: var(--text-dim);">2</span>
+            <div class="roster-avatar-circle">SJ</div>
+            <div style="font-weight: 600;">Sarah Jenkins</div>
+          </div>
+          <div style="font-weight: 800; font-size: 14px; color: var(--text-muted);">+240 pts</div>
+        </div>
+      </div>
+
+      <!-- PANE 4: CURRICULUM -->
+      <div class="drawer-content-pane" id="pane-curriculum">
+        <div class="curriculum-item">
+          <svg class="icon icon-sm" viewBox="0 0 24 24" style="color: var(--accent);"><polyline points="20 6 9 17 4 12"/></svg>
+          <div>
+            <div style="font-size: 13px; font-weight: 700;">1. LiveKit WebRTC Stage Setup</div>
+            <div style="font-size: 11px; color: var(--accent);">Completed</div>
+          </div>
+        </div>
+        <div class="curriculum-item" style="border-color: rgba(56, 189, 248, 0.4); background: rgba(56, 189, 248, 0.05);">
+          <span class="pulse-dot" style="background: #38bdf8;"></span>
+          <div>
+            <div style="font-size: 13px; font-weight: 700; color: #38bdf8;">2. Real-Time Collaborative Canvas</div>
+            <div style="font-size: 11px; color: #94a3b8;">In Progress (Current)</div>
+          </div>
+        </div>
+        <div class="curriculum-item" style="opacity: 0.6;">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>
+          <div>
+            <div style="font-size: 13px; font-weight: 600;">3. Buzzer Engine & Redis PubSub</div>
+            <div style="font-size: 11px; color: var(--text-dim);">Upcoming</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PANE 5: GRADING & ASSIGNMENTS -->
+      <div class="drawer-content-pane" id="pane-grading">
+        <div class="grading-entry">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span style="font-size: 13px; font-weight: 700;">Sarah Jenkins</span>
+            <span style="font-size: 11px; color: #fbbf24; font-weight: 700;">Pending Review</span>
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">Task #3: WebSocket Heartbeat Protocol implementation</div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-action-hero" style="padding: 5px 12px; font-size: 11px;" onclick="alert('Submission approved (+100 pts issued).')">Approve (+100pts)</button>
+            <button class="btn-action-hero" style="background: rgba(255,255,255,0.06); color: #fff; padding: 5px 12px; font-size: 11px;" onclick="alert('Sent back for revision.')">Feedback</button>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- =========================================================================
+       ZONE 3: THE GOOGLE DOCK (Hyper-Minimalist Floating Islands)
+       ========================================================================= -->
+  <footer class="google-dock" id="dock">
+    <!-- Island 1: Media Core -->
+    <div class="dock-island">
+      <button class="dock-btn active" id="btnMic" onclick="toggleMic()" title="Toggle Microphone">
+        <svg class="icon" id="micIcon" viewBox="0 0 24 24"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+      </button>
+      <button class="dock-btn active" id="btnCam" onclick="toggleCam()" title="Toggle Camera">
+        <svg class="icon" id="camIcon" viewBox="0 0 24 24"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+      </button>
+      <button class="dock-btn" id="btnScreen" onclick="toggleScreen()" title="Share Screen">
+        <svg class="icon" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      </button>
+      <button class="dock-btn danger" onclick="confirmEndSession()" title="End Class / Leave">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="23" y1="1" x2="1" y2="23"/></svg>
+      </button>
+
+      <div style="width: 1px; height: 22px; background: rgba(255,255,255,0.12); margin: 0 2px;"></div>
+
+      <!-- Contextual Action Trigger (Inside Single Pill Box) -->
+      <button class="btn-action-hero" id="centerActionBtn" onclick="openBuzzerModal()">
+        <svg class="icon icon-sm" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        <span id="centerActionText">Start Buzzer</span>
+      </button>
+    </div>
+
+    <!-- Island (Desktop only): Surface Switcher brought down to dock -->
+    <div class="dock-island dock-surf-desktop">
+      <button class="surface-btn active" id="btn-surf-video-dock" onclick="switchSurface('video')" title="Stage / Video">
+        <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        <span>Stage</span>
+      </button>
+      <button class="surface-btn" id="btn-surf-board-dock" onclick="switchSurface('board')" title="Chalkboard">
+        <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/></svg>
+        <span>Chalkboard</span>
+      </button>
+      <button class="surface-btn" id="btn-surf-quran-dock" onclick="switchSurface('quran')" title="Tajweed">
+        <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        <span>Tajweed</span>
+      </button>
+      <button class="surface-btn" id="btn-surf-code-dock" onclick="switchSurface('code')" title="Live IDE">
+        <svg class="icon icon-sm" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        <span>Live IDE</span>
+      </button>
+    </div>
+
+    <!-- Island 3: Collaboration & Overflow Pill -->
+    <div class="dock-island" style="position: relative;">
+      <!-- ON DESKTOP: Show Chat, People, Leaderboard buttons -->
+      <div class="dock-collab-desktop">
+        <button class="dock-btn" id="btnChat" onclick="openDrawerPane('chat')" title="Cohort Chat">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span class="badge-pill">2</span>
+        </button>
+        <button class="dock-btn" id="btnPeople" onclick="openDrawerPane('people')" title="Participants Roster">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </button>
+        <button class="dock-btn" id="btnPoints" onclick="openDrawerPane('points')" title="Leaderboard">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.45 1-1 1H7v2h10v-2h-2c-.55 0-1-.45-1-1v-2.34c3.42-.5 6-3.44 6-7V4H4v5.66c0 3.56 2.58 6.5 6 7z"/></svg>
+        </button>
+      </div>
+
+      <!-- ON MOBILE SCREEN: Bring the ones marked at the top (Surface Switcher: Video, Board, Quran, Code) DOWN HERE -->
+      <div class="dock-surf-mobile">
+        <button class="dock-btn active" id="btn-surf-video" onclick="switchSurface('video')" title="Stage / Video">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        </button>
+        <button class="dock-btn" id="btn-surf-board" onclick="switchSurface('board')" title="Chalkboard">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/></svg>
+        </button>
+        <button class="dock-btn" id="btn-surf-quran" onclick="switchSurface('quran')" title="Tajweed">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+        </button>
+        <button class="dock-btn" id="btn-surf-code" onclick="switchSurface('code')" title="Live IDE">
+          <svg class="icon" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        </button>
+      </div>
+
+      <!-- More (⋮) Overflow Toggle -->
+      <button class="dock-btn" id="btnMore" onclick="toggleOverflowMenu()" title="More Tools">
+        <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+        <span class="badge-pill more-badge-mobile" id="moreUnreadBadge">2</span>
+      </button>
+
+      <!-- The Overflow Sheet -->
+      <div class="overflow-sheet" id="overflowSheet">
+        <!-- ON MOBILE: Put the three from the bottom (Chat, People, Leaderboard) into More options -->
+        <div class="more-collab-mobile" style="border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 8px;">
+          <div class="category-label">Cohort Collaboration</div>
+          <div class="menu-row" onclick="openDrawerPane('chat'); toggleOverflowMenu();">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span>Cohort Chat</span>
+            <span class="badge-pill" style="position: static; margin-left: auto;">2</span>
+          </div>
+          <div class="menu-row" onclick="openDrawerPane('people'); toggleOverflowMenu();">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>Participants & Roster</span>
+            <span class="menu-row-meta">18</span>
+          </div>
+          <div class="menu-row" onclick="openDrawerPane('points'); toggleOverflowMenu();">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.45 1-1 1H7v2h10v-2h-2c-.55 0-1-.45-1-1v-2.34c3.42-.5 6-3.44 6-7V4H4v5.66c0 3.56 2.58 6.5 6 7z"/></svg>
+            <span>Leaderboard & Standings</span>
+          </div>
+        </div>
+
+        <!-- Category 2: Teaching Utilities -->
+        <div>
+          <div class="category-label">Teaching Utilities</div>
+          <div class="menu-row" onclick="openDrawerPane('curriculum'); toggleOverflowMenu();">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            <span>Curriculum Checklist</span>
+          </div>
+          <div class="menu-row" onclick="openDrawerPane('grading'); toggleOverflowMenu();">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+            <span>Grading & Assignments</span>
+            <span class="menu-row-meta">1 Pending</span>
+          </div>
+        </div>
+
+        <!-- Category 3: Room Administration -->
+        <div style="border-top: 1px solid rgba(255,255,255,0.06); padding-top: 8px;">
+          <div class="category-label">Room Administration</div>
+          <div class="menu-row" onclick="toggleChatLock()">
+            <svg class="icon icon-sm" id="lockIcon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <span id="lockChatLabel">Lock Cohort Chat</span>
+          </div>
+          <div class="menu-row" onclick="toggleRecording()">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" style="color: #f43f5e;"><circle cx="12" cy="12" r="10"/></svg>
+            <span id="recText">Stop Cloud Recording</span>
+          </div>
+          <div class="menu-row" onclick="toggleDataSaver()">
+            <svg class="icon icon-sm" viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+            <span id="dataSaverText">2G Data Saver Mode</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- =========================================================================
+       ZONE 4: BUZZER COMPETITION MODAL (Interactive Dialog)
+       ========================================================================= -->
+  <div class="modal-scrim" id="buzzerModal">
+    <div class="buzzer-box">
+      <div class="buzzer-drain-line">
+        <div class="buzzer-drain-fill"></div>
+      </div>
+      <div class="buzzer-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <svg class="icon icon-sm" viewBox="0 0 24 24" style="color: #f59e0b;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          <span style="font-size: 13px; font-weight: 800; color: #fbbf24;">LIVE BUZZER ROUND · 200 PTS</span>
+        </div>
+        <button class="drawer-close-btn" onclick="closeBuzzerModal()">
+          <svg class="icon icon-sm" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="buzzer-body">
+        <p style="font-size: 16px; font-weight: 700; line-height: 1.4; margin-bottom: 20px;">
+          Which protocol guarantees lowest latency media delivery in modern browser architectures?
+        </p>
+        <button class="buzzer-option-btn" onclick="selectBuzzerAnswer(this)">
+          <span style="background: rgba(255,255,255,0.1); width: 22px; height: 22px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px;">A</span>
+          <span>WebRTC DataChannels with SRTP</span>
+        </button>
+        <button class="buzzer-option-btn" onclick="selectBuzzerAnswer(this)">
+          <span style="background: rgba(255,255,255,0.1); width: 22px; height: 22px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px;">B</span>
+          <span>HTTP Long-Polling over TLS 1.3</span>
+        </button>
+        <button class="buzzer-option-btn" onclick="selectBuzzerAnswer(this)">
+          <span style="background: rgba(255,255,255,0.1); width: 22px; height: 22px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px;">C</span>
+          <span>Chunked HLS Video Streams</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // State
+    let currentRole = 'instructor';
+    let micActive = true;
+    let camActive = true;
+    let screenActive = false;
+    let recActive = true;
+    let chatLocked = false;
+    let dataSaver = false;
+    let currentDrawerPane = null;
+
+    // 1. Surface Switching
+    function switchSurface(id) {
+      document.querySelectorAll('.surface-btn, .dock-surf-mobile .dock-btn').forEach(b => b.classList.remove('active'));
+      const topBtn = document.getElementById('btn-surf-' + id + '-top');
+      if (topBtn) topBtn.classList.add('active');
+      const dockBtn = document.getElementById('btn-surf-' + id);
+      if (dockBtn) dockBtn.classList.add('active');
+      const dockDeskBtn = document.getElementById('btn-surf-' + id + '-dock');
+      if (dockDeskBtn) dockDeskBtn.classList.add('active');
+
+      document.querySelectorAll('.stage-canvas').forEach(c => c.classList.remove('active'));
+      document.getElementById('canvas-' + id).classList.add('active');
+
+      if (id === 'board') initChalkboard();
+    }
+
+    // 2. Role Simulation
+    function setRole(role) {
+      currentRole = role;
+      document.getElementById('roleInstructor').classList.toggle('active', role === 'instructor');
+      document.getElementById('roleStudent').classList.toggle('active', role === 'student');
+
+      const actionBtn = document.getElementById('centerActionBtn');
+      const actionText = document.getElementById('centerActionText');
+
+      if (role === 'instructor') {
+        actionText.innerText = 'Start Buzzer Round';
+        actionBtn.onclick = openBuzzerModal;
+      } else {
+        actionText.innerText = 'Raise Hand ✋';
+        actionBtn.onclick = () => alert('You raised your hand! The instructor has been notified.');
+      }
+    }
+
+    // 3. Media Dock Toggles
+    function toggleMic() {
+      micActive = !micActive;
+      const b = document.getElementById('btnMic');
+      b.classList.toggle('active', micActive);
+      b.classList.toggle('muted', !micActive);
+    }
+    function toggleCam() {
+      camActive = !camActive;
+      const b = document.getElementById('btnCam');
+      b.classList.toggle('active', camActive);
+      b.classList.toggle('muted', !camActive);
+    }
+    function toggleScreen() {
+      screenActive = !screenActive;
+      document.getElementById('btnScreen').classList.toggle('active', screenActive);
+    }
+    function confirmEndSession() {
+      const msg = currentRole === 'instructor' ? 'End this live cohort session for all students?' : 'Leave this live room?';
+      if (confirm(msg)) alert('Action completed.');
+    }
+
+    // 4. Drawer & Panes Management
+    const PANE_TITLES = {
+      chat: { title: 'Cohort Chat', icon: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>' },
+      people: { title: 'Participants & Hands Queue', icon: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>' },
+      points: { title: 'Cohort Leaderboard', icon: '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/>' },
+      curriculum: { title: 'Curriculum Progress', icon: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>' },
+      grading: { title: 'Grading & Review', icon: '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>' }
+    };
+
+    function openDrawerPane(paneId) {
+      closeOverflowMenu();
+      const drawer = document.getElementById('sideDrawer');
+      
+      if (currentDrawerPane === paneId) {
+        closeDrawer();
+        return;
+      }
+
+      currentDrawerPane = paneId;
+      drawer.classList.add('open');
+
+      document.getElementById('drawerHeading').innerText = PANE_TITLES[paneId].title;
+      document.getElementById('drawerIcon').innerHTML = PANE_TITLES[paneId].icon;
+
+      document.querySelectorAll('.drawer-content-pane').forEach(p => p.classList.remove('active'));
+      document.getElementById('pane-' + paneId).classList.add('active');
+
+      // Update Dock Highlight
+      ['btnChat', 'btnPeople', 'btnPoints'].forEach(b => document.getElementById(b)?.classList.remove('active'));
+      if (paneId === 'chat') document.getElementById('btnChat').classList.add('active');
+      if (paneId === 'people') document.getElementById('btnPeople').classList.add('active');
+      if (paneId === 'points') document.getElementById('btnPoints').classList.add('active');
+    }
+
+    function closeDrawer() {
+      const drawer = document.getElementById('sideDrawer');
+      drawer.classList.remove('open');
+      currentDrawerPane = null;
+      ['btnChat', 'btnPeople', 'btnPoints'].forEach(b => document.getElementById(b)?.classList.remove('active'));
+    }
+
+    function sendChatMsg() {
+      const input = document.getElementById('chatInput');
+      const val = input.value.trim();
+      if (!val) return;
+      const list = document.getElementById('chatList');
+      const row = document.createElement('div');
+      row.className = 'chat-bubble-row';
+      row.innerHTML = `<span class="chat-bubble-author instructor">${currentRole === 'instructor' ? 'Umar (Instructor)' : 'You'}</span><div class="chat-bubble-body">${val}</div>`;
+      list.appendChild(row);
+      input.value = '';
+      list.scrollTop = list.scrollHeight;
+    }
+
+    // 5. Overflow Progressive Disclosure Sheet
+    function toggleOverflowMenu() {
+      const sheet = document.getElementById('overflowSheet');
+      sheet.classList.toggle('open');
+    }
+    function closeOverflowMenu() {
+      document.getElementById('overflowSheet').classList.remove('open');
+    }
+
+    function toggleChatLock() {
+      chatLocked = !chatLocked;
+      document.getElementById('lockChatLabel').innerText = chatLocked ? 'Unlock Cohort Chat' : 'Lock Cohort Chat';
+      closeOverflowMenu();
+    }
+    function toggleRecording() {
+      recActive = !recActive;
+      document.getElementById('recBadge').classList.toggle('hidden', !recActive);
+      document.getElementById('recText').innerText = recActive ? 'Stop Cloud Recording' : 'Start Cloud Recording';
+      closeOverflowMenu();
+    }
+    function toggleDataSaver() {
+      dataSaver = !dataSaver;
+      document.getElementById('dataSaverText').innerText = dataSaver ? 'Disable 2G Data Saver' : 'Enable 2G Data Saver';
+      alert(dataSaver ? '2G Data Saver Active: High-bitrate video throttled to conserve student data.' : 'Standard Media Bitrate Restored.');
+      closeOverflowMenu();
+    }
+
+    // 6. Buzzer Modal
+    function openBuzzerModal() {
+      document.getElementById('buzzerModal').classList.add('open');
+    }
+    function closeBuzzerModal() {
+      document.getElementById('buzzerModal').classList.remove('open');
+    }
+    function selectBuzzerAnswer(btn) {
+      document.querySelectorAll('.buzzer-option-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      setTimeout(() => {
+        alert('Answer registered! Server validated in 18ms.');
+        closeBuzzerModal();
+      }, 350);
+    }
+
+    // 7. Interactive Google Chalkboard Engine
+    let isDrawing = false;
+    let currentColor = '#10b981';
+    let currentWeight = 4;
+    let currentTool = 'pen';
+    let canvas, ctx;
+    let boardElements = [];
+    let selectedElement = null;
+    let isDraggingElement = false;
+    let dragOffsetX = 0, dragOffsetY = 0;
+    let shapePreview = null;
+    let boardHistory = [];
+    let boardRedoStack = [];
+    let startX = 0, startY = 0;
+    let lastX = 0, lastY = 0;
+
+    const strokesCanvas = document.createElement('canvas');
+    const strokesCtx = strokesCanvas.getContext('2d');
+
+    function saveBoardState() {
+      if (!canvas) return;
+      boardHistory.push({
+        elements: JSON.parse(JSON.stringify(boardElements)),
+        strokes: strokesCanvas.toDataURL()
+      });
+      boardRedoStack = [];
+      if (boardHistory.length > 25) boardHistory.shift();
+    }
+
+    function undoBoardStroke() {
+      if (boardHistory.length === 0) return;
+      boardRedoStack.push({
+        elements: JSON.parse(JSON.stringify(boardElements)),
+        strokes: strokesCanvas.toDataURL()
+      });
+      const prev = boardHistory.pop();
+      boardElements = JSON.parse(JSON.stringify(prev.elements));
+      selectedElement = null;
+      const img = new Image();
+      img.onload = () => {
+        strokesCtx.clearRect(0, 0, strokesCanvas.width, strokesCanvas.height);
+        strokesCtx.drawImage(img, 0, 0);
+        renderChalkboard();
+      };
+      img.src = prev.strokes;
+    }
+
+    function redoBoardStroke() {
+      if (boardRedoStack.length === 0) return;
+      const next = boardRedoStack.pop();
+      boardHistory.push({
+        elements: JSON.parse(JSON.stringify(boardElements)),
+        strokes: strokesCanvas.toDataURL()
+      });
+      boardElements = JSON.parse(JSON.stringify(next.elements));
+      selectedElement = null;
+      const img = new Image();
+      img.onload = () => {
+        strokesCtx.clearRect(0, 0, strokesCanvas.width, strokesCanvas.height);
+        strokesCtx.drawImage(img, 0, 0);
+        renderChalkboard();
+      };
+      img.src = next.strokes;
+    }
+
+    function renderChalkboard() {
+      if (!ctx || !canvas) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(strokesCanvas, 0, 0);
+
+      boardElements.forEach(el => {
+        ctx.save();
+        if (el.type === 'rectangle') {
+          ctx.strokeStyle = el.color || currentColor;
+          ctx.lineWidth = el.weight || 3;
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(el.x, el.y, el.w, el.h, 8);
+          else ctx.rect(el.x, el.y, el.w, el.h);
+          ctx.stroke();
+        } else if (el.type === 'text') {
+          ctx.font = `${el.weight || 600} ${el.size || 18}px 'Plus Jakarta Sans', sans-serif`;
+          ctx.fillStyle = el.color || '#ffffff';
+          ctx.textBaseline = 'top';
+          ctx.fillText(el.text, el.x, el.y);
+        } else if (el.type === 'card') {
+          const w = el.w || 320;
+          const h = el.h || 120;
+          ctx.fillStyle = 'rgba(18, 20, 28, 0.94)';
+          ctx.strokeStyle = el.color || '#10b981';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(el.x, el.y, w, h, 14);
+          else ctx.rect(el.x, el.y, w, h);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = (el.color || '#10b981') + '22';
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(el.x + 12, el.y + 12, 28, 28, 8);
+          else ctx.rect(el.x + 12, el.y + 12, 28, 28);
+          ctx.fill();
+
+          ctx.fillStyle = el.color || '#10b981';
+          ctx.beginPath();
+          ctx.arc(el.x + 26, el.y + 26, 5, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = "700 13px 'Plus Jakarta Sans', sans-serif";
+          ctx.textBaseline = 'middle';
+          ctx.fillText(el.title || 'Pedagogical Block', el.x + 48, el.y + 26);
+
+          ctx.font = "600 14px 'JetBrains Mono', monospace";
+          ctx.fillStyle = el.color || '#10b981';
+          ctx.fillText(el.content || '', el.x + 16, el.y + 66);
+          ctx.font = "500 11px 'Plus Jakarta Sans', sans-serif";
+          ctx.fillStyle = '#94a3b8';
+          ctx.fillText(el.subtitle || 'Synchronized Vector Surface', el.x + 16, el.y + 96);
+        }
+
+        // Selection highlight
+        if (el === selectedElement) {
+          const b = getBoardElementBounds(el);
+          ctx.strokeStyle = '#10b981';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([4, 4]);
+          ctx.strokeRect(b.x - 6, b.y - 6, b.w + 12, b.h + 12);
+          ctx.setLineDash([]);
+          ctx.fillStyle = '#10b981';
+          ctx.fillRect(b.x - 9, b.y - 9, 6, 6);
+          ctx.fillRect(b.x + b.w + 3, b.y - 9, 6, 6);
+          ctx.fillRect(b.x - 9, b.y + b.h + 3, 6, 6);
+          ctx.fillRect(b.x + b.w + 3, b.y + b.h + 3, 6, 6);
+        }
+        ctx.restore();
+      });
+
+      if (shapePreview && currentTool === 'rectangle') {
+        ctx.save();
+        ctx.strokeStyle = currentColor;
+        ctx.lineWidth = currentWeight;
+        ctx.setLineDash([6, 6]);
+        ctx.strokeRect(shapePreview.x, shapePreview.y, shapePreview.w, shapePreview.h);
+        ctx.restore();
+      }
+    }
+
+    function getBoardElementBounds(el) {
+      if (el.type === 'rectangle') {
+        return {
+          x: Math.min(el.x, el.x + el.w),
+          y: Math.min(el.y, el.y + el.h),
+          w: Math.abs(el.w),
+          h: Math.abs(el.h)
+        };
+      } else if (el.type === 'card') {
+        return { x: el.x, y: el.y, w: el.w || 320, h: el.h || 120 };
+      } else if (el.type === 'text') {
+        ctx.font = `${el.weight || 600} ${el.size || 18}px 'Plus Jakarta Sans', sans-serif`;
+        const m = ctx.measureText(el.text);
+        return { x: el.x, y: el.y, w: m.width, h: (el.size || 18) * 1.3 };
+      }
+      return { x: el.x, y: el.y, w: 20, h: 20 };
+    }
+
+    function hitTestBoardElement(px, py) {
+      for (let i = boardElements.length - 1; i >= 0; i--) {
+        const el = boardElements[i];
+        const b = getBoardElementBounds(el);
+        if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) {
+          return el;
+        }
+      }
+      return null;
+    }
+
+    function getBoardCoords(e) {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = e.touches && e.touches.length > 0 ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches && e.touches.length > 0 ? e.touches[0].clientY : e.clientY;
+      return {
+        x: clientX - rect.left,
+        y: clientY - rect.top,
+        clientX,
+        clientY
+      };
+    }
+
+    function initChalkboard() {
+      canvas = document.getElementById('chalkboardCanvas');
+      if (!canvas) return;
+      ctx = canvas.getContext('2d');
+      const container = canvas.parentElement;
+      canvas.width = container.clientWidth;
+      canvas.height = container.clientHeight;
+      strokesCanvas.width = canvas.width;
+      strokesCanvas.height = canvas.height;
+
+      renderChalkboard();
+
+      function onBoardPointerDown(e) {
+        const coords = getBoardCoords(e);
+        isDrawing = true;
+        startX = coords.x;
+        startY = coords.y;
+        lastX = coords.x;
+        lastY = coords.y;
+
+        const laser = document.getElementById('boardLaserPointer');
+        if (currentTool === 'laser') {
+          if (laser) {
+            laser.style.display = 'block';
+            laser.style.left = coords.x + 'px';
+            laser.style.top = coords.y + 'px';
+          }
+          return;
+        }
+
+        if (currentTool === 'select') {
+          const hit = hitTestBoardElement(coords.x, coords.y);
+          if (hit) {
+            selectedElement = hit;
+            isDraggingElement = true;
+            dragOffsetX = coords.x - hit.x;
+            dragOffsetY = coords.y - hit.y;
+            renderChalkboard();
+          } else if (selectedElement) {
+            selectedElement = null;
+            renderChalkboard();
+          }
+          return;
+        }
+
+        if (currentTool === 'rectangle') {
+          shapePreview = { x: startX, y: startY, w: 0, h: 0 };
+          return;
+        }
+
+        if (currentTool === 'text') {
+          const val = prompt('Enter text for chalkboard:');
+          if (val && val.trim()) {
+            saveBoardState();
+            boardElements.push({
+              id: 'text_' + Date.now(),
+              type: 'text',
+              text: val.trim(),
+              x: coords.x,
+              y: coords.y,
+              color: currentColor,
+              size: 18,
+              weight: 600
+            });
+            renderChalkboard();
+          }
+          return;
+        }
+
+        if (currentTool === 'eraser') {
+          const hit = hitTestBoardElement(coords.x, coords.y);
+          if (hit) {
+            saveBoardState();
+            boardElements = boardElements.filter(el => el !== hit);
+            selectedElement = null;
+            renderChalkboard();
+            return;
+          }
+          strokesCtx.clearRect(coords.x - 18, coords.y - 18, 36, 36);
+          renderChalkboard();
+          return;
+        }
+
+        if (currentTool === 'pen' || currentTool === 'highlighter') {
+          strokesCtx.beginPath();
+          strokesCtx.moveTo(coords.x, coords.y);
+        }
+      }
+
+      function onBoardPointerMove(e) {
+        const coords = getBoardCoords(e);
+        const laser = document.getElementById('boardLaserPointer');
+
+        if (currentTool === 'laser') {
+          if (laser) {
+            laser.style.display = 'block';
+            laser.style.left = coords.x + 'px';
+            laser.style.top = coords.y + 'px';
+          }
+          return;
+        }
+
+        if (!isDrawing) return;
+
+        if (currentTool === 'select' && isDraggingElement && selectedElement) {
+          selectedElement.x = coords.x - dragOffsetX;
+          selectedElement.y = coords.y - dragOffsetY;
+          renderChalkboard();
+          return;
+        }
+
+        if (currentTool === 'rectangle' && shapePreview) {
+          shapePreview.w = coords.x - startX;
+          shapePreview.h = coords.y - startY;
+          renderChalkboard();
+          return;
+        }
+
+        if (currentTool === 'pen') {
+          strokesCtx.save();
+          strokesCtx.lineCap = 'round';
+          strokesCtx.lineJoin = 'round';
+          strokesCtx.strokeStyle = currentColor;
+          strokesCtx.lineWidth = currentWeight;
+          strokesCtx.globalAlpha = 1.0;
+          strokesCtx.lineTo(coords.x, coords.y);
+          strokesCtx.stroke();
+          strokesCtx.restore();
+          renderChalkboard();
+        } else if (currentTool === 'highlighter') {
+          strokesCtx.save();
+          strokesCtx.lineCap = 'round';
+          strokesCtx.lineJoin = 'round';
+          strokesCtx.strokeStyle = currentColor;
+          strokesCtx.lineWidth = currentWeight * 3;
+          strokesCtx.globalAlpha = 0.28;
+          strokesCtx.lineTo(coords.x, coords.y);
+          strokesCtx.stroke();
+          strokesCtx.restore();
+          renderChalkboard();
+        } else if (currentTool === 'eraser') {
+          strokesCtx.clearRect(coords.x - 18, coords.y - 18, 36, 36);
+          renderChalkboard();
+        }
+
+        lastX = coords.x;
+        lastY = coords.y;
+      }
+
+      function onBoardPointerUp() {
+        if (!isDrawing) return;
+        isDrawing = false;
+        isDraggingElement = false;
+
+        if (currentTool === 'rectangle' && shapePreview) {
+          if (Math.abs(shapePreview.w) > 8 && Math.abs(shapePreview.h) > 8) {
+            saveBoardState();
+            boardElements.push({
+              id: 'rect_' + Date.now(),
+              type: 'rectangle',
+              x: shapePreview.w < 0 ? startX + shapePreview.w : startX,
+              y: shapePreview.h < 0 ? startY + shapePreview.h : startY,
+              w: Math.abs(shapePreview.w),
+              h: Math.abs(shapePreview.h),
+              color: currentColor,
+              weight: currentWeight
+            });
+          }
+          shapePreview = null;
+          renderChalkboard();
+          return;
+        }
+
+        saveBoardState();
+      }
+
+      canvas.onmousedown = onBoardPointerDown;
+      canvas.onmousemove = onBoardPointerMove;
+      canvas.onmouseup = onBoardPointerUp;
+      canvas.onmouseleave = () => {
+        isDrawing = false;
+        const l = document.getElementById('boardLaserPointer');
+        if (l) l.style.display = 'none';
+      };
+
+      canvas.ontouchstart = (e) => { e.preventDefault(); onBoardPointerDown(e); };
+      canvas.ontouchmove = (e) => { e.preventDefault(); onBoardPointerMove(e); };
+      canvas.ontouchend = onBoardPointerUp;
+    }
+
+    function selectBoardTool(tool) {
+      currentTool = tool;
+      const toolMap = {
+        select: 'toolSelect',
+        pen: 'toolPen',
+        highlighter: 'toolHighlighter',
+        eraser: 'toolEraser',
+        rectangle: 'toolShapes',
+        text: 'toolText',
+        laser: 'toolLaser'
+      };
+      document.querySelectorAll('.board-tool-icon-btn').forEach(btn => btn.classList.remove('active'));
+      const activeBtn = document.getElementById(toolMap[tool]);
+      if (activeBtn) activeBtn.classList.add('active');
+
+      const l = document.getElementById('boardLaserPointer');
+      if (l) l.style.display = tool === 'laser' ? 'block' : 'none';
+
+      closeBoardPropertiesPopover();
+    }
+
+    function setBoardColor(color, el) {
+      currentColor = color;
+      document.querySelectorAll('.board-color-dot').forEach(p => p.classList.remove('active'));
+      if (el) el.classList.add('active');
+      const c = document.getElementById('boardActiveColorCircle');
+      if (c) c.style.background = color;
+      const hex = document.getElementById('boardActiveColorHex');
+      if (hex) hex.innerText = color.toUpperCase();
+
+      if (selectedElement) {
+        selectedElement.color = color;
+        renderChalkboard();
+        saveBoardState();
+      }
+    }
+
+    function setBoardStrokeWeight(weight, el) {
+      currentWeight = weight;
+      document.querySelectorAll('.board-stroke-btn').forEach(b => b.classList.remove('active'));
+      if (el) el.classList.add('active');
+      const lbl = document.getElementById('boardStrokeWeightLabel');
+      if (lbl) lbl.innerText = weight + 'px';
+      if (selectedElement && selectedElement.type === 'rectangle') {
+        selectedElement.weight = weight;
+        renderChalkboard();
+        saveBoardState();
+      }
+    }
+
+    function toggleBoardPropertiesPopover() {
+      const p = document.getElementById('boardPropertiesPopover');
+      if (p) p.classList.toggle('open');
+    }
+    function closeBoardPropertiesPopover() {
+      const p = document.getElementById('boardPropertiesPopover');
+      if (p) p.classList.remove('open');
+    }
+
+    function insertVectorCardSample() {
+      saveBoardState();
+      const card = {
+        id: 'card_' + Date.now(),
+        type: 'card',
+        title: 'Euler Identity Formula',
+        content: 'e^(iπ) + 1 = 0',
+        subtitle: 'Live Pedagogical Synchronized Block',
+        x: Math.max(20, (canvas.width / 2) - 160),
+        y: Math.max(20, (canvas.height / 2) - 60),
+        w: 320,
+        h: 120,
+        color: currentColor
+      };
+      boardElements.push(card);
+      selectedElement = card;
+      selectBoardTool('select');
+      renderChalkboard();
+    }
+
+    function clearBoard() {
+      saveBoardState();
+      boardElements = [];
+      strokesCtx.clearRect(0, 0, strokesCanvas.width, strokesCanvas.height);
+      selectedElement = null;
+      renderChalkboard();
+    }
+
+    // 8. IDE Execution Simulator
+    function runCodeSimulation() {
+      const term = document.getElementById('termOutput');
+      term.innerHTML = '<span style="color: #e3b341;">➜ Compiling server.ts via Live TypeScript Runtime…</span>';
+      setTimeout(() => {
+        term.innerHTML = '✔ [TS Server]: Listening on ws://0.0.0.0:8080<br><span style="color: #3fb950;">⚡ Peer synchronized with 0ms delay. (18 students connected)</span>';
+      }, 700);
+    }
+
+    // Close overflow on click outside
+    document.addEventListener('click', (e) => {
+      const sheet = document.getElementById('overflowSheet');
+      const btnMore = document.getElementById('btnMore');
+      if (sheet.classList.contains('open') && !sheet.contains(e.target) && !btnMore.contains(e.target)) {
+        closeOverflowMenu();
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      if (canvas && canvas.parentElement) {
+        canvas.width = canvas.parentElement.clientWidth;
+        canvas.height = canvas.parentElement.clientHeight;
+      }
+    });
+  </script>
+</body>
+</html>

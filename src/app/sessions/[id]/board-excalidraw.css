@@ -16,144 +16,640 @@
  * collapses the toolbar into a bottom bar, which is already the right shape for
  * a phone — we leave that alone.
  */
-@media (min-width: 730px) {
-  /* Lift the tool palette out of the top grid and park it against the left
-     edge, just under the menu button. Not centred: on an inline board the rail
-     is taller than the room, and centring pushed it up over the menu button
-     and its laser down under the zoom bar. Instead it shrinks to fit —
-     --rail-scale is set by the board (RAIL_TOP_REM / RAIL_BOTTOM_REM there
-     must match the 3.5rem top here and the zoom bar's height). */
-  .livetich-board .shapes-section {
-    position: absolute;
-    left: 0.5rem;
-    top: 3.5rem;
-    transform: scale(var(--rail-scale, 1));
-    transform-origin: top left;
-    justify-content: flex-start;
-  }
+/* =========================================================================
+   GOOGLE CHALKBOARD DESIGN SYSTEM & CHROME SUPPRESSION
+   ========================================================================= */
 
-  /* Excalidraw's Stack components are CSS grids with `grid-auto-flow: column`,
-     not flexboxes — flex-direction does nothing to them. Turning the flow to
-     `row` is what actually stacks the tools. The explicit column track has to
-     be reset too, or the generated 36px columns keep the old width. */
-  .livetich-board .App-toolbar-container {
-    grid-auto-flow: row;
-    justify-items: start;
-  }
-
-  .livetich-board .App-toolbar {
-    width: auto;
-  }
-
-  .livetich-board .App-toolbar .Stack_horizontal {
-    grid-auto-flow: row;
-    grid-template-columns: auto;
-    grid-template-rows: none;
-    justify-items: center;
-  }
-
-  /* A vertical stack needs horizontal rules, not vertical ones. */
-  .livetich-board .App-toolbar__divider {
-    width: 100%;
-    height: 1px;
-    margin: 0.25rem 0;
-  }
-
-  /* The laser button sits in its own island, spaced by an inline margin-left
-     that only makes sense in a row. */
-  .livetich-board .App-toolbar-container > .Island + .Island {
-    margin-left: 0 !important;
-    margin-top: 0.5rem !important;
-    align-self: start !important;
-  }
-
-  /* Excalidraw's hint line is laid out for a wide top bar; inside a narrow left
-     rail it wraps to a column of single words on top of the tools. */
-  .livetich-board .HintViewer {
-    display: none;
-  }
-
-  /* The library is an excalidraw.com surface (and its own brand surface); a
-     classroom board has no use for it, and it collided with our pills. */
-  .livetich-board .layer-ui__wrapper__top-right .sidebar-trigger__label-element {
-    display: none;
-  }
-
-  /* The shape-properties panel (stroke, background, width, opacity...) is
-     Excalidraw's top-left island. With the tools now down the left edge the two
-     sat on top of each other, so the panel moves to the right side, below the
-     classroom pills. It is the tallest thing on the board, so it scrolls rather
-     than running off the bottom. */
-  .livetich-board .App-menu__left {
-    position: absolute;
-    right: 0.5rem;
-    left: auto;
-    top: 3.25rem;
-    max-height: calc(100% - 8rem);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-
-  /* "More tools" hangs off the bottom of the rail, where the board's rounded
-     overflow clip cuts it off. Open it to the right of the rail instead. */
-  .livetich-board .App-toolbar__extra-tools-dropdown {
-    left: calc(100% + 0.5rem);
-    right: auto;
-    top: auto;
-    bottom: 0;
-  }
-
-
+.livetich-board {
+  --bg-app: #090a0f;
+  --bg-surface: #12141c;
+  --bg-canvas-chalk: #10131c;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.16);
+  --border-active: rgba(16, 185, 129, 0.4);
+  --glass-panel: rgba(18, 20, 28, 0.88);
+  --glass-sheet: rgba(15, 18, 26, 0.95);
+  --accent: #10b981;
+  --accent-glow: rgba(16, 185, 129, 0.25);
+  --accent-soft: rgba(16, 185, 129, 0.12);
+  --accent-dark: #047857;
+  --text-main: #f1f5f9;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+  --danger: #f43f5e;
+  --danger-soft: rgba(244, 63, 94, 0.15);
+  --radius-pill: 9999px;
+  --radius-card: 18px;
+  --shadow-island: 0 16px 40px -8px rgba(0, 0, 0, 0.65), 0 0 0 1px var(--border-subtle);
+  --shadow-flyout: 0 24px 60px -10px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--border-subtle);
+  background: var(--bg-canvas-chalk) !important;
 }
 
-/* ---- Every screen -------------------------------------------------------
-   The shapes control replaces Excalidraw's separate square/diamond/circle on
-   phones too. Leaving the natives visible there cost three slots in a row that
-   only fits about eight, which pushed our button off the edge entirely. */
-
-/* Square, diamond and circle live in the shapes menu, which also carries the
-   six shapes Excalidraw has no tool for. Their toolbar buttons are hidden so
-   each shape has exactly one home instead of two. The tools themselves are
-   untouched — they are still armed from the menu, and their number keys
-   (2, 3, 4) still work. */
-.livetich-board label:has(> input[data-testid='toolbar-rectangle']),
-.livetich-board label:has(> input[data-testid='toolbar-diamond']),
-.livetich-board label:has(> input[data-testid='toolbar-ellipse']) {
-  display: none;
+/* Hide Excalidraw's legacy native toolbar, rail, menus, and zoom footer */
+.livetich-board .excalidraw .shapes-section,
+.livetich-board .excalidraw .layer-ui__wrapper__top-right,
+.livetich-board .excalidraw .App-menu__left,
+.livetich-board .excalidraw .footer-center,
+.livetich-board .excalidraw .footer-right,
+.livetich-board .excalidraw .zoom-actions,
+.livetich-board .excalidraw .help-icon,
+.livetich-board .excalidraw .dropdown-menu-button,
+.livetich-board .excalidraw .Stats,
+.livetich-board .excalidraw .HintViewer,
+.livetich-board .excalidraw .layer-ui__wrapper .shapes-section,
+.livetich-board .excalidraw .layer-ui__wrapper .footer-center {
+  display: none !important;
 }
 
-/* Place the shapes control immediately after the selection tool. The row is a
-   grid, and our button is appended last in the DOM, so `order` does the
-   positioning: everything that should follow it is pushed to order 2. */
-.livetich-board [data-board-shapes] {
-  order: 1;
+/* Off-screen toolbar & undo-redo so programmatic button clicks trigger successfully */
+.livetich-board .excalidraw .App-toolbar,
+.livetich-board .excalidraw .App-toolbar-container,
+.livetich-board .excalidraw .undo-redo-buttons,
+.livetich-board .excalidraw .layer-ui__wrapper .App-toolbar {
+  position: absolute !important;
+  left: -9999px !important;
+  top: -9999px !important;
+  width: 0 !important;
+  height: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
 }
 
-.livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-arrow']),
-.livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-line']),
-.livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-freedraw']),
-.livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-text']),
-.livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-image']),
-.livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-eraser']),
-.livetich-board .App-toolbar .Stack_horizontal > label:has(> input[data-testid='toolbar-frame']) {
-  order: 2;
+.mobile-only-text {
+  display: none !important;
 }
 
-/* ---- Phones -------------------------------------------------------------
-   Excalidraw lays its mobile toolbar out as a single row and lets it overflow
-   when there are more tools than fit. With the shape tools back it runs about
-   405px into a 382px island, so the last tools were simply unreachable. Let it
-   scroll instead of clipping. */
+@media (max-width: 768px) {
+  .desktop-only-text {
+    display: none !important;
+  }
+  .mobile-only-text {
+    display: inline !important;
+  }
+}
+
+.livetich-board,
+.livetich-board .excalidraw,
+.livetich-board .excalidraw-container,
+.livetich-board .excalidraw .excalidraw__canvas-wrapper,
+.livetich-board .excalidraw canvas.static {
+  background-color: var(--bg-canvas-chalk) !important;
+  background: var(--bg-canvas-chalk) !important;
+}
+
+.livetich-board .excalidraw canvas.interactive {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* Chalkboard Textarea typing styles - prevent glyph clipping on left boundary */
+.livetich-board .excalidraw .excalidraw-textEditorContainer,
+.livetich-board .excalidraw .excalidraw-textEditorContainer textarea,
+.livetich-board .excalidraw-wysiwyg {
+  overflow: visible !important;
+  padding-left: 8px !important;
+  margin-left: -8px !important;
+  box-sizing: content-box !important;
+}
+
+/* =========================================================================
+   GOOGLE AMBIENT HUD (Non-Intrusive Floating Top Bar)
+   ========================================================================= */
+.chalkboard-header-hud {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+  z-index: 30;
+  gap: 12px;
+}
+
+.hud-left,
+.hud-center,
+.hud-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.hud-chip {
+  background: var(--glass-panel);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  padding: 6px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-main);
+  box-shadow: var(--shadow-island);
+}
+
+.doc-title-input {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  outline: none;
+  width: 160px;
+}
+
+.page-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 2px 4px;
+  border-radius: var(--radius-pill);
+}
+
+.page-nav-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.page-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.collab-pill {
+  background: var(--glass-panel);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  box-shadow: var(--shadow-island);
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.collab-pill:hover {
+  border-color: var(--border-hover);
+}
+.collab-pill.open {
+  color: var(--accent);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+.collab-pill.locked {
+  color: var(--text-muted);
+}
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: pulseAnim 2s infinite;
+}
+.live-dot.locked {
+  background: #64748b;
+  box-shadow: none;
+  animation: none;
+}
+
+.student-follow-chip {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #34d399;
+  border-radius: var(--radius-pill);
+  padding: 5px 12px;
+  font-size: 11.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+/* =========================================================================
+   GOOGLE CHALKBOARD DOCK (Unified Floating Tool Island)
+   ========================================================================= */
+.dock-wrapper {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.floating-island {
+  background: var(--glass-panel);
+  backdrop-filter: blur(28px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-shadow: var(--shadow-island);
+  pointer-events: auto;
+  white-space: nowrap;
+}
+
+.tool-icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.tool-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  transform: translateY(-1px);
+}
+.tool-icon-btn.active {
+  background: rgba(255, 255, 255, 0.95);
+  color: #090a0f;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+
+.tool-icon-btn svg.icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tool-icon-btn svg.icon-sm {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@keyframes pulseAnim {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.9); }
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: translate(-50%, 8px) scale(0.96); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+.divider-v {
+  width: 1px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+.color-swatch-trigger {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+.color-swatch-trigger:hover {
+  transform: scale(1.15);
+}
+
+.btn-insert-hero {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 8px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 14px var(--accent-glow);
+  transition: all 0.2s;
+}
+.btn-insert-hero:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+/* =========================================================================
+   CONTEXTUAL PROPERTIES FLYOUT POPOVER
+   ========================================================================= */
+.properties-popover {
+  position: absolute;
+  bottom: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 320px;
+  background: var(--glass-sheet);
+  backdrop-filter: blur(28px);
+  border: 1px solid var(--border-hover);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-flyout);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: auto;
+  z-index: 40;
+  animation: popIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.pop-row-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.palette-grid {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.color-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.18s;
+}
+.color-dot:hover {
+  transform: scale(1.2);
+}
+.color-dot.active {
+  border-color: #ffffff;
+  transform: scale(1.18);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.4);
+}
+
+.color-dot.fill-none-dot {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1.5px dashed rgba(255, 255, 255, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+.color-dot.fill-none-dot:hover {
+  border-color: rgba(255, 255, 255, 0.85);
+  color: #fff;
+  transform: scale(1.15);
+}
+.color-dot.fill-none-dot.active {
+  border: 2px solid #ffffff;
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  transform: scale(1.18);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.4);
+}
+
+.stroke-size-selector {
+  display: flex;
+  gap: 6px;
+}
+.stroke-btn {
+  flex: 1;
+  height: 42px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--text-muted);
+  transition: all 0.15s;
+  user-select: none;
+}
+.stroke-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+.stroke-btn.active {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.4);
+  color: #fff;
+}
+
+.shapes-popover {
+  width: 330px;
+}
+.shapes-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.shape-select-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 4px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.shape-select-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+}
+.shape-select-btn.active {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  border-color: #10b981;
+}
+.shape-select-btn svg {
+  width: 18px;
+  height: 18px;
+}
+.shape-select-btn span {
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* =========================================================================
+   COLLABORATION & EXPORT SHEET
+   ========================================================================= */
+.collab-sheet {
+  position: absolute;
+  top: 54px;
+  right: 16px;
+  width: 290px;
+  background: var(--glass-sheet);
+  backdrop-filter: blur(28px);
+  border: 1px solid var(--border-hover);
+  border-radius: var(--radius-card);
+  padding: 16px;
+  box-shadow: var(--shadow-flyout);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  z-index: 45;
+  pointer-events: auto;
+}
+
+.collab-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.switch-ui {
+  width: 44px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-pill);
+  padding: 2px;
+  cursor: pointer;
+  transition: background 0.2s;
+  position: relative;
+}
+.switch-ui.on {
+  background: var(--accent);
+}
+.switch-handle {
+  width: 20px;
+  height: 20px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+.switch-ui.on .switch-handle {
+  transform: translateX(20px);
+}
+
+.collab-action-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.collab-action-row:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #fff;
+}
+.collab-action-row.danger {
+  color: #f87171;
+}
+.collab-action-row.danger:hover {
+  background: var(--danger-soft);
+  color: #fca5a5;
+}
+
+/* Mobile responsive adaptations */
 @media (max-width: 729px) {
-  .livetich-board .App-toolbar .Stack_horizontal {
-    overflow-x: auto;
-    scrollbar-width: none;
-    max-width: 100%;
+  .chalkboard-header-hud {
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    gap: 6px;
   }
+  .hud-chip {
+    padding: 4px 8px;
+    font-size: 11px;
+    gap: 4px;
+  }
+  .doc-title-input {
+    width: 90px;
+    font-size: 11px;
+  }
+  .desktop-only-btn,
+  .desktop-only-tool,
+  .desktop-only-text {
+    display: none !important;
+  }
+  .dock-wrapper {
+    bottom: 12px;
+  }
+  .floating-island {
+    padding: 4px 6px;
+    gap: 2px;
+  }
+  .tool-icon-btn {
+    width: 34px;
+    height: 34px;
+  }
+  .btn-insert-hero {
+    padding: 6px 10px;
+    font-size: 11.5px;
+  }
+}
 
-  .livetich-board .App-toolbar .Stack_horizontal::-webkit-scrollbar {
-    display: none;
-  }
+@keyframes pulseAnim {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.9); }
+}
+
+@keyframes popIn {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
 }
 
 /**
@@ -259,3 +755,236 @@
     opacity: 0.5;
   }
 }
+
+/* Pedagogical Insert Studio Modal & Bottom Sheet */
+@keyframes studio-slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.studio-bottom-sheet {
+  animation: studio-slide-up 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.studio-scroll-hidden::-webkit-scrollbar {
+  display: none;
+}
+.studio-scroll-hidden {
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* =========================================================================
+   CONTEXTUAL SHAPE FLOATING TOOLBAR
+   ========================================================================= */
+.shape-contextual-bar {
+  position: absolute;
+  z-index: 405;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: rgba(18, 20, 28, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 16px 36px -6px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  user-select: none;
+  animation: shapeBarFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes shapeBarFadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+.shape-bar-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-main);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.shape-bar-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.shape-bar-btn.active {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #34d399;
+}
+
+.shape-bar-swatch-ring {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+}
+
+.shape-bar-swatch-inner {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.shape-bar-swatch-solid {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+}
+
+.shape-bar-swatch-none {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-dim);
+}
+
+.shape-bar-thickness-preview {
+  width: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shape-bar-thickness-preview span {
+  width: 100%;
+  border-radius: 2px;
+}
+
+.shape-bar-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.shape-bar-divider {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 0 2px;
+}
+
+.shape-bar-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.shape-bar-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-main);
+}
+
+.shape-bar-icon-btn.danger:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.shape-bar-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(18, 20, 28, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow: var(--shadow-flyout);
+  z-index: 410;
+  min-width: 170px;
+  animation: dropdownPop 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dropdownPop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+.shape-bar-dropdown-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.thickness-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.thickness-pill-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-main);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  width: 100%;
+}
+
+.thickness-pill-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.thickness-pill-btn.active {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #34d399;
+}
+
+.thickness-line {
+  width: 24px;
+  border-radius: 2px;
+}
+

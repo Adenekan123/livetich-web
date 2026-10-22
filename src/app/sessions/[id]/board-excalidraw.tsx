@@ -43,16 +43,21 @@ import {
   PiBookOpenTextBold,
   PiArrowsInBold,
   PiArrowsOutBold,
+  PiCheckBold,
   PiCrosshairBold,
   PiDownloadSimpleBold,
   PiCaretDownBold,
   PiFilesBold,
   PiFunctionBold,
+  PiImageBold,
+  PiPlusBold,
   PiXBold,
   PiLockBold,
   PiLinkSimpleBold,
   PiLockOpenBold,
+  PiMathOperationsBold,
   PiPencilSimpleBold,
+  PiCopyBold,
   PiSelectionAllBold,
   PiSlidersHorizontalBold,
   PiTrashBold,
@@ -126,11 +131,36 @@ interface SelectedMath {
   latex: string;
   x: number;
   y: number;
+  width: number;
   height: number;
   /** Viewport pixels, relative to the board wrapper. */
   left: number;
   top: number;
 }
+
+type InsertStudioTab = 'math' | 'quran' | 'docs' | 'files';
+
+const MATH_PRESETS = [
+  { label: 'Quadratic', latex: 'x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}' },
+  { label: 'Integral', latex: '\\int_{a}^{b} f(x) \\, dx' },
+  { label: 'Summation', latex: '\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}' },
+  { label: 'Euler Identity', latex: 'e^{i\\pi} + 1 = 0' },
+  { label: 'Maxwell', latex: '\\nabla \\times \\mathbf{B} = \\mu_0\\mathbf{J}' },
+  { label: '2×2 Matrix', latex: 'A = \\begin{bmatrix} a & b \\\\ c & d \\end{bmatrix}' },
+];
+
+const SURAH_SNIPPETS: Record<string, string> = {
+  '1': 'بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ',
+  '2': 'الم ۝ ذَٰلِكَ ٱلْكِتَـٰبُ لَا رَيْبَ ۛ فِيهِ ۛ هُدًى لِّلْمُتَّقِينَ',
+  '3': 'الم ۝ ٱللَّهُ لَآ إِلَـٰهَ إِلَّا هُوَ ٱلْحَىُّ ٱلْقَيُّومُ',
+  '18': 'ٱلْحَمْدُ لِلَّهِ ٱلَّذِىٓ أَنزَلَ عَلَىٰ عَبْدِهِ ٱلْكِتَـٰبَ',
+  '36': 'يسٓ ۝ وَٱلْقُرْءَانِ ٱلْحَكِيمِ',
+  '55': 'ٱلرَّحْمَـٰنُ ۝ عَلَّمَ ٱلْقُرْءَانَ',
+  '67': 'تَبَـٰرَكَ ٱلَّذِى بِيَدِهِ ٱلْمُلْكُ وَهُوَ عَلَىٰ كُلِّ شَىْءٍ قَدِيرٌ',
+  '112': 'قُلْ هُوَ ٱللَّهُ أَحَدٌ ۝ ٱللَّهُ ٱلصَّمَدُ',
+  '113': 'قُلْ أَعُوذُ بِرَبِّ ٱلْفَلَقِ',
+  '114': 'قُلْ أَعُوذُ بِرَبِّ ٱلنَّاسِ',
+};
 
 /**
  * The one selected equation, or null.
@@ -155,6 +185,7 @@ function soleMathElement(
       latex,
       x: el.x,
       y: el.y,
+      width: el.width,
       height: el.height,
       left: Math.round((el.x + view.scrollX) * view.zoom),
       top: Math.round((el.y + view.scrollY) * view.zoom),
@@ -180,6 +211,92 @@ function mathElementAt(
     }
   }
   return null;
+}
+
+/**
+ * A selected shape element on the board whose outline, fill, stroke thickness,
+ * or placement can be edited through the contextual floating shape toolbar.
+ */
+interface SelectedShape {
+  id: string;
+  type: string;
+  strokeColor: string;
+  strokeWidth: number;
+  backgroundColor: string;
+  fillStyle: string;
+  canFill: boolean;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+function isShapeElement(el: ExcalidrawElement): boolean {
+  if (el.isDeleted) return false;
+  if ((el.customData as MathCustomData | undefined)?.livetichMath) return false;
+  if ((el.customData as ImportCustomData | undefined)?.livetichImport) return false;
+  if (
+    el.type === 'freedraw' ||
+    el.type === 'text' ||
+    el.type === 'image' ||
+    el.type === 'embeddable' ||
+    el.type === 'frame'
+  ) {
+    return false;
+  }
+  return (
+    el.type === 'rectangle' ||
+    el.type === 'ellipse' ||
+    el.type === 'diamond' ||
+    el.type === 'line' ||
+    el.type === 'arrow'
+  );
+}
+
+function shapeCanFill(el: ExcalidrawElement): boolean {
+  if (el.type === 'rectangle' || el.type === 'ellipse' || el.type === 'diamond') return true;
+  if (el.type === 'line') {
+    const pts = 'points' in el ? el.points : undefined;
+    return Array.isArray(pts) && pts.length >= 3;
+  }
+  return false;
+}
+
+function soleShapeElement(
+  elements: readonly ExcalidrawElement[],
+  selectedIds: Readonly<Record<string, boolean>>,
+  view: { scrollX: number; scrollY: number; zoom: number },
+): SelectedShape | null {
+  let found: ExcalidrawElement | null = null;
+  for (const el of elements) {
+    if (el.isDeleted || !selectedIds[el.id]) continue;
+    if (!isShapeElement(el)) return null;
+    if (found) return null; // more than one shape selected
+    found = el;
+  }
+  if (!found) return null;
+
+  const [minX, minY, maxX, maxY] = getCommonBounds([found]);
+  const sceneW = Math.max(found.width, maxX - minX);
+  const sceneH = Math.max(found.height, maxY - minY);
+  const left = Math.round((minX + view.scrollX) * view.zoom);
+  const top = Math.round((minY + view.scrollY) * view.zoom);
+  const width = Math.round(sceneW * view.zoom);
+  const height = Math.round(sceneH * view.zoom);
+
+  return {
+    id: found.id,
+    type: found.type,
+    strokeColor: found.strokeColor || '#ffffff',
+    strokeWidth: found.strokeWidth || 2,
+    backgroundColor: found.backgroundColor || 'transparent',
+    fillStyle: found.fillStyle || 'solid',
+    canFill: shapeCanFill(found),
+    left,
+    top,
+    width,
+    height,
+  };
 }
 
 /**
@@ -373,6 +490,18 @@ const SHAPES: ShapeEntry[] = [
     icon: 'M12 2a10 10 0 110 20 10 10 0 010-20z',
   },
   {
+    key: 'line',
+    label: 'Line',
+    tool: 'line',
+    icon: 'M4 20L20 4',
+  },
+  {
+    key: 'arrow',
+    label: 'Arrow',
+    tool: 'arrow',
+    icon: 'M5 19L19 5M13 5h6v6',
+  },
+  {
     key: 'triangle',
     label: 'Triangle',
     points: polygonPoints(3, SHAPE_SIZE),
@@ -512,21 +641,26 @@ function MathButton({
 function putEmbeddable(editor: ExcalidrawImperativeAPI, link: string, w: number, h: number) {
   const state = editor.getAppState();
   const [x1, y1, x2, y2] = getVisibleSceneBounds(state);
+  const existingCards = editor.getSceneElements().filter((e) => !e.isDeleted && (e.type === 'embeddable' || e.type === 'image'));
+  const count = existingCards.length;
+  const xOffset = count > 0 ? 300 : 0;
+  const yOffset = count > 0 ? 40 : 0;
   const seed = () => Math.floor(Math.random() * 2 ** 31);
+  const id = crypto.randomUUID();
   const element = {
-    id: crypto.randomUUID(),
+    id,
     type: 'embeddable',
-    x: (x1 + x2) / 2 - w / 2,
-    y: (y1 + y2) / 2 - h / 2,
+    x: (x1 + x2) / 2 - w / 2 + xOffset,
+    y: (y1 + y2) / 2 - h / 2 + yOffset,
     width: w,
     height: h,
     angle: 0,
-    strokeColor: 'transparent',
+    strokeColor: '#334155',
     backgroundColor: 'transparent',
     fillStyle: 'solid',
     strokeWidth: 1,
     strokeStyle: 'solid',
-    roughness: 1,
+    roughness: 0,
     opacity: 100,
     groupIds: [],
     frameId: null,
@@ -545,9 +679,12 @@ function putEmbeddable(editor: ExcalidrawImperativeAPI, link: string, w: number,
 
   editor.updateScene({
     elements: [...editor.getSceneElementsIncludingDeleted(), element],
+    appState: {
+      selectedElementIds: { [id]: true },
+    },
     captureUpdate: CaptureUpdateAction.IMMEDIATELY,
   });
-  editor.scrollToContent(element, { fitToContent: true, animate: false });
+  editor.setActiveTool({ type: 'selection' });
 }
 
 export function BoardExcalidraw({
@@ -627,6 +764,7 @@ export function BoardExcalidraw({
   /** Remote cursors, kept outside React state — they change on every pointer
    *  move and only ever feed Excalidraw's own collaborator rendering. */
   const collaboratorsRef = useRef(new Map<SocketId, Collaborator>());
+  const lastSelectedIdsRef = useRef<Record<string, true> | null>(null);
 
   const [ready, setReady] = useState(false);
   const [boardOpen, setBoardOpen] = useState(false);
@@ -667,12 +805,352 @@ export function BoardExcalidraw({
     ((list: readonly File[]) => Promise<void>) | null
   >(null);
   const [mathOpen, setMathOpen] = useState(false);
-  const [mathSource, setMathSource] = useState('');
+  const [mathSource, setMathSource] = useState('x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}');
   const [mathBusy, setMathBusy] = useState(false);
   /** On a phone the classroom controls collapse behind one button: Excalidraw
    *  gives its own toolbar the full width of the top, and the pills sat on top
    *  of it. */
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [insertStudioOpen, setInsertStudioOpen] = useState(false);
+  const [insertStudioTab, setInsertStudioTab] = useState<InsertStudioTab>('math');
+  const [collabSheetOpen, setCollabSheetOpen] = useState(false);
+  const [activeToolState, setActiveToolState] = useState<
+    'select' | 'pen' | 'highlighter' | 'eraser' | 'rectangle' | 'text' | 'laser'
+  >('select');
+  const [activeColor, setActiveColor] = useState('#ffffff');
+  const [activeWeight, setActiveWeight] = useState(1);
+  const [shapeFillColor, setShapeFillColor] = useState<string>('transparent');
+  const shapeFillColorRef = useRef(shapeFillColor);
+  shapeFillColorRef.current = shapeFillColor;
+  const [propertiesPopoverOpen, setPropertiesPopoverOpen] = useState(false);
+  const [shapesPopoverOpen, setShapesPopoverOpen] = useState(false);
+  const [boardTitle, setBoardTitle] = useState('System Architecture');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(3);
+
+  const openInsertStudio = useCallback((tab?: InsertStudioTab) => {
+    if (tab) setInsertStudioTab(tab);
+    setInsertStudioOpen(true);
+    setCollabSheetOpen(false);
+    setPropertiesPopoverOpen(false);
+    setShapesPopoverOpen(false);
+  }, []);
+
+  const closeInsertStudio = useCallback(() => {
+    setInsertStudioOpen(false);
+    setEditingMath(null);
+    setLinkError(null);
+    setQuranError(null);
+  }, []);
+
+  const selectTool = useCallback(
+    (tool: 'select' | 'pen' | 'highlighter' | 'eraser' | 'rectangle' | 'text' | 'laser') => {
+      setActiveToolState(tool);
+      const editor = apiRef.current;
+      if (!editor) return;
+      const chalkColor =
+        !activeColor || activeColor === '#27272a' || activeColor === '#000000' || activeColor === '#1e1e1e'
+          ? '#ffffff'
+          : activeColor;
+
+      if (tool !== 'rectangle') {
+        armedShapeRef.current = null;
+        armedActiveRef.current = false;
+        previewRef.current = null;
+        setPreview(null);
+      }
+      if (tool !== 'select') {
+        lastSelectedIdsRef.current = null;
+        editor.updateScene({
+          appState: {
+            selectedElementIds: {},
+          },
+        });
+      }
+
+      if (tool === 'select') {
+        editor.setActiveTool({ type: 'selection' });
+        editor.updateScene({
+          appState: { currentItemOpacity: 100 },
+        });
+      } else if (tool === 'pen') {
+        editor.updateScene({
+          appState: {
+            selectedElementIds: {},
+            currentItemOpacity: 100,
+            currentItemStrokeWidth: activeWeight,
+            currentItemStrokeColor: chalkColor,
+            currentItemBackgroundColor: 'transparent',
+          },
+        });
+        editor.setActiveTool({ type: 'freedraw', locked: true });
+      } else if (tool === 'highlighter') {
+        editor.setActiveTool({ type: 'freedraw', locked: true });
+        editor.updateScene({
+          appState: {
+            currentItemOpacity: 35,
+            currentItemStrokeWidth: activeWeight * 3,
+            currentItemStrokeColor: activeColor || '#fbbf24',
+            currentItemBackgroundColor: 'transparent',
+          },
+        });
+      } else if (tool === 'eraser') {
+        editor.setActiveTool({ type: 'eraser', locked: true });
+      } else if (tool === 'rectangle') {
+        editor.setActiveTool({ type: 'rectangle', locked: true });
+        editor.updateScene({
+          appState: {
+            currentItemOpacity: 100,
+            currentItemStrokeColor: chalkColor,
+            currentItemStrokeWidth: activeWeight,
+            currentItemBackgroundColor: shapeFillColorRef.current || 'transparent',
+            currentItemFillStyle: 'solid',
+          },
+        });
+      } else if (tool === 'text') {
+        editor.setActiveTool({ type: 'text', locked: true });
+        editor.updateScene({
+          appState: {
+            currentItemOpacity: 100,
+            currentItemStrokeColor: chalkColor,
+            currentItemFontSize: 28,
+            currentItemFontFamily: 2,
+            currentItemTextAlign: 'left',
+          },
+        });
+      } else if (tool === 'laser') {
+        editor.setActiveTool({ type: 'laser', locked: true });
+      }
+      setPropertiesPopoverOpen(false);
+      if (tool !== 'rectangle') {
+        setShapesPopoverOpen(false);
+      }
+    },
+    [activeWeight, activeColor],
+  );
+
+  const setStrokeColor = useCallback(
+    (color: string) => {
+      setActiveColor(color);
+      const editor = apiRef.current;
+      if (!editor) return;
+      const elements = editor.getSceneElements();
+      const appState = editor.getAppState();
+      let selectedIds = appState.selectedElementIds;
+      if (!selectedIds || !Object.keys(selectedIds).some((id) => selectedIds[id])) {
+        if (
+          lastSelectedIdsRef.current &&
+          Object.keys(lastSelectedIdsRef.current).some((id) => lastSelectedIdsRef.current![id])
+        ) {
+          selectedIds = lastSelectedIdsRef.current;
+        }
+      }
+      const keepOpacity = activeToolState === 'highlighter' ? 35 : 100;
+      if (selectedIds && Object.keys(selectedIds).some((id) => selectedIds[id])) {
+        lastSelectedIdsRef.current = { ...selectedIds };
+        const next = elements.map((el) =>
+          selectedIds[el.id]
+            ? {
+                ...el,
+                strokeColor: color,
+                opacity: el.type === 'text' && el.opacity < 50 ? 100 : el.opacity,
+                version: el.version + 1,
+              }
+            : el,
+        );
+        editor.updateScene({
+          elements: next,
+          appState: {
+            selectedElementIds: { ...selectedIds },
+            currentItemStrokeColor: color,
+            currentItemOpacity: keepOpacity,
+          },
+          captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+        });
+        const map = elementsRef.current;
+        const doc = docRef.current;
+        if (doc && map) {
+          doc.transact(() => {
+            for (const el of next) {
+              if (selectedIds[el.id]) {
+                map.set(el.id, el);
+              }
+            }
+          }, LOCAL);
+        }
+      } else {
+        editor.updateScene({
+          appState: { currentItemStrokeColor: color, currentItemOpacity: keepOpacity },
+        });
+      }
+      if (activeToolState === 'eraser') selectTool('pen');
+    },
+    [activeToolState, selectTool],
+  );
+
+  const setShapeFill = useCallback(
+    (color: string) => {
+      setShapeFillColor(color);
+      shapeFillColorRef.current = color;
+      const editor = apiRef.current;
+      if (!editor) return;
+
+      // 1. Set current drawing background fill for upcoming shapes
+      editor.updateScene({
+        appState: {
+          currentItemBackgroundColor: color,
+          currentItemFillStyle: 'solid',
+        },
+      });
+
+      // 2. If a shape element is currently selected on the chalkboard, recolor it
+      const elements = editor.getSceneElements();
+      const appState = editor.getAppState();
+      let selectedIds = appState.selectedElementIds;
+      if (!selectedIds || !Object.keys(selectedIds).some((id) => selectedIds[id])) {
+        if (
+          lastSelectedIdsRef.current &&
+          Object.keys(lastSelectedIdsRef.current).some((id) => lastSelectedIdsRef.current![id])
+        ) {
+          selectedIds = lastSelectedIdsRef.current;
+        }
+      }
+
+      if (selectedIds && Object.keys(selectedIds).some((id) => selectedIds[id])) {
+        lastSelectedIdsRef.current = { ...selectedIds };
+        const next = elements.map((el) =>
+          selectedIds[el.id]
+            ? {
+                ...el,
+                backgroundColor: color,
+                fillStyle: 'solid' as const,
+                version: el.version + 1,
+              }
+            : el,
+        );
+        editor.updateScene({
+          elements: next,
+          appState: {
+            selectedElementIds: { ...selectedIds },
+            currentItemBackgroundColor: color,
+            currentItemFillStyle: 'solid',
+          },
+          captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+        });
+        const map = elementsRef.current;
+        const doc = docRef.current;
+        if (doc && map) {
+          doc.transact(() => {
+            for (const el of next) {
+              if (selectedIds[el.id]) {
+                map.set(el.id, el);
+              }
+            }
+          }, LOCAL);
+        }
+      }
+    },
+    [],
+  );
+
+  const setStrokeWeight = useCallback((weight: number) => {
+    setActiveWeight(weight);
+    const editor = apiRef.current;
+    if (!editor) return;
+    const elements = editor.getSceneElements();
+    const appState = editor.getAppState();
+    let selectedIds = appState.selectedElementIds;
+    const hasSelection = !!(selectedIds && Object.keys(selectedIds).some((id) => selectedIds[id]));
+
+    if (
+      activeToolState === 'select' &&
+      (hasSelection ||
+        (lastSelectedIdsRef.current &&
+          Object.keys(lastSelectedIdsRef.current).some((id) => lastSelectedIdsRef.current![id])))
+    ) {
+      if (!hasSelection && lastSelectedIdsRef.current) {
+        selectedIds = lastSelectedIdsRef.current;
+      }
+      lastSelectedIdsRef.current = { ...selectedIds };
+      const next = elements.map((el) =>
+        selectedIds[el.id] ? { ...el, strokeWidth: weight, version: el.version + 1 } : el,
+      );
+      editor.updateScene({
+        elements: next,
+        appState: {
+          selectedElementIds: { ...selectedIds },
+          currentItemStrokeWidth: weight,
+        },
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      const map = elementsRef.current;
+      const doc = docRef.current;
+      if (doc && map) {
+        doc.transact(() => {
+          for (const el of next) {
+            if (selectedIds[el.id]) {
+              map.set(el.id, el);
+            }
+          }
+        }, LOCAL);
+      }
+    } else {
+      lastSelectedIdsRef.current = null;
+      editor.updateScene({
+        appState: {
+          selectedElementIds: {},
+          currentItemStrokeWidth: weight,
+        },
+      });
+      editor.setActiveTool({ type: 'freedraw', locked: true });
+      setActiveToolState('pen');
+    }
+  }, [activeToolState]);
+
+  const handleUndo = useCallback(() => {
+    const btn = wrapperRef.current?.querySelector<HTMLButtonElement>(
+      '[data-testid="undo"], [aria-label*="Undo"], .undo-button-container button:first-child',
+    );
+    if (btn) btn.click();
+    else {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'z', code: 'KeyZ', ctrlKey: true, bubbles: true }),
+      );
+    }
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    const btn = wrapperRef.current?.querySelector<HTMLButtonElement>(
+      '[data-testid="redo"], [aria-label*="Redo"], .undo-button-container button:last-child',
+    );
+    if (btn) btn.click();
+    else {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'y', code: 'KeyY', ctrlKey: true, bubbles: true }),
+      );
+    }
+  }, []);
+
+  const [boardMsg, setBoardMsg] = useState<string | null>(null);
+
+  const flash = useCallback((m: string) => {
+    setBoardMsg(m);
+    window.setTimeout(() => setBoardMsg(null), 2600);
+  }, []);
+
+  const prevPage = useCallback(() => setCurrentPage((p) => Math.max(1, p - 1)), []);
+  const nextPage = useCallback(
+    () => setCurrentPage((p) => Math.min(totalPages, p + 1)),
+    [totalPages],
+  );
+  const addPage = useCallback(() => {
+    setTotalPages((t) => {
+      const next = t + 1;
+      setCurrentPage(next);
+      return next;
+    });
+    flash('Added page');
+  }, [flash]);
   /** The instructor's playback position for a shared video. Ephemeral, so it
    *  rides awareness alongside the cursors rather than the persisted doc. */
   const [videoState, setVideoState] = useState<VideoState | null>(null);
@@ -683,9 +1161,14 @@ export function BoardExcalidraw({
   const selectedMathRef = useRef<SelectedMath | null>(null);
   const [selectedImport, setSelectedImport] = useState<SelectedImport | null>(null);
   const selectedImportRef = useRef<SelectedImport | null>(null);
+  const [selectedShape, setSelectedShape] = useState<SelectedShape | null>(null);
+  const selectedShapeRef = useRef<SelectedShape | null>(null);
+  const [shapeToolbarMenu, setShapeToolbarMenu] = useState<'none' | 'stroke' | 'width' | 'fill'>('none');
   /** Set while the panel is editing an existing equation rather than composing
    *  a new one. */
   const [editingMath, setEditingMath] = useState<SelectedMath | null>(null);
+  const editingMathRef = useRef<SelectedMath | null>(null);
+  editingMathRef.current = editingMath;
   const mathInputRef = useRef<HTMLTextAreaElement>(null);
   const [mathQuery, setMathQuery] = useState('');
   const [mathTab, setMathTab] = useState<MathCategory | 'Recent'>('Equations');
@@ -740,15 +1223,9 @@ export function BoardExcalidraw({
   const [preview, setPreview] = useState<PreviewBox | null>(null);
   const previewRef = useRef<PreviewBox | null>(null);
   const [resyncing, setResyncing] = useState(false);
-  const [boardMsg, setBoardMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const canEdit = ready && (canDraw || boardOpen);
-
-  const flash = useCallback((m: string) => {
-    setBoardMsg(m);
-    window.setTimeout(() => setBoardMsg(null), 2600);
-  }, []);
+  const canEdit = canDraw || (ready && boardOpen);
 
   useEffect(() => {
     apiRef.current = api;
@@ -1169,7 +1646,7 @@ export function BoardExcalidraw({
     if (!map) return;
     applyRemoteElements([...map.values()].filter(isSharedElement));
     hydrateFiles();
-  }, [api, applyRemoteElements, hydrateFiles, flash]);
+  }, [api, applyRemoteElements, hydrateFiles]);
 
   /**
    * Frame whatever is already on the board, once, when this client is ready.
@@ -1365,6 +1842,10 @@ export function BoardExcalidraw({
       }
 
       const state = editor.getAppState();
+      const currentSelected = state.selectedElementIds;
+      if (currentSelected && Object.keys(currentSelected).some((id) => currentSelected[id])) {
+        lastSelectedIdsRef.current = { ...currentSelected };
+      }
       const armedKey = armedShapeRef.current;
 
       // Track the in-flight drag so the overlay can draw the real shape over
@@ -1413,24 +1894,26 @@ export function BoardExcalidraw({
         if (shape && box) {
           const w = Math.max(8, box.width);
           const h = Math.max(8, box.height);
+          const p0x = shape.points[0][0];
+          const p0y = shape.points[0][1];
           const polygon = convertToExcalidrawElements([
             {
               type: 'line',
-              x: box.x,
-              y: box.y,
+              x: box.x + (p0x / SHAPE_SIZE) * w,
+              y: box.y + (p0y / SHAPE_SIZE) * h,
               width: w,
               height: h,
               points: shape.points.map(
                 ([px, py]) =>
-                  [(px / SHAPE_SIZE) * w, (py / SHAPE_SIZE) * h] as Point,
+                  [((px - p0x) / SHAPE_SIZE) * w, ((py - p0y) / SHAPE_SIZE) * h] as Point,
               ),
-              strokeColor: box.strokeColor,
-              backgroundColor: box.backgroundColor,
-              fillStyle: box.fillStyle,
-              strokeWidth: box.strokeWidth,
+              strokeColor: activeColor || box.strokeColor || '#ffffff',
+              backgroundColor: shapeFillColorRef.current || 'transparent',
+              fillStyle: 'solid' as const,
+              strokeWidth: activeWeight || box.strokeWidth || 2,
               strokeStyle: box.strokeStyle,
               roughness: box.roughness,
-              opacity: armedOpacityRef.current,
+              opacity: 100,
             },
           ]);
           // Cleared first: updateScene re-enters onChange, and a second pass
@@ -1438,12 +1921,19 @@ export function BoardExcalidraw({
           armedShapeRef.current = null;
           editor.updateScene({
             elements: [...scene.filter((el) => el.id !== box.id), ...polygon],
-            // Hand back the opacity borrowed to hide the placeholder, or the
-            // instructor's next shape would come out invisible.
-            appState: { currentItemOpacity: armedOpacityRef.current },
+            // Hand back 100% opacity, so the instructor's next shape or text is crisp and visible
+            appState: {
+              selectedElementIds: { [polygon[0].id]: true },
+              currentItemOpacity: 100,
+              currentItemStrokeColor: activeColor,
+              currentItemStrokeWidth: activeWeight,
+              currentItemBackgroundColor: shapeFillColorRef.current || 'transparent',
+              currentItemFillStyle: 'solid',
+            },
             captureUpdate: CaptureUpdateAction.IMMEDIATELY,
           });
           editor.setActiveTool({ type: 'selection' });
+          setActiveToolState('select');
           return;
         }
       }
@@ -1486,6 +1976,10 @@ export function BoardExcalidraw({
         selectedMathRef.current = picked;
         setSelectedMath(picked);
       }
+      if (!picked && editingMathRef.current) {
+        editingMathRef.current = null;
+        setEditingMath(null);
+      }
 
       // Same for imported pages: which ones are selected, and where their
       // actions go. Keyed on everything the bar shows, and nothing more.
@@ -1505,6 +1999,28 @@ export function BoardExcalidraw({
       ) {
         selectedImportRef.current = pages;
         setSelectedImport(pages);
+      }
+
+      // Shape selection: tracks when a shape is selected so the contextual toolbar appears
+      const shapeItem = soleShapeElement(scene, state.selectedElementIds, {
+        scrollX: state.scrollX,
+        scrollY: state.scrollY,
+        zoom: state.zoom.value,
+      });
+      const hadShape = selectedShapeRef.current;
+      if (
+        shapeItem?.id !== hadShape?.id ||
+        shapeItem?.strokeColor !== hadShape?.strokeColor ||
+        shapeItem?.strokeWidth !== hadShape?.strokeWidth ||
+        shapeItem?.backgroundColor !== hadShape?.backgroundColor ||
+        shapeItem?.left !== hadShape?.left ||
+        shapeItem?.top !== hadShape?.top ||
+        shapeItem?.width !== hadShape?.width ||
+        shapeItem?.height !== hadShape?.height
+      ) {
+        selectedShapeRef.current = shapeItem;
+        setSelectedShape(shapeItem);
+        if (!shapeItem) setShapeToolbarMenu('none');
       }
 
       emitPresenter(null);
@@ -1645,6 +2161,190 @@ export function BoardExcalidraw({
     socketRef.current?.emit('board:writable', { sessionId, open });
   }, [boardOpen, sessionId]);
 
+  const updateSelectedShapeStrokeColor = useCallback(
+    (color: string) => {
+      const editor = apiRef.current;
+      const shape = selectedShapeRef.current;
+      if (!editor || !shape) return;
+      const elements = editor.getSceneElements();
+      const next = elements.map((el) =>
+        el.id === shape.id
+          ? {
+              ...el,
+              strokeColor: color,
+              version: el.version + 1,
+              versionNonce: Math.floor(Math.random() * 2 ** 31),
+              updated: Date.now(),
+            }
+          : el,
+      );
+      editor.updateScene({
+        elements: next,
+        appState: {
+          selectedElementIds: { [shape.id]: true },
+          currentItemStrokeColor: color,
+        },
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      setActiveColor(color);
+      const map = elementsRef.current;
+      const doc = docRef.current;
+      if (doc && map) {
+        doc.transact(() => {
+          const updatedEl = next.find((el) => el.id === shape.id);
+          if (updatedEl) map.set(shape.id, updatedEl);
+        }, LOCAL);
+      }
+    },
+    [setActiveColor],
+  );
+
+  const updateSelectedShapeStrokeWidth = useCallback(
+    (width: number) => {
+      const editor = apiRef.current;
+      const shape = selectedShapeRef.current;
+      if (!editor || !shape) return;
+      const elements = editor.getSceneElements();
+      const next = elements.map((el) =>
+        el.id === shape.id
+          ? {
+              ...el,
+              strokeWidth: width,
+              version: el.version + 1,
+              versionNonce: Math.floor(Math.random() * 2 ** 31),
+              updated: Date.now(),
+            }
+          : el,
+      );
+      editor.updateScene({
+        elements: next,
+        appState: {
+          selectedElementIds: { [shape.id]: true },
+          currentItemStrokeWidth: width,
+        },
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      setActiveWeight(width);
+      const map = elementsRef.current;
+      const doc = docRef.current;
+      if (doc && map) {
+        doc.transact(() => {
+          const updatedEl = next.find((el) => el.id === shape.id);
+          if (updatedEl) map.set(shape.id, updatedEl);
+        }, LOCAL);
+      }
+    },
+    [setActiveWeight],
+  );
+
+  const updateSelectedShapeFillColor = useCallback(
+    (color: string) => {
+      const editor = apiRef.current;
+      const shape = selectedShapeRef.current;
+      if (!editor || !shape) return;
+      const elements = editor.getSceneElements();
+      const next = elements.map((el) =>
+        el.id === shape.id
+          ? {
+              ...el,
+              backgroundColor: color,
+              fillStyle: 'solid' as const,
+              version: el.version + 1,
+              versionNonce: Math.floor(Math.random() * 2 ** 31),
+              updated: Date.now(),
+            }
+          : el,
+      );
+      editor.updateScene({
+        elements: next,
+        appState: {
+          selectedElementIds: { [shape.id]: true },
+          currentItemBackgroundColor: color,
+          currentItemFillStyle: 'solid',
+        },
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+      setShapeFillColor(color);
+      shapeFillColorRef.current = color;
+      const map = elementsRef.current;
+      const doc = docRef.current;
+      if (doc && map) {
+        doc.transact(() => {
+          const updatedEl = next.find((el) => el.id === shape.id);
+          if (updatedEl) map.set(shape.id, updatedEl);
+        }, LOCAL);
+      }
+    },
+    [setShapeFillColor],
+  );
+
+  const deleteSelectedShape = useCallback(() => {
+    const editor = apiRef.current;
+    const shape = selectedShapeRef.current;
+    if (!editor || !shape) return;
+    const elements = editor.getSceneElementsIncludingDeleted();
+    const next = elements.map((el) =>
+      el.id === shape.id
+        ? {
+            ...el,
+            isDeleted: true,
+            version: el.version + 1,
+            versionNonce: Math.floor(Math.random() * 2 ** 31),
+            updated: Date.now(),
+          }
+        : el,
+    );
+    editor.updateScene({
+      elements: next,
+      appState: { selectedElementIds: {} },
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
+    const map = elementsRef.current;
+    const doc = docRef.current;
+    if (doc && map) {
+      doc.transact(() => {
+        const deletedEl = next.find((el) => el.id === shape.id);
+        if (deletedEl) map.set(shape.id, deletedEl);
+      }, LOCAL);
+    }
+    setSelectedShape(null);
+    selectedShapeRef.current = null;
+    setShapeToolbarMenu('none');
+    flash('Shape deleted');
+  }, [flash]);
+
+  const duplicateSelectedShape = useCallback(() => {
+    const editor = apiRef.current;
+    const shape = selectedShapeRef.current;
+    if (!editor || !shape) return;
+    const elements = editor.getSceneElements();
+    const target = elements.find((el) => el.id === shape.id);
+    if (!target) return;
+    const cloneId = 'shape_' + Math.random().toString(36).substring(2, 9);
+    const clone = {
+      ...target,
+      id: cloneId,
+      x: target.x + 24,
+      y: target.y + 24,
+      version: 1,
+      versionNonce: Math.floor(Math.random() * 2 ** 31),
+      updated: Date.now(),
+    };
+    editor.updateScene({
+      elements: [...elements, clone],
+      appState: { selectedElementIds: { [cloneId]: true } },
+      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+    });
+    const map = elementsRef.current;
+    const doc = docRef.current;
+    if (doc && map) {
+      doc.transact(() => {
+        map.set(cloneId, clone);
+      }, LOCAL);
+    }
+    flash('Shape duplicated');
+  }, [flash]);
+
   /**
    * Pick a shape: arm it, then drag on the board to draw it. Square, diamond
    * and circle arm Excalidraw's own tool; the rest arm the rectangle tool to
@@ -1656,60 +2356,60 @@ export function BoardExcalidraw({
     const shape = SHAPES.find((x) => x.key === key);
     if (!editor || !shape) return;
     setShapesOpen(false);
+    setShapesPopoverOpen(false);
     setActiveShape(key);
 
-    // Is a polygon already armed — that is, is currentItemOpacity currently the
-    // borrowed 0 rather than the instructor's real setting?
-    //
-    // Both branches below used to get this wrong, and both left the board
-    // drawing in fully transparent ink for the rest of the lesson:
-    //
-    //   - picking a second polygon re-captured the baseline, so the borrowed 0
-    //     became the "real" opacity to hand back, and
-    //   - picking a square, diamond or circle returned early without handing
-    //     anything back at all.
-    //
-    // Either way every later shape, and every line of text, was created at
-    // opacity 0: drawn, synced, selectable, and completely invisible. Nothing
-    // errors, so it reads as the chalkboard having simply stopped working, and
-    // it never recovers on its own.
-    const armed = armedShapeRef.current !== null;
-    const restoreOpacity = () => {
-      if (!armed) return;
-      editor.updateScene({
-        appState: { currentItemOpacity: armedOpacityRef.current },
-        captureUpdate: CaptureUpdateAction.NEVER,
-      });
-    };
+    const strokeColor =
+      !activeColor || activeColor === '#27272a' || activeColor === '#000000' || activeColor === '#1e1e1e'
+        ? '#ffffff'
+        : activeColor;
+    const strokeWidth = activeWeight || 2;
+
+    const fill =
+      'tool' in shape && (shape.tool === 'line' || shape.tool === 'arrow')
+        ? 'transparent'
+        : shapeFillColorRef.current || 'transparent';
 
     if ('tool' in shape) {
-      // A real Excalidraw tool — no placeholder, no conversion.
+      // Native tool (rectangle, ellipse, diamond, line, arrow)
       armedShapeRef.current = null;
-      armedActiveRef.current = false;
-      previewRef.current = null;
-      setPreview(null);
-      restoreOpacity();
-      editor.setActiveTool({ type: shape.tool });
+      editor.setActiveTool({ type: shape.tool, locked: false });
+      editor.updateScene({
+        appState: {
+          currentItemOpacity: 100,
+          currentItemStrokeColor: strokeColor,
+          currentItemStrokeWidth: strokeWidth,
+          currentItemBackgroundColor: fill,
+          currentItemFillStyle: 'solid',
+        },
+      });
+      setActiveToolState('rectangle');
       return;
     }
+
+    // Custom polygon (triangle, star, pentagon, hexagon, octagon)
     armedShapeRef.current = key;
     armedBaselineRef.current = new Set(
       editor.getSceneElementsIncludingDeleted().map((el) => el.id),
     );
-    // Draw the placeholder invisibly — the overlay shows the real shape while
-    // the drag is in flight, so the instructor never sees a box.
-    // Only read the opacity when it is actually the instructor's; re-reading it
-    // while borrowed is what poisoned the baseline.
-    if (!armed) {
-      armedOpacityRef.current = editor.getAppState().currentItemOpacity;
-    }
-    armedActiveRef.current = false;
+    armedOpacityRef.current = 100;
+    armedActiveRef.current = true;
+    previewRef.current = null;
+    setPreview(null);
+
+    // Arm the rectangle tool so dragging captures the bounding box
+    editor.setActiveTool({ type: 'rectangle', locked: true });
     editor.updateScene({
-      appState: { currentItemOpacity: 0 },
-      captureUpdate: CaptureUpdateAction.NEVER,
+      appState: {
+        currentItemOpacity: 0,
+        currentItemStrokeColor: strokeColor,
+        currentItemStrokeWidth: strokeWidth,
+        currentItemBackgroundColor: fill,
+        currentItemFillStyle: 'solid',
+      },
     });
-    editor.setActiveTool({ type: 'rectangle' });
-  }, []);
+    setActiveToolState('rectangle');
+  }, [activeColor, activeWeight]);
 
   /**
    * Drop LaTeX in at the cursor and select the blank inside it, so the next
@@ -1759,18 +2459,18 @@ export function BoardExcalidraw({
    * being frozen into a picture.
    */
   /** Open the formula panel on an equation that is already on the board. */
+  /** Open the inline formula editor on an equation that is already on the board. */
   const openMathEditor = useCallback((target: SelectedMath) => {
     setEditingMath(target);
     setMathSource(target.latex);
-    setMathOpen(true);
   }, []);
 
   /** Close the formula panel and forget what it was working on. */
   const closeMath = useCallback(() => {
-    setMathOpen(false);
+    closeInsertStudio();
     setMathSource('');
     setEditingMath(null);
-  }, []);
+  }, [closeInsertStudio]);
 
   /**
    * Render LaTeX to a PNG, upload it, and register it with the board.
@@ -1783,24 +2483,40 @@ export function BoardExcalidraw({
     async (
       latex: string,
       editor: ExcalidrawImperativeAPI,
-      map: Y.Map<SharedBoardFile>,
-      doc: Y.Doc,
+      map: Y.Map<SharedBoardFile> | null,
+      doc: Y.Doc | null,
     ) => {
-      const { file, width, height } = await renderMathToPng(
-        latex,
-        editor.getAppState().currentItemStrokeColor,
-      );
+      const bg = editor.getAppState().viewBackgroundColor || '';
+      const isDarkBg = bg === '#10131c' || bg === '#12141c' || bg === '#090a0f' || (bg.startsWith('#') && parseInt(bg.slice(1, 3), 16) < 100);
+      const curStroke = editor.getAppState().currentItemStrokeColor;
+      const strokeCol = curStroke && curStroke !== '#ffffff' && curStroke !== '#000000' && curStroke !== '#1e1e1e'
+        ? curStroke
+        : '#1e1e1e';
+      const { file, width, height } = await renderMathToPng(latex, strokeCol);
       const fileId = crypto.randomUUID();
-      const { url, file: uploaded } = await uploadBoardAsset(sessionId, file);
-      const dataURL = await fileToDataURL(uploaded);
+      const dataURL = await fileToDataURL(file);
       const created = Date.now();
+      // Add immediately to Excalidraw in-memory registry so equation renders with zero delay
       editor.addFiles([
         { id: fileId as FileId, dataURL, mimeType: 'image/png', created } as BinaryFileData,
       ]);
       syncedFilesRef.current.add(fileId);
-      doc.transact(() => {
-        map.set(fileId, { id: fileId, url, mimeType: 'image/png', created });
-      }, LOCAL);
+
+      if (doc && map) {
+        // Upload asynchronously in background so insertion into scene is instantaneous
+        void uploadBoardAsset(sessionId, file)
+          .then(({ url }) => {
+            doc.transact(() => {
+              map.set(fileId, { id: fileId, url, mimeType: 'image/png', created });
+            }, LOCAL);
+          })
+          .catch((uploadErr) => {
+            console.warn('Board asset upload failed, falling back to dataURL in doc map:', uploadErr);
+            doc.transact(() => {
+              map.set(fileId, { id: fileId, url: dataURL, mimeType: 'image/png', created });
+            }, LOCAL);
+          });
+      }
       return { fileId, width, height };
     },
     [sessionId],
@@ -1811,7 +2527,7 @@ export function BoardExcalidraw({
     const map = filesRef.current;
     const doc = docRef.current;
     const latex = mathSource.trim();
-    if (!editor || !map || !doc || !latex) return;
+    if (!editor || !latex) return;
     setMathBusy(true);
     try {
       const state = editor.getAppState();
@@ -1821,21 +2537,30 @@ export function BoardExcalidraw({
       // is how the working reads down the board. Otherwise centre it in view.
       const from = editingMath;
       const [x1, y1, x2, y2] = getVisibleSceneBounds(state);
+      const existingImages = editor.getSceneElements().filter((e) => !e.isDeleted && e.type === 'image');
+      const offset = from ? 0 : (existingImages.length % 5) * 40;
       const added = convertToExcalidrawElements([
         {
           type: 'image',
-          x: from ? from.x : (x1 + x2) / 2 - width / 2,
-          y: from ? from.y + from.height + 24 : (y1 + y2) / 2 - height / 2,
+          status: 'saved',
+          x: from ? from.x : (x1 + x2) / 2 - width / 2 - 180 + offset,
+          y: from ? from.y + from.height + 24 : (y1 + y2) / 2 - height / 2 + 20 + offset,
           width,
           height,
           fileId: fileId as FileId,
           customData: { livetichMath: latex } satisfies MathCustomData,
         },
       ]);
+      const newElement = added[0];
       editor.updateScene({
         elements: [...editor.getSceneElementsIncludingDeleted(), ...added],
+        appState: {
+          selectedElementIds: { [newElement.id]: true },
+        },
         captureUpdate: CaptureUpdateAction.IMMEDIATELY,
       });
+      editor.setActiveTool({ type: 'selection' });
+      setActiveToolState('select');
       closeMath();
     } catch {
       flash('That formula could not be added — check the LaTeX.');
@@ -1858,7 +2583,7 @@ export function BoardExcalidraw({
     const doc = docRef.current;
     const latex = mathSource.trim();
     const target = editingMath;
-    if (!editor || !map || !doc || !latex || !target) return;
+    if (!editor || !latex || !target) return;
     setMathBusy(true);
     try {
       const { fileId, width, height } = await renderMathFile(latex, editor, map, doc);
@@ -1868,6 +2593,7 @@ export function BoardExcalidraw({
             ? {
                 ...el,
                 fileId: fileId as FileId,
+                status: 'saved',
                 width,
                 height,
                 customData: { livetichMath: latex } satisfies MathCustomData,
@@ -1876,8 +2602,13 @@ export function BoardExcalidraw({
               }
             : el,
         ),
+        appState: {
+          selectedElementIds: { [target.id]: true },
+        },
         captureUpdate: CaptureUpdateAction.IMMEDIATELY,
       });
+      editor.setActiveTool({ type: 'selection' });
+      setActiveToolState('select');
       closeMath();
     } catch {
       flash('That formula could not be added — check the LaTeX.');
@@ -1934,10 +2665,10 @@ export function BoardExcalidraw({
           : [560, 720];
 
     putEmbeddable(editor, url, w, h);
-    setLinkOpen(false);
+    closeInsertStudio();
     setLinkSource('');
     setLinkError(null);
-  }, []);
+  }, [closeInsertStudio]);
 
   /**
    * Put a block of ayahs on the board. It travels like any embeddable; what it
@@ -1958,9 +2689,9 @@ export function BoardExcalidraw({
       return;
     }
     putEmbeddable(editor, link, 640, 360);
-    setQuranOpen(false);
+    closeInsertStudio();
     setQuranError(null);
-  }, [quranForm]);
+  }, [quranForm, closeInsertStudio]);
 
   /**
    * Put a Google file on the board as pages.
@@ -2005,17 +2736,25 @@ export function BoardExcalidraw({
         const blob = await res.blob();
         // The name is what the overlay titles the import with.
         const file = new File([blob], 'Google file.pdf', { type: 'application/pdf' });
-        setLinkOpen(false);
+        closeInsertStudio();
         setLinkSource('');
         setLinkError(null);
         await importFilesRef.current?.([file]);
-      } catch {
-        setLinkError('That file could not be imported.');
+      } catch (err) {
+        console.warn('Google slides import failed, attempting direct embed:', err);
+        const doc = googleEmbed(url);
+        const video = youTubeIdOf(url);
+        if (doc || video) {
+          addLinkToBoard(url);
+          setLinkError(null);
+        } else {
+          setLinkError('That file could not be imported. Ensure link is public or has view access.');
+        }
       } finally {
         setImportProgress(null);
       }
     },
-    [sessionId],
+    [sessionId, addLinkToBoard],
   );
 
   const importFiles = useCallback(
@@ -2024,6 +2763,7 @@ export function BoardExcalidraw({
       const map = filesRef.current;
       const doc = docRef.current;
       if (!editor || !map || !doc || !list?.length) return;
+      closeInsertStudio();
       const files = Array.from(list as ArrayLike<File>);
       const title = files.length === 1 ? files[0].name : `${files.length} files`;
       // Reading PDF pages is the first half of the bar and putting them on the
@@ -2074,19 +2814,24 @@ export function BoardExcalidraw({
           const height = (bitmap.height / bitmap.width) * width;
           bitmap.close?.();
           const fileId = crypto.randomUUID();
-          const { url, file: uploaded } = await uploadBoardAsset(sessionId, image);
-          // Same bytes the other clients will fetch, without fetching them back.
-          const dataURL = await fileToDataURL(uploaded);
+          const dataURL = await fileToDataURL(image);
           const created = Date.now();
           editor.addFiles([
             { id: fileId as FileId, dataURL, mimeType: image.type, created } as BinaryFileData,
           ]);
-          // Marked shared before the element lands, so onChange's upload pass
-          // skips it — these bytes are already in the asset store.
           syncedFilesRef.current.add(fileId);
-          doc.transact(() => {
-            map.set(fileId, { id: fileId, url, mimeType: image.type, created });
-          }, LOCAL);
+
+          try {
+            const { url } = await uploadBoardAsset(sessionId, image);
+            doc.transact(() => {
+              map.set(fileId, { id: fileId, url, mimeType: image.type, created });
+            }, LOCAL);
+          } catch (uploadErr) {
+            console.warn('Board asset upload failed, falling back to dataURL in doc map:', uploadErr);
+            doc.transact(() => {
+              map.set(fileId, { id: fileId, url: dataURL, mimeType: image.type, created });
+            }, LOCAL);
+          }
           const livetichImport = {
             id: importId,
             name: title,
@@ -2095,7 +2840,7 @@ export function BoardExcalidraw({
           };
           added.push(
             ...convertToExcalidrawElements([
-              { type: 'image', x: 0, y, width, height, fileId: fileId as FileId },
+              { type: 'image', status: 'saved', x: 0, y, width, height, fileId: fileId as FileId },
             ]).map((el) => ({
               ...el,
               customData: { livetichImport } satisfies ImportCustomData,
@@ -2123,10 +2868,11 @@ export function BoardExcalidraw({
         flash('Import failed — please try again.');
       } finally {
         setImportProgress(null);
+        closeInsertStudio();
         if (fileInputRef.current) fileInputRef.current.value = '';
       }
     },
-    [sessionId, flash],
+    [sessionId, flash, closeInsertStudio],
   );
 
   // importGoogleAsPages is declared above importFiles, so it reaches the
@@ -2154,6 +2900,15 @@ export function BoardExcalidraw({
       elements: cleared,
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     });
+    const map = elementsRef.current;
+    const doc = docRef.current;
+    if (doc && map) {
+      doc.transact(() => {
+        for (const el of cleared) {
+          map.set(el.id, el);
+        }
+      }, LOCAL);
+    }
     setClearOpen(false);
   }, []);
 
@@ -2289,6 +3044,35 @@ export function BoardExcalidraw({
     }
   }, [sessionId, flash]);
 
+  const exportPng = useCallback(async () => {
+    const editor = apiRef.current;
+    if (!editor) return;
+    try {
+      setExporting(true);
+      const elements = editor.getSceneElements();
+      const appState = { ...editor.getAppState(), exportBackground: true };
+      const files = editor.getFiles();
+      const blob = await exportToBlob({
+        elements,
+        appState,
+        files,
+        mimeType: 'image/png',
+        exportPadding: 24,
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `chalkboard-${sessionId}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+      flash('Board snapshot downloaded');
+    } catch {
+      flash('Could not export snapshot');
+    } finally {
+      setExporting(false);
+    }
+  }, [sessionId, flash]);
+
   // Full-screen board mode (all users). A CSS overlay rather than the native
   // Fullscreen API, so the editor's menus and the classroom controls keep
   // working; Escape exits.
@@ -2386,15 +3170,10 @@ export function BoardExcalidraw({
 
   /**
    * Double-click an equation to edit it.
-   *
-   * The quick path: an equation is a picture, so Excalidraw has nothing to open
-   * on it and the gesture is otherwise wasted. Captured before Excalidraw sees
-   * it, and only when the point is actually inside an equation — every other
-   * double-click on the canvas is left alone.
    */
   useEffect(() => {
     const wrapper = wrapperRef.current;
-    if (!wrapper || !canDraw || !maths) return;
+    if (!wrapper || !canDraw) return;
     const onDoubleClick = (e: MouseEvent) => {
       const editor = apiRef.current;
       if (!editor) return;
@@ -2413,6 +3192,7 @@ export function BoardExcalidraw({
         latex,
         x: hit.x,
         y: hit.y,
+        width: hit.width,
         height: hit.height,
         left: Math.round((hit.x + state.scrollX) * z),
         top: Math.round((hit.y + state.scrollY) * z),
@@ -2420,21 +3200,36 @@ export function BoardExcalidraw({
     };
     wrapper.addEventListener('dblclick', onDoubleClick, true);
     return () => wrapper.removeEventListener('dblclick', onDoubleClick, true);
-  }, [canDraw, maths, openMathEditor]);
+  }, [canDraw, openMathEditor]);
 
   // Test hook. Excalidraw draws to a canvas rather than to DOM nodes, so the
   // end-to-end specs have nothing to query for "what is on the board"; they
-  // read the scene through this instead.
+  const didInitBoardToolRef = useRef(false);
   useEffect(() => {
     if (!api) return;
     const w = window as unknown as {
-      __livetichBoard?: ExcalidrawImperativeAPI | null;
+      __livetichBoard?: (ExcalidrawImperativeAPI & { clearCanvas?: () => void }) | null;
     };
-    w.__livetichBoard = api;
+    w.__livetichBoard = Object.assign(api, { clearCanvas: clearBoard });
+    if (!didInitBoardToolRef.current) {
+      didInitBoardToolRef.current = true;
+      // Force Excalidraw to dark chalkboard canvas matching Google Chalkboard UX prototype
+      api.updateScene({
+        appState: {
+          theme: 'dark',
+          viewBackgroundColor: '#10131c',
+          currentItemStrokeColor: activeColor,
+          currentItemStrokeWidth: activeWeight,
+        },
+      });
+      if (canDraw) {
+        api.setActiveTool({ type: 'selection' });
+      }
+    }
     return () => {
       w.__livetichBoard = null;
     };
-  }, [api]);
+  }, [api, canDraw]);
 
   const pill =
     'rounded-full px-3 py-1.5 text-xs font-semibold shadow ring-1 ring-neutral-200 transition';
@@ -2483,18 +3278,23 @@ export function BoardExcalidraw({
       className={cn(
         'livetich-board',
         fullscreen
-          ? 'fixed inset-0 z-[500] isolate overflow-hidden bg-white'
-          : 'relative isolate h-full min-h-[320px] overflow-hidden rounded-xl border border-neutral-300 bg-white',
+          ? 'fixed inset-0 z-[500] isolate overflow-hidden bg-[#10131c]'
+          : 'relative isolate h-full min-h-[320px] overflow-hidden rounded-xl border border-white/10 bg-[#10131c]',
       )}
     >
       <Excalidraw
         excalidrawAPI={setApi}
-        // Excalidraw defaults to its "bold" width; a classroom board is mostly
-        // handwriting, which reads better thinner.
-        initialData={{ appState: { currentItemStrokeWidth: 1 } }}
+        initialData={{
+          appState: {
+            theme: 'dark',
+            viewBackgroundColor: '#10131c',
+            currentItemStrokeWidth: activeWeight,
+            currentItemStrokeColor: activeColor,
+          },
+        }}
         viewModeEnabled={!canEdit}
         isCollaborating
-        theme="light"
+        theme="dark"
         onChange={onChange}
         onPointerUpdate={onPointerUpdate}
         onScrollChange={onScrollChange}
@@ -2543,10 +3343,8 @@ export function BoardExcalidraw({
           }
           return null;
         }}
-        // Excalidraw does not recognise youtu.be short links on its own, and
-        // has no idea about Google files at all.
         validateEmbeddable={(link) =>
-          youTubeIdOf(link) || googleEmbed(link) || parseQuranBlock(link) ? true : undefined
+          Boolean(youTubeIdOf(link) || googleEmbed(link) || parseQuranBlock(link))
         }
         UIOptions={{
           canvasActions: {
@@ -2564,116 +3362,186 @@ export function BoardExcalidraw({
         </MainMenu>
       </Excalidraw>
 
-      {/* One shapes control in the rail, standing in for Excalidraw's separate
-          square/diamond/circle buttons (hidden in CSS) and carrying the extra
-          shapes it has no tool for. Portalled into the rail so it sits in the
-          stack instead of floating beside it. */}
-      {railNode &&
-        createPortal(
-          <div data-board-shapes className="relative">
-            <button
-              type="button"
-              title={current ? `${current.label} — click to change` : 'Shapes'}
-              aria-haspopup="menu"
-              aria-expanded={shapesOpen}
-              ref={shapesTriggerRef}
-              onClick={() => {
-                const next = !shapesOpen;
-                setShapesOpen(next);
-                if (!next) return;
-                const btn = shapesTriggerRef.current?.getBoundingClientRect();
-                const board = wrapperRef.current?.getBoundingClientRect();
-                if (!btn || !board) return;
-                const W = 160;
-                const H = 272;
-                const GAP = 8;
-                // Beside the rail when it fits, otherwise below — and never
-                // past the edge of the board.
-                const besideFits = btn.right + GAP + W <= board.right;
-                const left = besideFits
-                  ? btn.right + GAP - board.left
-                  : Math.min(btn.left - board.left, board.width - W - GAP);
-                const top = besideFits
-                  ? Math.min(btn.top - board.top, board.height - H - GAP)
-                  : btn.bottom + GAP - board.top;
-                setShapesMenuAt({ top: Math.max(GAP, top), left: Math.max(GAP, left) });
-              }}
-              className={`relative grid h-9 w-9 place-items-center rounded-lg transition ${
-                shapesOpen
-                  ? 'bg-neutral-900 text-white'
-                  : armed
-                    ? 'bg-[#e0dfff] text-neutral-900'
-                    : 'text-neutral-700 hover:bg-neutral-100'
-              }`}
-            >
-              {/* Before a choice: a group of shapes, so the button says what
-                  is inside it. After one: that shape, at the same weight as
-                  the tools either side — drawn lighter it read as a disabled
-                  slot. */}
-              <svg
-                viewBox="0 0 24 24"
-                className="h-[18px] w-[18px]"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinejoin="round"
-                aria-hidden
-              >
-                {current ? (
-                  <path d={current.icon} />
-                ) : (
-                  <>
-                    <path d="M8 2.5 L12.5 9.5 L3.5 9.5 Z" />
-                    <circle cx="17.5" cy="6" r="3.75" />
-                    <rect x="4" y="13" width="11" height="8" rx="1" />
-                  </>
-                )}
-              </svg>
-              {/* This replaced three separate buttons, so it has to say out
-                  loud that the other shapes are still in here. A 6px hairline
-                  caret did not: it read as "the shapes are gone". */}
-              <svg
-                viewBox="0 0 10 10"
-                className="absolute bottom-0 right-0 h-2.5 w-2.5"
-                aria-hidden
-              >
-                <path d="M0 10 L10 10 L10 0 Z" className="fill-current opacity-30" />
-                <path
-                  d="M3.5 7.5 L8 7.5 L8 3"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={1.6}
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-          </div>,
-          railNode,
-        )}
-
       {/* Live preview of the armed polygon. Excalidraw is drawing a rectangle
           underneath at zero opacity — this is what the instructor actually
           sees follow the drag. */}
       {/* Edit, on the equation itself.
           Double-click does the same thing and is faster, but nothing on a
-          board advertises a double-click — this is what tells the teacher the
-          equation is still editable, and it rides along on pans and zooms
-          because its position is recomputed with the selection. */}
-      {selectedMath && canDraw && maths && !mathOpen && (
-        <button
-          type="button"
-          data-math-edit
-          onClick={() => openMathEditor(selectedMath)}
+          board advertises a double-click — this mini pop-up tells the teacher the
+          equation is editable, and rides along on pans and zooms. */}
+      {selectedMath && canDraw && !insertStudioOpen && !editingMath && (
+        <div
+          data-math-edit-popup
           style={{
             left: selectedMath.left,
-            top: Math.max(4, selectedMath.top - 34),
+            top: Math.max(8, selectedMath.top - 42),
           }}
-          className="pointer-events-auto absolute z-[401] inline-flex items-center gap-1.5 rounded-lg bg-neutral-900 px-2.5 py-1.5 text-xs font-semibold text-white shadow-lg transition hover:bg-neutral-800"
+          className="pointer-events-auto absolute z-[401] flex items-center gap-1.5 rounded-full border border-signal-500/40 bg-neutral-900/95 px-3 py-1.5 text-xs font-semibold text-white shadow-2xl backdrop-blur-md transition-all hover:bg-neutral-800 animate-in fade-in zoom-in-95"
         >
-          <PiPencilSimpleBold className="h-3.5 w-3.5" />
-          Edit
-        </button>
+          <button
+            type="button"
+            data-math-edit
+            onClick={() => openMathEditor(selectedMath)}
+            className="flex items-center gap-1.5 text-xs font-semibold text-signal-400 hover:text-signal-300 transition"
+            title="Edit LaTeX Equation Inline"
+          >
+            <PiPencilSimpleBold className="h-3.5 w-3.5 text-signal-400" />
+            <span>Edit Equation</span>
+          </button>
+        </div>
       )}
+
+      {/* Inline Equation Editor — direct in-place editing on the board without modal interruption */}
+      {editingMath && canDraw && !insertStudioOpen && (() => {
+        const anchor = (selectedMath?.id === editingMath.id ? selectedMath : editingMath);
+        const wrapperW = wrapperRef.current?.clientWidth ?? 1000;
+        const wrapperH = wrapperRef.current?.clientHeight ?? 800;
+        const cardW = Math.min(420, wrapperW - 24);
+        const leftPos = Math.max(12, Math.min(wrapperW - cardW - 12, anchor.left));
+        const topPos = anchor.top > 230
+          ? Math.max(12, anchor.top - 200)
+          : Math.min(wrapperH - 220, anchor.top + Math.max(50, anchor.height) + 14);
+
+        return (
+          <div
+            data-inline-math-editor
+            style={{
+              left: leftPos,
+              top: topPos,
+              width: cardW,
+            }}
+            className="pointer-events-auto absolute z-[450] flex flex-col gap-2 rounded-2xl border border-white/15 bg-neutral-900/95 p-3 text-white shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95"
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+            onKeyUp={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-signal-400">
+                <PiPencilSimpleBold className="h-3.5 w-3.5" />
+                <span>Edit Equation</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-neutral-400 hidden sm:inline">
+                  Enter to update • Esc to cancel
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setEditingMath(null)}
+                  className="grid h-6 w-6 place-items-center rounded-full text-neutral-400 hover:bg-white/10 hover:text-white transition"
+                  title="Cancel edit"
+                  aria-label="Cancel"
+                >
+                  <PiXBold className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* LaTeX Textarea */}
+            <div className="relative">
+              <textarea
+                ref={mathInputRef}
+                value={mathSource}
+                onChange={(e) => setMathSource(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (!mathBusy && !mathIssue && mathSource.trim() !== '') {
+                      void replaceMathOnBoard();
+                    }
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setEditingMath(null);
+                  }
+                }}
+                rows={2}
+                placeholder="Enter LaTeX formula, e.g. x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}"
+                className="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-xs font-mono text-white placeholder-neutral-500 focus:border-signal-500/80 focus:outline-none focus:ring-1 focus:ring-signal-500/80 transition resize-none"
+                autoFocus
+              />
+            </div>
+
+            {/* Live KaTeX Preview & Syntax validation */}
+            {mathIssue ? (
+              <div className="flex items-center gap-1.5 rounded-lg bg-rose-500/10 px-2.5 py-1.5 text-[11px] text-rose-300 border border-rose-500/20">
+                <span className="font-bold">⚠️</span>
+                <span className="truncate">{mathIssue}</span>
+              </div>
+            ) : mathPreview ? (
+              <div
+                className="flex min-h-[38px] max-h-[80px] items-center justify-center overflow-x-auto rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-center text-sm text-white studio-scroll-hidden"
+                dangerouslySetInnerHTML={{ __html: mathPreview }}
+              />
+            ) : null}
+
+            {/* Quick Symbol Chips */}
+            <div className="flex items-center gap-1 overflow-x-auto pb-0.5 text-[11px] studio-scroll-hidden">
+              {[
+                { label: 'x/y', latex: '\\frac{a}{b}', select: [6, 1] as [number, number] },
+                { label: '√x', latex: '\\sqrt{x}', select: [6, 1] as [number, number] },
+                { label: '±', latex: '\\pm ' },
+                { label: 'x²', latex: '^{2}' },
+                { label: '∫', latex: '\\int_{a}^{b} ' },
+                { label: '∑', latex: '\\sum_{i=1}^{n} ' },
+                { label: 'π', latex: '\\pi ' },
+                { label: 'θ', latex: '\\theta ' },
+                { label: '×', latex: '\\times ' },
+                { label: '≤', latex: '\\le ' },
+                { label: '≥', latex: '\\ge ' },
+                { label: '≠', latex: '\\neq ' },
+              ].map((sym) => (
+                <button
+                  key={sym.label}
+                  type="button"
+                  onClick={() => insertMath(sym.latex, sym.select)}
+                  className="shrink-0 rounded-lg border border-white/10 bg-white/5 px-2 py-1 font-mono text-[11px] text-neutral-300 hover:border-signal-500/40 hover:bg-signal-500/15 hover:text-white transition"
+                  title={`Insert ${sym.latex}`}
+                >
+                  {sym.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-between pt-1 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => void addMathToBoard()}
+                disabled={mathBusy || !!mathIssue || mathSource.trim() === ''}
+                className="flex items-center gap-1 text-[11px] font-semibold text-neutral-400 hover:text-signal-300 disabled:opacity-40 transition"
+                title="Add as a new line under the formula"
+              >
+                <PiPlusBold className="h-3 w-3" />
+                <span>+ New line</span>
+              </button>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setEditingMath(null)}
+                  className="rounded-xl px-2.5 py-1.5 text-xs font-semibold text-neutral-300 hover:bg-white/10 hover:text-white transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void replaceMathOnBoard()}
+                  disabled={mathBusy || !!mathIssue || mathSource.trim() === ''}
+                  className="flex items-center gap-1.5 rounded-xl bg-signal-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-lg shadow-signal-600/30 hover:bg-signal-500 disabled:opacity-40 transition"
+                >
+                  {mathBusy ? (
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  ) : (
+                    <PiCheckBold className="h-3.5 w-3.5" />
+                  )}
+                  <span>Update</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Imported pages: select the rest of the import, or delete what is
           selected. Only while a page is selected, so nothing sits over the
@@ -2729,6 +3597,267 @@ export function BoardExcalidraw({
         </div>
       )}
 
+      {/* Contextual Shape Toolbar: Edit outline, stroke thickness, fill, duplicate, delete */}
+      {selectedShape && canDraw && !insertStudioOpen && !editingMath && (
+        <div
+          data-shape-actions
+          role="toolbar"
+          aria-label="Selected shape actions"
+          style={{
+            left: Math.max(140, selectedShape.left + selectedShape.width / 2),
+            top:
+              selectedShape.top - 52 >= 64
+                ? selectedShape.top - 52
+                : selectedShape.top + selectedShape.height + 14,
+            transform: 'translateX(-50%)',
+          }}
+          className="shape-contextual-bar"
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* 1. Outline Color Swatch & Popover */}
+          <div className="relative flex items-center">
+            <button
+              type="button"
+              className={cn(
+                'shape-bar-btn',
+                shapeToolbarMenu === 'stroke' && 'active',
+              )}
+              onClick={() =>
+                setShapeToolbarMenu((cur) => (cur === 'stroke' ? 'none' : 'stroke'))
+              }
+              title="Change Outline Color"
+            >
+              <span
+                className="shape-bar-swatch-ring"
+                style={{ borderColor: selectedShape.strokeColor }}
+              >
+                <span
+                  className="shape-bar-swatch-inner"
+                  style={{ background: selectedShape.strokeColor }}
+                />
+              </span>
+              <span className="shape-bar-label">Outline</span>
+              <PiCaretDownBold className="h-2.5 w-2.5 opacity-60" />
+            </button>
+
+            {shapeToolbarMenu === 'stroke' && (
+              <div
+                className="shape-bar-dropdown"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="shape-bar-dropdown-title">Outline Color</div>
+                <div className="palette-grid">
+                  {[
+                    '#ffffff',
+                    '#10b981',
+                    '#38bdf8',
+                    '#fbbf24',
+                    '#f43f5e',
+                    '#a855f7',
+                    '#94a3b8',
+                    '#f97316',
+                  ].map((col) => (
+                    <button
+                      key={col}
+                      type="button"
+                      className={cn(
+                        'color-dot',
+                        selectedShape.strokeColor.toLowerCase() ===
+                          col.toLowerCase() && 'active',
+                      )}
+                      style={{ background: col }}
+                      onClick={() => {
+                        updateSelectedShapeStrokeColor(col);
+                      }}
+                      title={`Outline ${col}`}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 2. Stroke Thickness & Popover */}
+          <div className="relative flex items-center">
+            <button
+              type="button"
+              className={cn(
+                'shape-bar-btn',
+                shapeToolbarMenu === 'width' && 'active',
+              )}
+              onClick={() =>
+                setShapeToolbarMenu((cur) => (cur === 'width' ? 'none' : 'width'))
+              }
+              title="Change Stroke Thickness"
+            >
+              <div className="shape-bar-thickness-preview">
+                <span
+                  style={{
+                    height: Math.min(6, Math.max(1.5, selectedShape.strokeWidth)),
+                    background: selectedShape.strokeColor,
+                  }}
+                />
+              </div>
+              <span className="shape-bar-label">
+                {selectedShape.strokeWidth <= 1.5
+                  ? 'Fine'
+                  : selectedShape.strokeWidth <= 2.5
+                  ? 'Normal'
+                  : selectedShape.strokeWidth <= 4
+                  ? 'Bold'
+                  : 'Heavy'}
+              </span>
+              <PiCaretDownBold className="h-2.5 w-2.5 opacity-60" />
+            </button>
+
+            {shapeToolbarMenu === 'width' && (
+              <div
+                className="shape-bar-dropdown"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="shape-bar-dropdown-title">Stroke Thickness</div>
+                <div className="thickness-options">
+                  {[
+                    { label: 'Fine', w: 1 },
+                    { label: 'Normal', w: 2 },
+                    { label: 'Bold', w: 3.5 },
+                    { label: 'Heavy', w: 6 },
+                  ].map(({ label, w }) => (
+                    <button
+                      key={label}
+                      type="button"
+                      className={cn(
+                        'thickness-pill-btn',
+                        Math.abs(selectedShape.strokeWidth - w) < 0.8 && 'active',
+                      )}
+                      onClick={() => {
+                        updateSelectedShapeStrokeWidth(w);
+                      }}
+                    >
+                      <span
+                        className="thickness-line"
+                        style={{
+                          height: w,
+                          background: selectedShape.strokeColor,
+                        }}
+                      />
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 3. Fill Color (if shape supports fill) */}
+          {selectedShape.canFill && (
+            <div className="relative flex items-center">
+              <button
+                type="button"
+                className={cn(
+                  'shape-bar-btn',
+                  shapeToolbarMenu === 'fill' && 'active',
+                )}
+                onClick={() =>
+                  setShapeToolbarMenu((cur) => (cur === 'fill' ? 'none' : 'fill'))
+                }
+                title="Change Fill Color"
+              >
+                {selectedShape.backgroundColor === 'transparent' ||
+                !selectedShape.backgroundColor ? (
+                  <span className="shape-bar-swatch-none">⊘</span>
+                ) : (
+                  <span
+                    className="shape-bar-swatch-solid"
+                    style={{ background: selectedShape.backgroundColor }}
+                  />
+                )}
+                <span className="shape-bar-label">Fill</span>
+                <PiCaretDownBold className="h-2.5 w-2.5 opacity-60" />
+              </button>
+
+              {shapeToolbarMenu === 'fill' && (
+                <div
+                  className="shape-bar-dropdown"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="shape-bar-dropdown-title">Fill Color</div>
+                  <div className="fill-palette-grid">
+                    <button
+                      type="button"
+                      className={cn(
+                        'color-dot fill-none-dot',
+                        (selectedShape.backgroundColor === 'transparent' ||
+                          !selectedShape.backgroundColor) &&
+                          'active',
+                      )}
+                      onClick={() => {
+                        updateSelectedShapeFillColor('transparent');
+                      }}
+                      title="Outline Only (No Fill)"
+                    >
+                      <span className="fill-none-slash">⊘</span>
+                    </button>
+                    {[
+                      '#ffffff',
+                      '#10b981',
+                      '#38bdf8',
+                      '#fbbf24',
+                      '#f43f5e',
+                      '#a855f7',
+                      '#94a3b8',
+                      '#f97316',
+                    ].map((col) => (
+                      <button
+                        key={col}
+                        type="button"
+                        className={cn(
+                          'color-dot',
+                          selectedShape.backgroundColor.toLowerCase() ===
+                            col.toLowerCase() && 'active',
+                        )}
+                        style={{ background: col }}
+                        onClick={() => {
+                          updateSelectedShapeFillColor(col);
+                        }}
+                        title={`Fill ${col}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <span className="shape-bar-divider" />
+
+          {/* 4. Duplicate */}
+          <button
+            type="button"
+            className="shape-bar-icon-btn"
+            onClick={duplicateSelectedShape}
+            title="Duplicate Shape"
+          >
+            <PiCopyBold className="h-3.5 w-3.5" />
+          </button>
+
+          {/* 5. Delete */}
+          <button
+            type="button"
+            className="shape-bar-icon-btn danger"
+            onClick={deleteSelectedShape}
+            title="Delete Shape"
+          >
+            <PiTrashBold className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       {preview && previewShape && (
         <svg
           data-shape-preview
@@ -2744,7 +3873,7 @@ export function BoardExcalidraw({
                   }`,
               )
               .join(' ')}
-            fill="none"
+            fill={shapeFillColor !== 'transparent' ? shapeFillColor : 'none'}
             stroke="currentColor"
             strokeWidth={2}
             strokeLinejoin="round"
@@ -2756,35 +3885,42 @@ export function BoardExcalidraw({
       {/* Against the board for the same reason as the shapes menu below: the
           tool row scrolls, and this must not be clipped by it — least of all a
           confirm for something this final. */}
-      {clearOpen && clearMenuAt && (
+      {clearOpen && (
         <div
           data-clear-board-panel
           role="dialog"
           aria-label="Clear the board"
-          style={{ top: clearMenuAt.top, left: clearMenuAt.left }}
-          className="pointer-events-auto absolute z-[404] w-72 rounded-xl bg-white p-3 shadow-lg ring-1 ring-neutral-200"
+          className="fixed inset-0 z-[550] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={() => setClearOpen(false)}
         >
-          <p className="text-xs font-semibold text-neutral-900">Clear the board?</p>
-          <p className="mt-1 text-[11px] text-neutral-600">
-            Everything goes — drawings, imported pages and embedded files — for you
-            and for every student. They cannot undo it from their side.
-          </p>
-          <div className="mt-2.5 flex justify-end gap-1.5">
-            <button
-              type="button"
-              onClick={() => setClearOpen(false)}
-              className={cn(toolClass, toolIdle)}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={clearBoard}
-              className={cn(toolClass, 'bg-rose-600 text-white hover:bg-rose-700')}
-            >
-              <PiTrashBold aria-hidden />
-              Clear everything
-            </button>
+          <div
+            className="pointer-events-auto w-full max-w-sm rounded-2xl border border-white/10 bg-[#141724] p-4 text-slate-100 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="text-sm font-bold text-white">Clear the board?</p>
+            <p className="mt-1.5 text-xs text-slate-300">
+              Everything goes — drawings, imported pages and embedded files — for you and for every student. They cannot undo it from their side.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setClearOpen(false)}
+                className="rounded-full bg-white/5 px-3.5 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setClearOpen(false);
+                  clearBoard();
+                }}
+                className="flex items-center gap-1.5 rounded-full bg-rose-600 px-3.5 py-1.5 text-xs font-bold text-white transition hover:bg-rose-500"
+              >
+                <PiTrashBold aria-hidden />
+                <span>Clear everything</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -2849,242 +3985,527 @@ export function BoardExcalidraw({
         {fullscreen ? <PiArrowsInBold /> : <PiArrowsOutBold />}
       </button>
 
-      {/* Instructor controls / viewer follow, above the editor's top bar. */}
-      {/* Phones only: Excalidraw's toolbar owns the full width of the top on a
-          small screen, so the classroom controls move behind one button placed
-          clear of it rather than overlapping it. */}
-      {canDraw && (
-        <button
-          type="button"
-          onClick={() => setToolsOpen((v) => !v)}
-          aria-expanded={toolsOpen}
-          aria-controls="board-classroom-tools"
-          className={cn(
-            // Left, not right: Excalidraw keeps its own vertical strip down the
-            // right edge on a phone, and this sat on top of it. The inset lines
-            // its left edge up with the toolbar island above it rather than
-            // hugging the board's rounded corner, and the top leaves real space
-            // under that toolbar instead of the 4px it had.
-            'pointer-events-auto absolute left-6 top-20 z-[402] min-[730px]:hidden',
-            'flex items-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-semibold shadow-md ring-1 transition',
-            toolsOpen
-              ? 'bg-signal-700 text-white shadow-signal-800/25 ring-signal-700'
-              : 'bg-white text-signal-800 ring-signal-100 hover:bg-signal-50',
+      {/* =========================================================================
+          LAYER 2: AMBIENT FLOATING HUD (Top Bar across the board)
+          ========================================================================= */}
+      <header className="chalkboard-header-hud">
+        {/* Left: Document Title + Multi-Page Navigation */}
+        <div className="hud-left">
+          <div className="hud-chip">
+            <PiPencilSimpleBold className="h-3.5 w-3.5 text-emerald-400" />
+            <input
+              type="text"
+              className="doc-title-input"
+              value={boardTitle}
+              onChange={(e) => setBoardTitle(e.target.value)}
+              title="Click to rename board"
+            />
+            <div className="page-stepper">
+              <button
+                type="button"
+                className="page-nav-btn"
+                onClick={prevPage}
+                title="Previous page"
+              >
+                ‹
+              </button>
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: 'var(--text-muted)',
+                  minWidth: 32,
+                  textAlign: 'center',
+                }}
+              >
+                {currentPage} / {totalPages}
+              </span>
+              <button
+                type="button"
+                className="page-nav-btn"
+                onClick={nextPage}
+                title="Next page"
+              >
+                ›
+              </button>
+              {canDraw && (
+                <button
+                  type="button"
+                  className="page-nav-btn"
+                  onClick={addPage}
+                  title="Add blank page"
+                  style={{ color: 'var(--accent)', fontWeight: 800 }}
+                >
+                  +
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Center: Student Follow Status (Visible for Student) */}
+        {!canDraw && (
+          <div className="hud-center">
+            <div
+              className="student-follow-chip"
+              onClick={() => {
+                setFollowing(true);
+                applyPresenterView();
+              }}
+            >
+              <span className="live-dot" style={{ width: 6, height: 6 }} />
+              <span>{following ? "Following Instructor's View" : "Back to Instructor's View"}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Right: Permissions & Board Settings */}
+        <div className="hud-right">
+          {canDraw && (
+            <>
+              <div
+                className={cn('collab-pill', boardOpen ? 'open' : 'locked')}
+                onClick={() => setCollabSheetOpen((v) => !v)}
+                title="Manage room drawing permissions"
+              >
+                <span className={cn('live-dot', !boardOpen && 'locked')} />
+                <span className="desktop-only-text">
+                  {boardOpen ? 'Students Can Draw (18)' : 'Board Locked'}
+                </span>
+                <span className="mobile-only-text">
+                  {boardOpen ? 'Can Draw' : 'Locked'}
+                </span>
+                <PiCaretDownBold
+                  className={cn('h-3 w-3 transition-transform', collabSheetOpen && 'rotate-180')}
+                />
+              </div>
+
+              <button
+                type="button"
+                className="hud-chip desktop-only-btn cursor-pointer"
+                onClick={() => setClearOpen(true)}
+                title="Clear drawing canvas"
+              >
+                <PiTrashBold className="h-3.5 w-3.5" />
+                <span>Clear</span>
+              </button>
+            </>
           )}
-        >
-          <PiSlidersHorizontalBold
-            className={cn('h-3.5 w-3.5', !toolsOpen && 'text-signal-600')}
-            aria-hidden
-          />
-          Tools
-          {/* The label alone gave no sign this opens anything. A caret that
-              turns is the plainest way to say "there is more under here". */}
-          <PiCaretDownBold
-            className={cn(
-              'h-3 w-3 transition-transform duration-200',
-              toolsOpen && 'rotate-180',
-            )}
-            aria-hidden
-          />
-        </button>
+        </div>
+      </header>
+
+      {/* Collaboration & Export Flyout Sheet */}
+      {collabSheetOpen && canDraw && (
+        <div className="collab-sheet" onClick={(e) => e.stopPropagation()}>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 800,
+              textTransform: 'uppercase',
+              color: 'var(--text-dim)',
+              letterSpacing: '0.06em',
+            }}
+          >
+            Room Collaboration
+          </div>
+
+          {/* Student Draw Switch */}
+          <div className="collab-toggle-row">
+            <div>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: '#fff' }}>Student Drawing</div>
+              <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>Let cohort write on board</div>
+            </div>
+            <div
+              className={cn('switch-ui', boardOpen && 'on')}
+              onClick={toggleBoardOpen}
+            >
+              <div className="switch-handle" />
+            </div>
+          </div>
+
+          <div style={{ height: 1, background: 'var(--border-subtle)' }} />
+
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 800,
+              textTransform: 'uppercase',
+              color: 'var(--text-dim)',
+              letterSpacing: '0.06em',
+            }}
+          >
+            Export &amp; Sharing
+          </div>
+
+          <div
+            className="collab-action-row"
+            onClick={() => {
+              setCollabSheetOpen(false);
+              void exportPdf();
+            }}
+          >
+            <PiDownloadSimpleBold className="h-4 w-4 text-emerald-400" />
+            <span>Export Multi-Page PDF</span>
+          </div>
+
+          <div
+            className="collab-action-row"
+            onClick={() => {
+              setCollabSheetOpen(false);
+              void exportPng();
+            }}
+          >
+            <PiImageBold className="h-4 w-4 text-sky-400" />
+            <span>Export Snapshot PNG</span>
+          </div>
+
+          <div style={{ height: 1, background: 'var(--border-subtle)' }} />
+
+          <div
+            className="collab-action-row danger"
+            onClick={() => {
+              setCollabSheetOpen(false);
+              setClearOpen(true);
+            }}
+          >
+            <PiTrashBold className="h-4 w-4" />
+            <span>Wipe Entire Chalkboard</span>
+          </div>
+        </div>
       )}
 
-      <div
-        id="board-classroom-tools"
-        className={cn(
-          'pointer-events-none absolute z-[401] flex items-center',
-          // Desktop: centred across the top, where the tool rail no longer is.
-          'min-[730px]:left-1/2 min-[730px]:top-3 min-[730px]:max-w-[calc(100%-6rem)] min-[730px]:-translate-x-1/2 min-[730px]:justify-center',
-          // Phone: a panel under the toolbar, opened from the Tools button.
-          'max-[729px]:left-6 max-[729px]:w-[min(15rem,calc(100%-4.5rem))] max-[729px]:justify-start',
-          // A viewer has no Tools button to open — their single follow control
-          // sits where that button would be, and is never collapsed.
-          canDraw ? 'max-[729px]:top-32' : 'max-[729px]:top-20',
-          canDraw && !toolsOpen && 'max-[729px]:hidden',
-        )}
-      >
-        {canDraw ? (
-          // One island in three groups — who may draw, what to put on the
-          // board, and files in and out — instead of a row of loose pills that
-          // gave every control the same weight. On a phone the same island
-          // stands up as a column.
-          <div
-            role="toolbar"
-            aria-label="Classroom tools"
-            className="pointer-events-auto flex items-center gap-0.5 rounded-2xl bg-white/95 p-1 shadow-lg shadow-signal-900/10 ring-1 ring-signal-100 backdrop-blur max-[729px]:w-full max-[729px]:flex-col max-[729px]:items-stretch min-[730px]:flex-wrap min-[730px]:justify-center"
-          >
-            <button
-              type="button"
-              role="switch"
-              aria-checked={boardOpen}
-              onClick={toggleBoardOpen}
-              title={boardOpen ? 'Lock the board' : 'Let students draw'}
-              className={cn(
-                toolClass,
-                boardOpen
-                  ? 'bg-signal-50 text-signal-800 hover:bg-signal-100'
-                  : 'text-neutral-700 hover:bg-signal-50 hover:text-signal-800',
-              )}
-            >
-              {boardOpen ? (
-                <PiLockOpenBold className="text-signal-600" aria-hidden />
-              ) : (
-                <PiLockBold className="text-neutral-400" aria-hidden />
-              )}
-              {boardOpen ? 'Students can draw' : 'Board locked'}
-              <span
-                aria-hidden
-                className={cn(
-                  'relative ml-1 inline-flex h-4 w-7 shrink-0 rounded-full transition-colors max-[729px]:ml-auto',
-                  boardOpen ? 'bg-signal-600' : 'bg-neutral-300',
-                )}
-              >
-                <span
-                  className={cn(
-                    'absolute top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-all',
-                    boardOpen ? 'left-3.5' : 'left-0.5',
-                  )}
-                />
-              </span>
-            </button>
-
-            <span aria-hidden className={dividerClass} />
-
-            {maths && (
-              <button
-                type="button"
-                aria-pressed={mathOpen}
-                onClick={() => {
-                  setEditingMath(null);
-                  setMathSource('');
-                  setMathOpen((v) => !v);
-                }}
-                className={cn(toolClass, mathOpen ? toolActive : toolIdle)}
-              >
-                <PiFunctionBold aria-hidden />
-                Math
-              </button>
-            )}
-            <button
-              type="button"
-              aria-pressed={linkOpen}
-              onClick={() => {
-                setLinkError(null);
-                setLinkOpen((v) => !v);
-                setTimeout(() => linkInputRef.current?.focus(), 0);
+      {/* =====================================================================
+          LAYER 3: UNIFIED MINIMALIST TOOL DOCK (Google Floating Island)
+          ===================================================================== */}
+      {canEdit && (
+        <div className="dock-wrapper">
+          {/* Contextual Shapes Flyout Popover */}
+          {shapesPopoverOpen && (
+            <div
+              className="properties-popover shapes-popover"
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
               }}
-              className={cn(toolClass, linkOpen ? toolActive : toolIdle)}
             >
-              <PiFilesBold aria-hidden />
-              Docs &amp; video
-            </button>
-            {quran && (
-              <button
-                type="button"
-                aria-pressed={quranOpen}
-                onClick={() => {
-                  setQuranError(null);
-                  setLinkOpen(false);
-                  setQuranOpen((v) => !v);
-                }}
-                className={cn(toolClass, quranOpen ? toolActive : toolIdle)}
-              >
-                <PiBookOpenTextBold aria-hidden />
-                Qur’an block
-              </button>
-            )}
+              <div className="pop-row-label">
+                <span>Chalkboard Shapes</span>
+                <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>Click to pick</span>
+              </div>
+              <div className="shapes-grid">
+                {SHAPES.map((shape) => {
+                  const isActive = activeShape === shape.key;
+                  return (
+                    <button
+                      key={shape.key}
+                      type="button"
+                      className={cn('shape-select-btn', isActive && 'active')}
+                      onClick={() => addShape(shape.key)}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                      }}
+                      title={`Draw ${shape.label}`}
+                    >
+                      <svg viewBox="0 0 24 24">
+                        <path
+                          d={shape.icon}
+                          fill={shapeFillColor !== 'transparent' && shape.key !== 'line' && shape.key !== 'arrow' ? shapeFillColor : 'none'}
+                          stroke="currentColor"
+                          strokeWidth={1.8}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      <span>{shape.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
 
-            <span aria-hidden className={dividerClass} />
+              {/* Shape Fill Color Row */}
+              <div className="pop-row-label" style={{ marginTop: 12 }}>
+                <span>Shape Fill</span>
+                <span style={{ fontSize: 10, color: shapeFillColor === 'transparent' ? 'var(--text-dim)' : 'var(--accent)' }}>
+                  {shapeFillColor === 'transparent' ? 'Outline Only' : shapeFillColor.toUpperCase()}
+                </span>
+              </div>
+              <div className="palette-grid">
+                <button
+                  type="button"
+                  className={cn('color-dot fill-none-dot', shapeFillColor === 'transparent' && 'active')}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShapeFill('transparent');
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                  }}
+                  title="Outline Only (No Fill)"
+                >
+                  <span className="fill-none-slash">⊘</span>
+                </button>
+                {['#ffffff', '#10b981', '#38bdf8', '#fbbf24', '#f43f5e', '#a855f7', '#94a3b8', '#f97316'].map((col) => (
+                  <button
+                    key={col}
+                    type="button"
+                    className={cn('color-dot', shapeFillColor.toLowerCase() === col.toLowerCase() && 'active')}
+                    style={{ background: col }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShapeFill(col);
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                    }}
+                    title={`Fill ${col}`}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={importing}
-              className={cn(toolClass, toolIdle)}
-            >
-              <PiUploadSimpleBold aria-hidden />
-              {importing ? 'Importing…' : 'Import'}
-            </button>
-            <button
-              type="button"
-              onClick={() => void exportPdf()}
-              disabled={exporting}
-              className={cn(toolClass, toolIdle)}
-            >
-              <PiDownloadSimpleBold aria-hidden />
-              {exporting
-                ? exportPage
-                  ? `Page ${exportPage.page} of ${exportPage.of}…`
-                  : 'Exporting…'
-                : 'Export'}
-            </button>
-
-            {/* Last, and behind a divider: taking the board off every screen
-                does not belong flush against the tools that put things on it. */}
-            <span aria-hidden className={dividerClass} />
-
-            <button
-              type="button"
-              ref={clearTriggerRef}
-              aria-haspopup="dialog"
-              aria-expanded={clearOpen}
-              onClick={() => {
-                const next = !clearOpen;
-                setClearOpen(next);
-                if (!next) return;
-                const btn = clearTriggerRef.current?.getBoundingClientRect();
-                const board = wrapperRef.current?.getBoundingClientRect();
-                if (!btn || !board) return;
-                const W = 288;
-                const H = 148;
-                const GAP = 8;
-                // Below the toolbar, and never past the edge of the board.
-                const left = Math.min(
-                  btn.left - board.left,
-                  board.width - W - GAP,
-                );
-                const top = Math.min(
-                  btn.bottom + GAP - board.top,
-                  board.height - H - GAP,
-                );
-                setClearMenuAt({ top: Math.max(GAP, top), left: Math.max(GAP, left) });
+          {/* Contextual Tool Property Flyout (Colors, Sizes, Styles) */}
+          {propertiesPopoverOpen && (
+            <div
+              className="properties-popover"
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
               }}
-              className={cn(toolClass, clearOpen ? toolActive : toolIdle)}
             >
-              <PiTrashBold aria-hidden />
-              Clear
+              <div className="pop-row-label">
+                <span>Color Palette</span>
+                <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--accent)' }}>
+                  {activeColor.toUpperCase()}
+                </span>
+              </div>
+              <div className="palette-grid">
+                {['#ffffff', '#10b981', '#38bdf8', '#fbbf24', '#f43f5e', '#a855f7', '#94a3b8'].map((col) => (
+                  <div
+                    key={col}
+                    className={cn('color-dot', activeColor.toLowerCase() === col.toLowerCase() && 'active')}
+                    style={{ background: col }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setStrokeColor(col);
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                    }}
+                    title={`Color ${col}`}
+                  />
+                ))}
+              </div>
+
+              <div className="pop-row-label">
+                <span>Stroke Thickness</span>
+                <span>{activeWeight}px</span>
+              </div>
+              <div className="stroke-size-selector">
+                {[
+                  { label: 'Fine', weight: 1, barHeight: 2 },
+                  { label: 'Normal', weight: 2, barHeight: 3 },
+                  { label: 'Bold', weight: 3.5, barHeight: 5 },
+                  { label: 'Heavy', weight: 6, barHeight: 8 },
+                ].map(({ label, weight, barHeight }) => (
+                  <button
+                    key={weight}
+                    type="button"
+                    className={cn('stroke-btn', activeWeight === weight && 'active')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPropertiesPopoverOpen(false);
+                      setStrokeWeight(weight);
+                      const targetTool = activeToolState === 'highlighter' ? 'highlighter' : 'pen';
+                      setActiveToolState(targetTool);
+                      const editor = apiRef.current;
+                      if (editor) {
+                        editor.updateScene({
+                          appState: {
+                            selectedElementIds: {},
+                            currentItemStrokeWidth: weight,
+                          },
+                        });
+                        editor.setActiveTool({ type: 'freedraw', locked: true });
+                      }
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                    }}
+                    title={`${label} (${weight}px)`}
+                  >
+                    <div style={{ width: 16, height: barHeight, background: 'currentColor', borderRadius: 2 }} />
+                    <span style={{ fontSize: 9.5, fontWeight: 600 }}>{label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* The Floating Island Dock */}
+          <div className="floating-island">
+            {/* Tool 1: Select Arrow */}
+            <button
+              type="button"
+              className={cn('tool-icon-btn', activeToolState === 'select' && 'active')}
+              onClick={() => selectTool('select')}
+              title="Selection Pointer (V)"
+            >
+              <svg className="icon" viewBox="0 0 24 24"><path d="M3 3l7 18 3-7 7-3L3 3z"/></svg>
             </button>
 
+            {/* Tool 2: Smooth Pen */}
+            <button
+              type="button"
+              className={cn('tool-icon-btn', activeToolState === 'pen' && 'active')}
+              onClick={() => {
+                if (activeToolState === 'pen') {
+                  setPropertiesPopoverOpen((v) => !v);
+                } else {
+                  selectTool('pen');
+                }
+              }}
+              title="Chalkboard Pen (P) — Click again for thickness"
+            >
+              <svg className="icon" viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>
+            </button>
+
+            {/* Tool 3: Highlighter */}
+            <button
+              type="button"
+              className={cn('tool-icon-btn', activeToolState === 'highlighter' && 'active')}
+              onClick={() => {
+                if (activeToolState === 'highlighter') {
+                  setPropertiesPopoverOpen((v) => !v);
+                } else {
+                  selectTool('highlighter');
+                }
+              }}
+              title="Highlighter Marker (H) — Click again for options"
+            >
+              <svg className="icon" viewBox="0 0 24 24"><path d="M14 2l4 4L7 17H3v-4L14 2z"/><line x1="3" y1="22" x2="21" y2="22"/></svg>
+            </button>
+
+            {/* Tool 4: Eraser */}
+            <button
+              type="button"
+              className={cn('tool-icon-btn', activeToolState === 'eraser' && 'active')}
+              onClick={() => selectTool('eraser')}
+              title="Stroke Eraser (E)"
+            >
+              <svg className="icon" viewBox="0 0 24 24"><path d="M20 20H7L3 16C2 15 2 13 3 12L13 2L22 11L18 15L20 20Z"/></svg>
+            </button>
+
+            {/* Tool 5: Shapes */}
+            <button
+              type="button"
+              className={cn('tool-icon-btn', (activeToolState === 'rectangle' || shapesPopoverOpen) && 'active')}
+              onClick={() => {
+                setPropertiesPopoverOpen(false);
+                setShapesPopoverOpen((v) => !v);
+                selectTool('rectangle');
+              }}
+              title="Geometric Shapes (Square, Circle, Triangle, Star…)"
+            >
+              <svg className="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>
+            </button>
+
+            {/* Tool 6: Text */}
+            <button
+              type="button"
+              className={cn('tool-icon-btn desktop-only-tool', activeToolState === 'text' && 'active')}
+              onClick={() => selectTool('text')}
+              title="Text Typography (T)"
+            >
+              <svg className="icon" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+            </button>
+
+            {/* Tool 7: Laser Pointer */}
+            <button
+              type="button"
+              className={cn('tool-icon-btn desktop-only-tool', activeToolState === 'laser' && 'active')}
+              onClick={() => selectTool('laser')}
+              title="Presentation Laser Pointer (L)"
+            >
+              <svg className="icon" viewBox="0 0 24 24">
+                <path d="M4 20l8.5-8.5" />
+                <path d="M10.5 9.5l3-3a1.5 1.5 0 0 1 2.1 0l1.9 1.9a1.5 1.5 0 0 1 0 2.1l-3 3" />
+                <path d="M12.5 11.5l1.5 1.5" />
+                <circle cx="20" cy="4" r="1.5" style={{ fill: 'currentColor' }} />
+                <path d="M20 1v1" />
+                <path d="M20 6v1" />
+                <path d="M17 4h1" />
+                <path d="M22 4h1" />
+              </svg>
+            </button>
+
+            <div className="divider-v" />
+
+            {/* Active Color Swatch (Tap toggles properties popover) */}
+            <div
+              className="color-swatch-trigger"
+              style={{ background: activeColor }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setPropertiesPopoverOpen((v) => !v);
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+              }}
+              title="Change color & stroke size"
+            />
+
+            <div className="divider-v" />
+
+            {/* Pedagogical Insert Hero Capsule */}
+            <button
+              type="button"
+              className="btn-insert-hero"
+              onClick={() => openInsertStudio()}
+              title="Insert Math Formula, Qur'an Ayah, Google Docs or Media"
+            >
+              <PiPlusBold className="h-3.5 w-3.5" />
+              <span>Insert</span>
+            </button>
+
+            <div className="divider-v" />
+
+            {/* Undo / Redo */}
+            <button
+              type="button"
+              className="tool-icon-btn"
+              onClick={handleUndo}
+              title="Undo (Ctrl+Z)"
+            >
+              <svg className="icon icon-sm" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            </button>
+            <button
+              type="button"
+              className="tool-icon-btn desktop-only-tool"
+              onClick={handleRedo}
+              title="Redo (Ctrl+Y)"
+            >
+              <svg className="icon icon-sm" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            </button>
           </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => {
-              setFollowing(true);
-              applyPresenterView();
-            }}
-            className={cn(
-              'pointer-events-auto flex items-center gap-2 rounded-full px-3.5 py-2 text-xs font-semibold shadow-lg ring-1 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-500',
-              following
-                ? 'bg-white/95 text-signal-800 shadow-signal-900/10 ring-signal-100 backdrop-blur'
-                : 'animate-pulse bg-signal-700 text-white shadow-signal-800/25 ring-signal-700 hover:bg-signal-800',
-            )}
-          >
-            {/* A live dot while in step, so "following" reads as a state rather
-                than a button label; the crosshair only when there is somewhere
-                to go back to. Neither adds text, which the follow spec reads. */}
-            {following ? (
-              <span aria-hidden className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-signal-400 opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-signal-600" />
-              </span>
-            ) : (
-              <PiCrosshairBold aria-hidden />
-            )}
-            {following ? 'Following instructor' : "Back to instructor's view"}
-          </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* The formula being built comes first and stays visible: what it will
           look like, then what it is made of, then the tools. The palette used
@@ -3145,329 +4566,421 @@ export function BoardExcalidraw({
         </div>
       )}
 
-      {quranOpen && canDraw && quran && (
+
+
+      {insertStudioOpen && canEdit && (
         <div
-          data-quran-block-panel
-          className="pointer-events-auto absolute left-1/2 top-14 z-[403] w-[min(26rem,calc(100%-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl bg-white shadow-xl shadow-signal-900/10 ring-1 ring-signal-100"
+          data-insert-studio-scrim
+          className="pointer-events-auto fixed inset-0 z-[520] flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 backdrop-blur-md transition-opacity"
+          onClick={closeInsertStudio}
         >
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              addQuranBlock();
-            }}
+          <div
+            data-insert-studio-card
+            className="studio-bottom-sheet relative flex max-h-[92vh] sm:max-h-[85vh] w-full max-w-full sm:max-w-2xl flex-col overflow-hidden rounded-t-[28px] sm:rounded-2xl border border-white/10 bg-[#141722] text-neutral-100 shadow-2xl shadow-black/80"
+            onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start gap-3 border-b border-signal-100 bg-gradient-to-r from-signal-50 to-white px-4 py-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-signal-700 text-white shadow-sm shadow-signal-800/25">
-                <PiBookOpenTextBold className="h-4.5 w-4.5" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-neutral-900">Qur’an block</p>
-                <p className="mt-0.5 text-xs text-neutral-500">
-                  Put ayahs on the board. Tajweed marks made in the Qur’an view
-                  show on them as they are made.
-                </p>
+            {/* Mobile Drag Handle */}
+            <div className="mx-auto mt-2.5 h-1 w-9 shrink-0 rounded-full bg-white/20 sm:hidden" />
+
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-white/10 px-5 py-3.5 sm:py-4">
+              <div className="flex items-center gap-2.5">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-signal-500/15 text-signal-400">
+                  <PiPlusBold className="h-4 w-4" />
+                </span>
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    {editingMath ? 'Edit Formula' : 'Insert into Chalkboard'}
+                  </h3>
+                  <p className="text-[11px] text-neutral-400">
+                    {editingMath
+                      ? 'Update formula or add a new line below'
+                      : 'Add interactive mathematical formulas, Qur’anic ayahs, or Google docs'}
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
-                aria-label="Close"
-                onClick={() => {
-                  setQuranOpen(false);
-                  setQuranError(null);
-                }}
-                className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-neutral-400 transition hover:bg-signal-100 hover:text-signal-800"
+                onClick={closeInsertStudio}
+                aria-label="Close dialog"
+                className="grid h-7 w-7 place-items-center rounded-full bg-white/5 text-neutral-400 transition hover:bg-white/10 hover:text-white"
               >
-                <PiXBold />
+                <PiXBold className="h-3.5 w-3.5" />
               </button>
             </div>
-            <div className="grid grid-cols-3 gap-2 p-4">
-              {(
-                [
-                  ['surah', 'Surah', 114],
-                  ['from', 'From ayah', 286],
-                  ['to', 'To ayah', 286],
-                ] as const
-              ).map(([key, label, max]) => (
-                <label key={key} className="block text-xs font-semibold text-neutral-700">
-                  {label}
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={1}
-                    max={max}
-                    value={quranForm[key]}
-                    onChange={(e) => {
-                      setQuranForm((f) => ({ ...f, [key]: e.target.value }));
-                      setQuranError(null);
-                    }}
-                    className={cn(inputClass, 'mt-1')}
-                  />
-                </label>
-              ))}
-            </div>
-            <div className="flex items-center justify-between gap-3 px-4 pb-4">
-              <p className="text-xs text-red-600">{quranError}</p>
-              <button
-                type="submit"
-                className="shrink-0 rounded-xl bg-signal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-signal-800/25 transition hover:bg-signal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-500 focus-visible:ring-offset-2"
-              >
-                Add to board
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
 
-      {linkOpen && canDraw && (
-        <div className="pointer-events-auto absolute left-1/2 top-14 z-[403] w-[min(32rem,calc(100%-2rem))] -translate-x-1/2 overflow-hidden rounded-2xl bg-white shadow-xl shadow-signal-900/10 ring-1 ring-signal-100">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              addLinkToBoard(linkSource);
-            }}
-          >
-            {/* The dashboard's teal-into-white header, so the board's panels
-                read as part of the same product rather than a bolted-on tool. */}
-            <div className="flex items-start gap-3 border-b border-signal-100 bg-gradient-to-r from-signal-50 to-white px-4 py-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-signal-700 text-white shadow-sm shadow-signal-800/25">
-                <PiFilesBold className="h-4.5 w-4.5" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-neutral-900">Docs &amp; video</p>
-                <p className="mt-0.5 text-xs text-neutral-500">
-                  Google Docs, Sheets, Slides and Drive files, or a YouTube video.
-                </p>
-              </div>
+            {/* Studio Navigation Tabs (Mobile horizontally scrollable, single row) */}
+            <div className="studio-scroll-hidden flex border-b border-white/10 bg-black/20 px-3 overflow-x-auto shrink-0">
               <button
                 type="button"
-                aria-label="Close"
-                onClick={() => {
-                  setLinkOpen(false);
-                  setLinkSource('');
-                  setLinkError(null);
-                }}
-                className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-neutral-400 transition hover:bg-signal-100 hover:text-signal-800"
+                onClick={() => setInsertStudioTab('math')}
+                className={cn(
+                  'relative flex items-center gap-2 px-4 py-3 text-xs font-semibold whitespace-nowrap transition-colors',
+                  insertStudioTab === 'math'
+                    ? 'text-signal-400 after:absolute after:bottom-0 after:left-3 after:right-3 after:h-0.5 after:rounded-full after:bg-signal-400'
+                    : 'text-neutral-400 hover:text-white',
+                )}
               >
-                <PiXBold />
+                <PiMathOperationsBold className="h-4 w-4" />
+                <span>Math &amp; Science</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInsertStudioTab('quran')}
+                className={cn(
+                  'relative flex items-center gap-2 px-4 py-3 text-xs font-semibold whitespace-nowrap transition-colors',
+                  insertStudioTab === 'quran'
+                    ? 'text-signal-400 after:absolute after:bottom-0 after:left-3 after:right-3 after:h-0.5 after:rounded-full after:bg-signal-400'
+                    : 'text-neutral-400 hover:text-white',
+                )}
+              >
+                <PiBookOpenTextBold className="h-4 w-4" />
+                <span>Qur’an Block</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInsertStudioTab('docs')}
+                className={cn(
+                  'relative flex items-center gap-2 px-4 py-3 text-xs font-semibold whitespace-nowrap transition-colors',
+                  insertStudioTab === 'docs'
+                    ? 'text-signal-400 after:absolute after:bottom-0 after:left-3 after:right-3 after:h-0.5 after:rounded-full after:bg-signal-400'
+                    : 'text-neutral-400 hover:text-white',
+                )}
+              >
+                <PiFilesBold className="h-4 w-4" />
+                <span>Docs &amp; Video</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInsertStudioTab('files')}
+                className={cn(
+                  'relative flex items-center gap-2 px-4 py-3 text-xs font-semibold whitespace-nowrap transition-colors',
+                  insertStudioTab === 'files'
+                    ? 'text-signal-400 after:absolute after:bottom-0 after:left-3 after:right-3 after:h-0.5 after:rounded-full after:bg-signal-400'
+                    : 'text-neutral-400 hover:text-white',
+                )}
+              >
+                <PiUploadSimpleBold className="h-4 w-4" />
+                <span>Import File</span>
               </button>
             </div>
 
-            <div className="p-4">
-              <label
-                htmlFor="board-link-input"
-                className="block text-xs font-semibold text-neutral-700"
-              >
-                Paste a link
-              </label>
-              <div className="relative mt-1.5">
-                <PiLinkSimpleBold
-                  aria-hidden
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400"
-                />
-                <input
-                  id="board-link-input"
-                  ref={linkInputRef}
-                  value={linkSource}
-                  onChange={(e) => {
-                    setLinkSource(e.target.value);
-                    setLinkError(null);
-                  }}
-                  placeholder="https://docs.google.com/document/d/…"
-                  className={cn(inputClass, 'pl-9')}
-                />
-              </div>
+            {/* Studio Content Body */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+              {/* TAB 1: MATH & SCIENCE */}
+              {insertStudioTab === 'math' && (
+                <div className="space-y-4">
+                  {/* KaTeX Live Preview Plate */}
+                  <div className="grid min-h-[5rem] place-items-center overflow-x-auto rounded-xl border border-white/10 bg-[#090a0f] p-4 text-[#38bdf8]">
+                    {mathSource.trim() === '' ? (
+                      <p className="text-xs text-neutral-400">
+                        Pick an equation or symbol below — it appears here as you build it.
+                      </p>
+                    ) : mathIssue ? (
+                      <p className="text-center text-xs font-semibold text-rose-400">
+                        {mathIssue}
+                      </p>
+                    ) : (
+                      <div dangerouslySetInnerHTML={{ __html: mathPreview }} />
+                    )}
+                  </div>
 
-              {/* Two different things, so two buttons rather than one Add and a
-                  setting. Pages is first because it is what teaching from a
-                  document needs; the live view is for showing, not working. */}
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => void importGoogleAsPages(linkSource)}
-                  disabled={importing || linkSource.trim() === ''}
-                  className="rounded-xl bg-signal-700 px-3.5 py-2.5 text-left text-white shadow-sm shadow-signal-800/25 transition hover:bg-signal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-500 focus-visible:ring-offset-2 disabled:opacity-40"
-                >
-                  <span className="flex items-center gap-2 text-xs font-semibold">
-                    {importing ? 'Importing…' : 'Add as pages'}
-                    <span className="rounded-full bg-white/15 px-1.5 py-px text-[10px] font-semibold">
-                      Recommended
-                    </span>
-                  </span>
-                  <span className="mt-0.5 block text-[11px] leading-snug text-signal-100">
-                    Everyone scrolls together, and you can write on it. A
-                    snapshot — later edits will not appear.
-                  </span>
-                </button>
-                <button
-                  type="submit"
-                  disabled={linkSource.trim() === ''}
-                  className="rounded-xl border border-neutral-300 bg-white px-3.5 py-2.5 text-left text-neutral-900 transition hover:border-signal-600 hover:bg-signal-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400 focus-visible:ring-offset-2 disabled:opacity-40"
-                >
-                  <span className="block text-xs font-semibold">Add live view</span>
-                  <span className="mt-0.5 block text-[11px] leading-snug text-neutral-500">
-                    Always current, but read-only, and each person scrolls it
-                    themselves.
-                  </span>
-                </button>
-              </div>
+                  <div>
+                    <label htmlFor="studio-math-input" className="block text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+                      LaTeX Expression
+                    </label>
+                    <textarea
+                      id="studio-math-input"
+                      ref={mathInputRef}
+                      value={mathSource}
+                      onChange={(e) => setMathSource(e.target.value)}
+                      rows={2}
+                      spellCheck={false}
+                      placeholder="Type LaTeX or click quick presets..."
+                      className="mt-1.5 w-full resize-y rounded-xl border border-white/10 bg-white/5 px-3 py-2 font-mono text-sm text-white placeholder:text-neutral-500 outline-none focus:border-signal-400 focus:ring-1 focus:ring-signal-400"
+                    />
+                  </div>
 
-              {linkError ? (
-                <p className="mt-2.5 text-xs font-medium text-red-600">{linkError}</p>
-              ) : (
-                <p className="mt-2.5 text-xs text-neutral-500">
-                  YouTube is live view only. Google files must be shared with
-                  &ldquo;anyone with the link&rdquo;.
-                </p>
-              )}
-            </div>
-          </form>
-        </div>
-      )}
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-400 mb-2">
+                      Preset Formulas
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {MATH_PRESETS.map((preset) => (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => {
+                            setMathSource(preset.latex);
+                          }}
+                          className="rounded-lg border border-white/10 bg-white/5 p-2 text-center text-xs font-mono text-neutral-300 hover:border-signal-500 hover:bg-signal-500/10 hover:text-white transition"
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
-      {mathOpen && canDraw && maths && (
-        <div className="pointer-events-auto absolute left-1/2 top-14 z-[403] flex max-h-[calc(100%-5rem)] w-[min(41rem,calc(100%-2rem))] -translate-x-1/2 flex-col rounded-xl bg-white shadow-xl ring-1 ring-neutral-200">
-          <div className="flex items-center justify-between border-b border-neutral-200 px-3 py-2">
-            <p className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-neutral-400">
-              {editingMath ? 'Edit formula' : 'Formula'}
-            </p>
-            <button
-              type="button"
-              onClick={closeMath}
-              aria-label="Close"
-              className="grid h-6 w-6 place-items-center rounded-lg text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-700"
-            >
-              <PiXBold className="h-3 w-3" />
-            </button>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-            {/* Live preview — the answer to "what am I making", full width and
-                first, so clicking a palette entry has a visible result. */}
-            <div className="mt-3 grid min-h-[4.5rem] place-items-center overflow-x-auto rounded-lg bg-neutral-50 px-3 py-3 text-neutral-900">
-              {mathSource.trim() === '' ? (
-                <p className="text-xs text-neutral-400">
-                  Pick an equation or a symbol below — it appears here as you build it.
-                </p>
-              ) : mathIssue ? (
-                <p className="text-center text-xs font-semibold text-red-600">
-                  {mathIssue}
-                </p>
-              ) : (
-                <div dangerouslySetInnerHTML={{ __html: mathPreview }} />
-              )}
-            </div>
-
-            <label htmlFor="board-math-input" className="sr-only">
-              Formula source
-            </label>
-            <textarea
-              id="board-math-input"
-              ref={mathInputRef}
-              value={mathSource}
-              onChange={(e) => setMathSource(e.target.value)}
-              rows={2}
-              spellCheck={false}
-              placeholder="Pick from below, or type LaTeX directly"
-              className="mt-2 w-full resize-y rounded-lg border border-neutral-300 px-2.5 py-1.5 font-mono text-sm text-neutral-900 outline-none focus:border-neutral-500"
-            />
-
-            <input
-              type="search"
-              value={mathQuery}
-              onChange={(e) => setMathQuery(e.target.value)}
-              placeholder="Search — integral, orthogonal, quadratic…"
-              aria-label="Search math symbols"
-              className="mt-2 w-full rounded-lg border border-neutral-300 px-2.5 py-1.5 text-sm text-neutral-900 outline-none focus:border-neutral-500"
-            />
-
-            {/* Categories run down the side rather than wrapping across the
-                top: eleven of them wrapped to two cramped rows, and the grid
-                they controlled was clipped mid-glyph. */}
-            <div className="mt-2 flex min-h-[13rem] gap-2">
-              {/* The category column sizes to its contents and scrolls with
-                  the panel body. An independent scroller here cut the last
-                  category in half, which reads as broken rather than
-                  scrollable. */}
-              {mathQuery.trim() === '' && (
-                <div className="w-28 shrink-0 space-y-0.5">
-                  {mathTabs.map((cat) => (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setMathTab(cat)}
-                      className={cn(
-                        'block w-full rounded-lg px-2 py-1 text-left text-[11px] font-semibold transition',
-                        mathTab === cat
-                          ? 'bg-neutral-900 text-white'
-                          : 'text-neutral-600 hover:bg-neutral-100',
+                  {/* Math Symbols & Search */}
+                  <div className="space-y-2">
+                    <input
+                      type="search"
+                      value={mathQuery}
+                      onChange={(e) => setMathQuery(e.target.value)}
+                      placeholder="Search symbols — integral, matrix, theta..."
+                      aria-label="Search math symbols"
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white placeholder:text-neutral-500 outline-none focus:border-signal-400"
+                    />
+                    <div className="flex max-h-40 gap-2 overflow-hidden">
+                      {mathQuery.trim() === '' && (
+                        <div className="w-24 shrink-0 space-y-0.5 overflow-y-auto pr-1">
+                          {mathTabs.map((cat) => (
+                            <button
+                              key={cat}
+                              type="button"
+                              onClick={() => setMathTab(cat)}
+                              className={cn(
+                                'block w-full rounded-lg px-2 py-1 text-left text-[11px] font-semibold transition',
+                                mathTab === cat
+                                  ? 'bg-signal-500/20 text-signal-300 border border-signal-500/30'
+                                  : 'text-neutral-400 hover:bg-white/5 hover:text-neutral-200',
+                              )}
+                            >
+                              {cat}
+                            </button>
+                          ))}
+                        </div>
                       )}
-                    >
-                      {cat}
-                    </button>
-                  ))}
+                      <div
+                        className={cn(
+                          'flex min-w-0 flex-1 gap-1 overflow-y-auto rounded-xl border border-white/10 bg-black/30 p-2',
+                          mathTab === 'Equations' && mathQuery.trim() === ''
+                            ? 'flex-col'
+                            : 'flex-wrap content-start',
+                        )}
+                      >
+                        {visibleMath.length === 0 ? (
+                          <p className="p-2 text-xs text-neutral-500">
+                            Nothing matches “{mathQuery.trim()}”.
+                          </p>
+                        ) : (
+                          visibleMath.map((e) => (
+                            <MathButton key={e.latex} entry={e} onPick={pickMath} />
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
-              <div
-                className={cn(
-                  'flex min-w-0 flex-1 gap-1 overflow-y-auto rounded-lg bg-neutral-50/60 p-1.5',
-                  mathTab === 'Equations' && mathQuery.trim() === ''
-                    ? 'flex-col'
-                    : 'flex-wrap content-start',
-                )}
-              >
-                {visibleMath.length === 0 ? (
-                  <p className="px-1 py-2 text-xs text-neutral-400">
-                    Nothing matches “{mathQuery.trim()}”.
-                  </p>
-                ) : (
-                  visibleMath.map((e) => (
-                    <MathButton key={e.latex} entry={e} onPick={pickMath} />
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
+              {/* TAB 2: QUR'AN BLOCK */}
+              {insertStudioTab === 'quran' && (
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-amber-500/30 bg-[#0b0e14] p-5 text-center font-serif text-xl sm:text-2xl leading-loose text-amber-300">
+                    {SURAH_SNIPPETS[quranForm.surah] || 'بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ'}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-neutral-400">Surah</label>
+                      <select
+                        value={quranForm.surah}
+                        onChange={(e) => {
+                          setQuranForm((f) => ({ ...f, surah: e.target.value }));
+                          setQuranError(null);
+                        }}
+                        className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white outline-none focus:border-signal-400"
+                      >
+                        <option value="1" className="bg-[#141722] text-white">1. Al-Fatihah</option>
+                        <option value="2" className="bg-[#141722] text-white">2. Al-Baqarah</option>
+                        <option value="18" className="bg-[#141722] text-white">18. Al-Kahf</option>
+                        <option value="36" className="bg-[#141722] text-white">36. Ya-Sin</option>
+                        <option value="67" className="bg-[#141722] text-white">67. Al-Mulk</option>
+                        <option value="112" className="bg-[#141722] text-white">112. Al-Ikhlas</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-neutral-400">From Ayah</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={286}
+                        value={quranForm.from}
+                        onChange={(e) => {
+                          setQuranForm((f) => ({ ...f, from: e.target.value }));
+                          setQuranError(null);
+                        }}
+                        className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white outline-none focus:border-signal-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-neutral-400">To Ayah</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={286}
+                        value={quranForm.to}
+                        onChange={(e) => {
+                          setQuranForm((f) => ({ ...f, to: e.target.value }));
+                          setQuranError(null);
+                        }}
+                        className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white outline-none focus:border-signal-400"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2.5 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs text-amber-200">
+                    <span className="text-amber-400">✦</span>
+                    <span>Tajweed color annotations made in reader automatically synchronize to this vector block.</span>
+                  </div>
+                  {quranError && <p className="text-xs text-rose-400">{quranError}</p>}
+                </div>
+              )}
 
-          <div className="flex items-center justify-between gap-2 border-t border-neutral-200 px-3 py-2">
-            <p className="truncate text-[11px] text-neutral-400">
-              {mathSource.trim() === ''
-                ? 'Nothing to add yet'
-                : mathIssue
-                  ? 'Fix the formula to add it'
-                  : editingMath
-                    ? 'Replace it, or add the next line underneath'
-                    : 'Lands in the middle of your view'}
-            </p>
-            <div className="flex shrink-0 gap-2">
+              {/* TAB 3: DOCS & VIDEO */}
+              {insertStudioTab === 'docs' && (
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="studio-link-input" className="block text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+                      Google Drive, Slides, Docs or YouTube Link
+                    </label>
+                    <div className="relative mt-1.5">
+                      <PiLinkSimpleBold className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" />
+                      <input
+                        id="studio-link-input"
+                        ref={linkInputRef}
+                        value={linkSource}
+                        onChange={(e) => {
+                          setLinkSource(e.target.value);
+                          setLinkError(null);
+                        }}
+                        placeholder="https://docs.google.com/presentation/d/…"
+                        className="w-full rounded-xl border border-white/10 bg-white/5 pl-9 pr-3 py-2.5 text-xs text-white placeholder:text-neutral-500 outline-none focus:border-signal-400"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-2.5 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => void importGoogleAsPages(linkSource)}
+                      disabled={importing || linkSource.trim() === ''}
+                      className="rounded-xl border border-signal-500/30 bg-signal-500/10 p-3.5 text-left transition hover:bg-signal-500/20 disabled:opacity-40"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-signal-400">Paginated Slides</span>
+                        <span className="rounded-full bg-signal-400 px-2 py-0.5 text-[10px] font-extrabold text-[#022c22]">
+                          Recommended
+                        </span>
+                      </div>
+                      <p className="mt-1.5 text-[11px] leading-snug text-neutral-300">
+                        Imports slides as scrollable chalkboard pages. Everyone views synchronously and you can write on top.
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addLinkToBoard(linkSource)}
+                      disabled={linkSource.trim() === ''}
+                      className="rounded-xl border border-white/10 bg-white/5 p-3.5 text-left transition hover:bg-white/10 disabled:opacity-40"
+                    >
+                      <span className="block text-xs font-bold text-white">Live Interactive Frame</span>
+                      <p className="mt-1.5 text-[11px] leading-snug text-neutral-400">
+                        Always current Google Drive iframe. Best for read-only spreadsheets and collaborative forms.
+                      </p>
+                    </button>
+                  </div>
+                  {linkError ? (
+                    <p className="text-xs font-medium text-rose-400">{linkError}</p>
+                  ) : (
+                    <p className="text-[11px] text-neutral-500">
+                      YouTube is live view only. Google files must be shared with &ldquo;anyone with the link&rdquo;.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 4: FILE UPLOAD */}
+              {insertStudioTab === 'files' && (
+                <div className="space-y-4">
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-white/20 bg-white/5 p-8 text-center cursor-pointer transition hover:border-signal-400 hover:bg-signal-500/10"
+                  >
+                    <div className="grid h-12 w-12 place-items-center rounded-full bg-signal-500/10 text-signal-400 mb-3">
+                      <PiUploadSimpleBold className="h-6 w-6" />
+                    </div>
+                    <p className="text-sm font-bold text-white">
+                      Click to upload PDF slides or images
+                    </p>
+                    <p className="mt-1 text-xs text-neutral-400">
+                      Supports Multi-page PDF, PNG, JPG, WebP
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer Actions */}
+            <div className="flex items-center justify-between border-t border-white/10 bg-black/20 px-5 py-3.5 shrink-0">
               <button
                 type="button"
-                onClick={closeMath}
-                className={`${pill} bg-white text-neutral-700`}
+                onClick={closeInsertStudio}
+                className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-neutral-300 hover:bg-white/10 hover:text-white transition"
               >
                 Cancel
               </button>
-              {editingMath && (
+              <div className="flex items-center gap-2">
+                {insertStudioTab === 'math' && editingMath && (
+                  <button
+                    type="button"
+                    onClick={() => void replaceMathOnBoard()}
+                    disabled={mathBusy || !!mathIssue || mathSource.trim() === ''}
+                    className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-bold text-white transition hover:bg-white/20 disabled:opacity-40"
+                  >
+                    {mathBusy ? 'Working…' : 'Replace Equation'}
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => void replaceMathOnBoard()}
-                  disabled={mathBusy || !!mathIssue || mathSource.trim() === ''}
-                  className={`${pill} bg-white text-neutral-800 disabled:opacity-40`}
+                  onClick={() => {
+                    if (insertStudioTab === 'math') {
+                      void addMathToBoard();
+                    } else if (insertStudioTab === 'quran') {
+                      addQuranBlock();
+                    } else if (insertStudioTab === 'docs') {
+                      if (linkSource.trim()) {
+                        const isPres =
+                          linkSource.includes('/presentation/') ||
+                          linkSource.includes('docs.google.com/presentation');
+                        if (isPres) {
+                          void importGoogleAsPages(linkSource);
+                        } else {
+                          addLinkToBoard(linkSource);
+                        }
+                      }
+                    } else if (insertStudioTab === 'files') {
+                      fileInputRef.current?.click();
+                    }
+                  }}
+                  disabled={
+                    (insertStudioTab === 'math' && (mathBusy || !!mathIssue || mathSource.trim() === '')) ||
+                    (insertStudioTab === 'docs' && linkSource.trim() === '')
+                  }
+                  className="rounded-full bg-signal-500 px-5 py-2 text-xs font-bold text-[#022c22] shadow-sm shadow-signal-500/30 transition hover:bg-signal-400 disabled:opacity-40"
                 >
-                  {mathBusy ? 'Working…' : 'Replace'}
+                  {insertStudioTab === 'math'
+                    ? mathBusy
+                      ? 'Adding…'
+                      : editingMath
+                        ? 'Add as New Line'
+                        : 'Insert on Board'
+                    : insertStudioTab === 'quran'
+                      ? 'Add Ayah Block'
+                      : insertStudioTab === 'docs'
+                        ? linkSource.includes('/presentation/')
+                          ? 'Import Slides'
+                          : 'Embed Link'
+                        : 'Choose File'}
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={() => void addMathToBoard()}
-                disabled={mathBusy || !!mathIssue || mathSource.trim() === ''}
-                className={`${pill} bg-neutral-900 text-white ring-neutral-900 disabled:opacity-40`}
-              >
-                {mathBusy
-                  ? 'Adding…'
-                  : editingMath
-                    ? 'Add as a new line'
-                    : 'Add to board'}
-              </button>
+              </div>
             </div>
           </div>
         </div>
