@@ -256,7 +256,7 @@ function isShapeElement(el: ExcalidrawElement): boolean {
 function shapeCanFill(el: ExcalidrawElement): boolean {
   if (el.type === 'rectangle' || el.type === 'ellipse' || el.type === 'diamond') return true;
   if (el.type === 'line') {
-    const pts = (el as any).points;
+    const pts = 'points' in el ? el.points : undefined;
     return Array.isArray(pts) && pts.length >= 3;
   }
   return false;
@@ -1280,7 +1280,7 @@ export function BoardExcalidraw({
       if (!isSharedFile(value)) continue;
       if (syncedFilesRef.current.has(value.id)) continue;
       syncedFilesRef.current.add(value.id);
-      void fetchAsDataURL(value.url)
+      void fetchAsDataURL(value.url, sessionId)
         .then((dataURL) => {
           apiRef.current?.addFiles([
             {
@@ -1587,12 +1587,22 @@ export function BoardExcalidraw({
       }
     });
     socket.on('error', (error) => {
-      if (error.code !== 'UNAUTHORIZED' || authRetries >= 2) return;
-      authRetries += 1;
-      clearRealtimeToken();
-      window.setTimeout(() => {
-        if (socketRef.current === socket) socket.connect();
-      }, 600);
+      if (error.code === 'UNAUTHORIZED' && authRetries < 2) {
+        authRetries += 1;
+        clearJoinTimer();
+        clearRealtimeToken();
+        window.setTimeout(() => {
+          if (socketRef.current === socket) socket.connect();
+        }, 600);
+        return;
+      }
+
+      // A permission/session error cannot succeed by retrying. Stop the join
+      // timer so an ended session or non-participant does not query the API
+      // every two seconds for the lifetime of this component.
+      clearJoinTimer();
+      setReady(false);
+      flash(error.message || 'Unable to join the chalkboard.');
     });
 
     return () => {
@@ -1624,6 +1634,7 @@ export function BoardExcalidraw({
     applyRemoteElements,
     hydrateFiles,
     applyPresenterView,
+    flash,
   ]);
 
   // The socket handshake can beat the editor's mount, in which case the state
