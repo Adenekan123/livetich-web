@@ -845,6 +845,7 @@ export function BoardExcalidraw({
   /** Clearing wipes the board for the whole class and cannot be undone by
    *  anyone else, so it asks first. */
   const [clearOpen, setClearOpen] = useState(false);
+  const [deletePageOpen, setDeletePageOpen] = useState(false);
   const clearTriggerRef = useRef<HTMLButtonElement>(null);
   /** Where to draw the confirm, in board coordinates — for the same reason the
    *  shapes menu is measured: the tool row scrolls on a phone, and a panel
@@ -1546,6 +1547,22 @@ export function BoardExcalidraw({
       const activePageId = pages.some((page) => page.id === value.activePageId)
         ? value.activePageId
         : pages[0].id;
+      const currentPageIds = new Set(pages.map((page) => page.id));
+      const removedPageIds = new Set(
+        boardPagesRef.current
+          .filter((page) => !currentPageIds.has(page.id))
+          .map((page) => page.id),
+      );
+      if (removedPageIds.size) {
+        // Flush this client first, then remove again so a queued local edit
+        // cannot resurrect content from a page another instructor deleted.
+        flushLocalRef.current();
+        doc.transact(() => {
+          for (const [id, element] of [...elements.entries()]) {
+            if (removedPageIds.has(elementPageId(element))) elements.delete(id);
+          }
+        }, LOCAL);
+      }
       boardPagesRef.current = pages;
       setBoardPages(pages);
       boardTitleRef.current = value.title;
@@ -1951,6 +1968,74 @@ export function BoardExcalidraw({
     persistBoardPageState({ pages, activePageId: page.id });
     flash('Added page');
   }, [flash, persistBoardPageState]);
+
+  const deleteCurrentPage = useCallback(() => {
+    if (!canDraw) return;
+    const pages = boardPagesRef.current;
+    if (pages.length <= 1) {
+      setDeletePageOpen(false);
+      flash('Keep at least one board page.');
+      return;
+    }
+
+    const pageIndex = pages.findIndex(
+      (page) => page.id === activeBoardPageIdRef.current,
+    );
+    if (pageIndex < 0) return;
+
+    const doc = docRef.current;
+    const elements = elementsRef.current;
+    const pageState = pageStateMapRef.current;
+    if (!doc || !elements || !pageState) {
+      flash('The board is still connecting. Try again in a moment.');
+      return;
+    }
+
+    flushLocalRef.current();
+    const removedPageId = pages[pageIndex].id;
+    const remainingPages = pages.filter((page) => page.id !== removedPageId);
+    const nextActivePage = remainingPages[Math.max(0, pageIndex - 1)];
+    const existing = pageState.get(PAGE_STATE_ID);
+    const nextState: BoardPagesState = {
+      ...(isBoardPagesState(existing)
+        ? existing
+        : { pages, activePageId: removedPageId, title: boardTitleRef.current }),
+      pages: remainingPages,
+      activePageId: nextActivePage.id,
+      title: boardTitleRef.current,
+    };
+
+    boardPagesRef.current = remainingPages;
+    setBoardPages(remainingPages);
+    activeBoardPageIdRef.current = nextActivePage.id;
+    setActiveBoardPageId(nextActivePage.id);
+
+    doc.transact(() => {
+      for (const [id, element] of [...elements.entries()]) {
+        if (elementPageId(element) !== removedPageId) continue;
+        elements.delete(id);
+        syncedVersionsRef.current.delete(id);
+      }
+      pageState.set(PAGE_STATE_ID, nextState);
+    }, LOCAL);
+
+    const visible = [...elements.values()].filter(
+      (element): element is ExcalidrawElement =>
+        isSharedElement(element) && elementPageId(element) === nextActivePage.id,
+    );
+    for (const element of visible) {
+      syncedVersionsRef.current.set(element.id, element.version);
+    }
+    const editor = apiRef.current;
+    editor?.history.clear();
+    editor?.updateScene({
+      elements: visible,
+      appState: { selectedElementIds: {} },
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+    setDeletePageOpen(false);
+    flash('Page deleted');
+  }, [canDraw, flash]);
 
   /** Upload any image the local user just added, and share only its URL. */
   const shareNewFiles = useCallback(
@@ -4193,6 +4278,45 @@ export function BoardExcalidraw({
         </div>
       )}
 
+      {deletePageOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-board-page-title"
+          className="fixed inset-0 z-[550] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          onClick={() => setDeletePageOpen(false)}
+        >
+          <div
+            className="pointer-events-auto w-full max-w-sm rounded-2xl border border-white/10 bg-[#141724] p-4 text-slate-100 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p id="delete-board-page-title" className="text-sm font-bold text-white">
+              Delete page {currentPage}?
+            </p>
+            <p className="mt-1.5 text-xs text-slate-300">
+              This removes the page and all of its content for everyone in this session. You can’t undo this.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeletePageOpen(false)}
+                className="rounded-full bg-white/5 px-3.5 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={deleteCurrentPage}
+                className="flex items-center gap-1.5 rounded-full bg-rose-600 px-3.5 py-1.5 text-xs font-bold text-white transition hover:bg-rose-500"
+              >
+                <PiTrashBold aria-hidden />
+                <span>Delete page</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Rendered against the board, not the toolbar, so neither the phone's
           scrolling tool row nor Excalidraw's own clipping can cut it off. */}
       {shapesOpen && shapesMenuAt && railNode && (
@@ -4315,6 +4439,18 @@ export function BoardExcalidraw({
                   +
                 </button>
               )}
+              {canDraw && (
+                <button
+                  type="button"
+                  className="page-nav-btn page-delete-btn"
+                  onClick={() => setDeletePageOpen(true)}
+                  disabled={!ready || totalPages <= 1}
+                  title={totalPages <= 1 ? 'Keep at least one page' : 'Delete current page'}
+                  aria-label={totalPages <= 1 ? 'Keep at least one page' : `Delete page ${currentPage}`}
+                >
+                  <PiTrashBold aria-hidden />
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -4413,26 +4549,32 @@ export function BoardExcalidraw({
             Export &amp; Sharing
           </div>
 
+          <p style={{ margin: '-4px 0 0', fontSize: 11, color: 'var(--text-dim)' }}>
+            Exports the page currently open. Tall content may span multiple PDF sheets.
+          </p>
+
           <div
             className="collab-action-row"
+            title="Export the currently open board page as a PDF"
             onClick={() => {
               setCollabSheetOpen(false);
               void exportPdf();
             }}
           >
             <PiDownloadSimpleBold className="h-4 w-4 text-emerald-400" />
-            <span>Export Multi-Page PDF</span>
+            <span>Export current page as PDF</span>
           </div>
 
           <div
             className="collab-action-row"
+            title="Export the currently open board page as a PNG"
             onClick={() => {
               setCollabSheetOpen(false);
               void exportPng();
             }}
           >
             <PiImageBold className="h-4 w-4 text-sky-400" />
-            <span>Export Snapshot PNG</span>
+            <span>Export current page as PNG</span>
           </div>
 
           <div style={{ height: 1, background: 'var(--border-subtle)' }} />
