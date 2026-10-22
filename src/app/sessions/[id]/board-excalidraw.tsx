@@ -104,6 +104,12 @@ import {
   type SharedBoardFile,
 } from './board-excalidraw-assets';
 
+const CHALKBOARD_COLORS = [
+  '#ffffff', '#f8fafc', '#cbd5e1', '#94a3b8', '#64748b',
+  '#10b981', '#22c55e', '#a3e635', '#38bdf8', '#3b82f6',
+  '#6366f1', '#a855f7', '#ec4899', '#f43f5e', '#f97316', '#fbbf24',
+] as const;
+
 // Serve Excalidraw's runtime handwriting fonts from our own origin rather than
 // the public CDN it otherwise falls back to (see
 // scripts/copy-excalidraw-assets.mjs). Must be set before the editor first
@@ -3652,16 +3658,7 @@ export function BoardExcalidraw({
               >
                 <div className="shape-bar-dropdown-title">Outline Color</div>
                 <div className="palette-grid">
-                  {[
-                    '#ffffff',
-                    '#10b981',
-                    '#38bdf8',
-                    '#fbbf24',
-                    '#f43f5e',
-                    '#a855f7',
-                    '#94a3b8',
-                    '#f97316',
-                  ].map((col) => (
+                  {CHALKBOARD_COLORS.map((col) => (
                     <button
                       key={col}
                       type="button"
@@ -4250,7 +4247,7 @@ export function BoardExcalidraw({
                 >
                   <span className="fill-none-slash">⊘</span>
                 </button>
-                {['#ffffff', '#10b981', '#38bdf8', '#fbbf24', '#f43f5e', '#a855f7', '#94a3b8', '#f97316'].map((col) => (
+                {CHALKBOARD_COLORS.map((col) => (
                   <button
                     key={col}
                     type="button"
@@ -4284,20 +4281,24 @@ export function BoardExcalidraw({
               }}
             >
               <div className="pop-row-label">
-                <span>Color Palette</span>
+                <span>{activeToolState === 'text' ? 'Text Color' : 'Color Palette'}</span>
                 <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--accent)' }}>
                   {activeColor.toUpperCase()}
                 </span>
               </div>
               <div className="palette-grid">
-                {['#ffffff', '#10b981', '#38bdf8', '#fbbf24', '#f43f5e', '#a855f7', '#94a3b8'].map((col) => (
-                  <div
+                {CHALKBOARD_COLORS.map((col) => (
+                  <button
+                    type="button"
                     key={col}
                     className={cn('color-dot', activeColor.toLowerCase() === col.toLowerCase() && 'active')}
                     style={{ background: col }}
+                    aria-label={`Use color ${col}`}
+                    aria-pressed={activeColor.toLowerCase() === col.toLowerCase()}
                     onClick={(e) => {
                       e.stopPropagation();
                       setStrokeColor(col);
+                      if (activeToolState === 'text') setPropertiesPopoverOpen(false);
                     }}
                     onPointerDown={(e) => e.stopPropagation()}
                     onMouseDown={(e) => {
@@ -4309,50 +4310,54 @@ export function BoardExcalidraw({
                 ))}
               </div>
 
-              <div className="pop-row-label">
-                <span>Stroke Thickness</span>
-                <span>{activeWeight}px</span>
-              </div>
-              <div className="stroke-size-selector">
-                {[
-                  { label: 'Fine', weight: 1, barHeight: 2 },
-                  { label: 'Normal', weight: 2, barHeight: 3 },
-                  { label: 'Bold', weight: 3.5, barHeight: 5 },
-                  { label: 'Heavy', weight: 6, barHeight: 8 },
-                ].map(({ label, weight, barHeight }) => (
-                  <button
-                    key={weight}
-                    type="button"
-                    className={cn('stroke-btn', activeWeight === weight && 'active')}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPropertiesPopoverOpen(false);
-                      setStrokeWeight(weight);
-                      const targetTool = activeToolState === 'highlighter' ? 'highlighter' : 'pen';
-                      setActiveToolState(targetTool);
-                      const editor = apiRef.current;
-                      if (editor) {
-                        editor.updateScene({
-                          appState: {
-                            selectedElementIds: {},
-                            currentItemStrokeWidth: weight,
-                          },
-                        });
-                        editor.setActiveTool({ type: 'freedraw', locked: true });
-                      }
-                    }}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onMouseDown={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                    }}
-                    title={`${label} (${weight}px)`}
-                  >
-                    <div style={{ width: 16, height: barHeight, background: 'currentColor', borderRadius: 2 }} />
-                    <span style={{ fontSize: 9.5, fontWeight: 600 }}>{label}</span>
-                  </button>
-                ))}
-              </div>
+              {(activeToolState === 'pen' || activeToolState === 'highlighter') && (
+                <>
+                  <div className="pop-row-label">
+                    <span>Stroke Thickness</span>
+                    <span>{activeWeight}px</span>
+                  </div>
+                  <div className="stroke-size-selector">
+                    {[
+                      { label: 'Fine', weight: 1, barHeight: 2 },
+                      { label: 'Normal', weight: 2, barHeight: 3 },
+                      { label: 'Bold', weight: 3.5, barHeight: 5 },
+                      { label: 'Heavy', weight: 6, barHeight: 8 },
+                    ].map(({ label, weight, barHeight }) => (
+                      <button
+                        key={weight}
+                        type="button"
+                        className={cn('stroke-btn', activeWeight === weight && 'active')}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPropertiesPopoverOpen(false);
+                          setStrokeWeight(weight);
+                          const targetTool = activeToolState === 'highlighter' ? 'highlighter' : 'pen';
+                          setActiveToolState(targetTool);
+                          const editor = apiRef.current;
+                          if (editor) {
+                            editor.updateScene({
+                              appState: {
+                                selectedElementIds: {},
+                                currentItemStrokeWidth: weight,
+                              },
+                            });
+                            editor.setActiveTool({ type: 'freedraw', locked: true });
+                          }
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                        }}
+                        title={`${label} (${weight}px)`}
+                      >
+                        <div style={{ width: 16, height: barHeight, background: 'currentColor', borderRadius: 2 }} />
+                        <span style={{ fontSize: 9.5, fontWeight: 600 }}>{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
 
