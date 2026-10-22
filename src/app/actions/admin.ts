@@ -73,13 +73,6 @@ export async function setUserRole(id: string, role: Role) {
   return mutate(`/admin/users/${id}/role`, { method: 'POST', body: { role } });
 }
 
-export async function setSuperAdmin(id: string, value: boolean) {
-  return mutate(`/admin/users/${id}/super-admin`, {
-    method: 'POST',
-    body: { value },
-  });
-}
-
 export async function sendResetLink(id: string) {
   return mutate(`/admin/users/${id}/reset-link`, { method: 'POST' });
 }
