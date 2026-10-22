@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { API_URL } from '@/lib/api';
-import { getRealtimeToken } from '@/lib/client-token';
+import { getRealtimeToken, clearRealtimeToken } from '@/lib/client-token';
 import type {
   ForwardedPortInfo,
   TunnelClientToServerEvents,
@@ -24,8 +24,11 @@ type ViewportMode = 'desktop' | 'tablet' | 'mobile';
 
 export function PortPreviewView({
   sessionId,
+  reloadSignal = 0,
 }: {
   sessionId: string;
+  /** Refresh the app after a shared IDE/editor document has settled. */
+  reloadSignal?: number;
 }) {
   const [ports, setPorts] = useState<ForwardedPortInfo[]>([]);
   const [activePort, setActivePort] = useState<number | null>(null);
@@ -33,6 +36,13 @@ export function PortPreviewView({
   const [reloadKey, setReloadKey] = useState<number>(0);
   const [token, setToken] = useState<string>('');
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const lastReloadSignalRef = useRef(reloadSignal);
+
+  useEffect(() => {
+    if (lastReloadSignalRef.current === reloadSignal) return;
+    lastReloadSignalRef.current = reloadSignal;
+    setReloadKey((key) => key + 1);
+  }, [reloadSignal]);
 
   useEffect(() => {
     void getRealtimeToken().then((t) => setToken(t ?? ''));
@@ -40,11 +50,37 @@ export function PortPreviewView({
     const socket: TunnelSocket = io(`${API_URL}/tunnel`, {
       auth: (cb) =>
         void getRealtimeToken().then((tok) => cb({ token: tok ?? '' })),
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 25,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
 
     socket.on('connect', () => {
       socket.emit('tunnel:join', { sessionId });
+    });
+
+    socket.on('disconnect', (reason) => {
+      if (reason === 'io server disconnect') {
+        clearRealtimeToken();
+        setTimeout(() => socket.connect(), 1000);
+      }
+    });
+
+    socket.on('connect_error', (err) => {
+      const msg = err.message || '';
+      if (msg.toLowerCase().includes('unauthorized') || msg.toLowerCase().includes('token')) {
+        clearRealtimeToken();
+      }
+    });
+
+    socket.on('error' as unknown as keyof TunnelServerToClientEvents, (err: unknown) => {
+      const parsed = typeof err === 'object' && err !== null ? (err as { code?: string }) : null;
+      if (parsed?.code === 'UNAUTHORIZED') {
+        clearRealtimeToken();
+        setTimeout(() => socket.connect(), 800);
+      }
     });
 
     socket.on('tunnel:ports', (p) => {
@@ -63,8 +99,18 @@ export function PortPreviewView({
   }, [sessionId]);
 
   const activePortInfo = ports.find((p) => p.port === activePort);
-  const previewUrl = activePort
-    ? `${API_URL}/proxy/${sessionId}/${activePort}/?token=${encodeURIComponent(token)}`
+  const previewUrl = activePortInfo
+    ? (() => {
+        // New host-based previews give each forwarded app its own origin, so
+        // Vite/Next asset and HMR paths remain rooted at `/`. Keep the legacy
+        // path proxy as a compatibility fallback for older API deployments.
+        const base = activePortInfo.previewUrl
+          ? activePortInfo.previewUrl
+          : `${API_URL}/proxy/${sessionId}/${activePortInfo.port}/`;
+        const url = new URL(base, window.location.href);
+        if (token) url.searchParams.set('token', token);
+        return url.toString();
+      })()
     : '';
 
   const viewportWidthClass =
