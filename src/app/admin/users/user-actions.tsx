@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import {
   impersonate,
   sendResetLink,
-  setSuperAdmin,
   setUserRole,
   setUserStatus,
   verifyUserEmail,
@@ -153,31 +152,6 @@ export function UserActions({
               </MenuItem>
             ))}
 
-            <div className="my-1 border-t border-neutral-100" />
-            <MenuItem
-              onClick={() =>
-                run(
-                  () => setSuperAdmin(user.id, !user.isSuperAdmin),
-                  user.isSuperAdmin
-                    ? {
-                        title: 'Revoke platform admin',
-                        message: `Revoke platform-admin from ${user.name}?`,
-                        confirmLabel: 'Revoke',
-                        danger: true,
-                      }
-                    : {
-                        title: 'Grant platform admin',
-                        message: `Grant platform-admin to ${user.name}? They will get full operator access.`,
-                        confirmLabel: 'Grant admin',
-                        danger: true,
-                      },
-                )
-              }
-              disabled={isSelf && user.isSuperAdmin}
-              danger={!user.isSuperAdmin}
-            >
-              {user.isSuperAdmin ? 'Revoke platform admin' : 'Grant platform admin'}
-            </MenuItem>
           </div>
         </>
       )}
