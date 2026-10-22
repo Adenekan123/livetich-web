@@ -3,6 +3,7 @@ import Script from "next/script";
 import { Lexend, Inter, Source_Sans_3, Geist_Mono } from "next/font/google";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
 import { RouteProgress } from "@/components/route-progress";
+import { CookieBanner } from "@/components/cookie-banner";
 import "./globals.css";
 
 // Display face for headings — Lexend carries the warm, accessible direction
@@ -69,6 +70,7 @@ export default function RootLayout({
       <body className="flex min-h-full flex-col bg-white text-foreground">
         <RouteProgress />
         <ImpersonationBanner />
+        <CookieBanner />
         {children}
         <Script
           id="sw-register"
