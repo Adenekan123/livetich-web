@@ -167,8 +167,15 @@ export function dataURLToFile(dataURL: string, name: string): File {
 }
 
 /** Fetch a shared asset URL and read it back as a data URL for Excalidraw. */
-export async function fetchAsDataURL(url: string): Promise<string> {
-  const res = await fetch(url);
+export async function fetchAsDataURL(url: string, sessionId: string): Promise<string> {
+  // Older board snapshots contain an unscoped asset path. Upgrade it at read
+  // time so the API can enforce that this viewer belongs to the owning class.
+  const resolved = new URL(url, window.location.href);
+  const legacyAsset = resolved.pathname.match(/^\/api\/files\/board-asset\/([^/]+)$/);
+  if (legacyAsset) {
+    resolved.pathname = `/api/files/board-asset/${encodeURIComponent(sessionId)}/${legacyAsset[1]}`;
+  }
+  const res = await fetch(resolved.toString());
   if (!res.ok) throw new Error(`board asset fetch failed (${res.status})`);
   const blob = await res.blob();
   return new Promise<string>((resolve, reject) => {
