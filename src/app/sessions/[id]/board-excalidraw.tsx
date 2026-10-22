@@ -3537,6 +3537,20 @@ export function BoardExcalidraw({
   return (
     <div
       ref={wrapperRef}
+      onKeyDownCapture={(event) => {
+        const editingText = apiRef.current?.getAppState().editingTextElement;
+        if (
+          propertiesPopoverOpen &&
+          editingText &&
+          (event.nativeEvent.isComposing ||
+            event.key.length === 1 ||
+            event.key === 'Enter' ||
+            event.key === 'Backspace' ||
+            event.key === 'Delete')
+        ) {
+          setPropertiesPopoverOpen(false);
+        }
+      }}
       className={cn(
         'livetich-board',
         fullscreen
