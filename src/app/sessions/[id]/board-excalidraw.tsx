@@ -8,6 +8,7 @@ import { createPortal } from 'react-dom';
 import {
   CaptureUpdateAction,
   Excalidraw,
+  FONT_FAMILY,
   MainMenu,
   convertToExcalidrawElements,
   exportToBlob,
@@ -105,9 +106,20 @@ import {
 } from './board-excalidraw-assets';
 
 const CHALKBOARD_COLORS = [
-  '#ffffff', '#f8fafc', '#cbd5e1', '#94a3b8', '#64748b',
+  '#ffffff', '#000000', '#f8fafc', '#cbd5e1', '#94a3b8', '#64748b',
   '#10b981', '#22c55e', '#a3e635', '#38bdf8', '#3b82f6',
   '#6366f1', '#a855f7', '#ec4899', '#f43f5e', '#f97316', '#fbbf24',
+] as const;
+
+const CHALKBOARD_FONTS = [
+  { label: 'Cursive', family: FONT_FAMILY.Excalifont },
+  { label: 'Handwritten', family: FONT_FAMILY.Virgil },
+  { label: 'Sans serif', family: FONT_FAMILY.Helvetica },
+  { label: 'Monospace', family: FONT_FAMILY.Cascadia },
+  { label: 'Rounded', family: FONT_FAMILY.Nunito },
+  { label: 'Display', family: FONT_FAMILY['Lilita One'] },
+  { label: 'Comic', family: FONT_FAMILY['Comic Shanns'] },
+  { label: 'Liberation Sans', family: FONT_FAMILY['Liberation Sans'] },
 ] as const;
 
 // Serve Excalidraw's runtime handwriting fonts from our own origin rather than
@@ -127,6 +139,44 @@ const LOCAL = 'local';
  *  image import never rewrites the drawing map. */
 const ELEMENTS_KEY = 'excalidraw-elements';
 const FILES_KEY = 'excalidraw-files';
+const PAGES_KEY = 'excalidraw-pages';
+const PAGE_STATE_ID = 'state';
+const DEFAULT_PAGE_ID = 'page-1';
+
+interface BoardPage {
+  id: string;
+  title: string;
+}
+
+interface BoardPagesState {
+  pages: BoardPage[];
+  activePageId: string;
+  title: string;
+}
+
+function elementPageId(element: ExcalidrawElement): string {
+  const customData = element.customData as Record<string, unknown> | undefined;
+  return typeof customData?.livetichPageId === 'string'
+    ? customData.livetichPageId
+    : DEFAULT_PAGE_ID;
+}
+
+function isBoardPagesState(value: unknown): value is BoardPagesState {
+  if (!value || typeof value !== 'object') return false;
+  const state = value as Partial<BoardPagesState>;
+  return (
+    Array.isArray(state.pages) &&
+    state.pages.length > 0 &&
+    state.pages.every(
+      (page) =>
+        !!page &&
+        typeof page.id === 'string' &&
+        typeof page.title === 'string',
+    ) &&
+    typeof state.activePageId === 'string' &&
+    typeof state.title === 'string'
+  );
+}
 /**
  * One selected equation: the element to change, the LaTeX behind it, and where
  * it currently sits on screen so the Edit chip can follow it through pans and
@@ -721,6 +771,7 @@ export function BoardExcalidraw({
   const docRef = useRef<Y.Doc | null>(null);
   const elementsRef = useRef<Y.Map<ExcalidrawElement> | null>(null);
   const filesRef = useRef<Y.Map<SharedBoardFile> | null>(null);
+  const pageStateMapRef = useRef<Y.Map<BoardPagesState> | null>(null);
   const awarenessRef = useRef<Awareness | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -740,6 +791,7 @@ export function BoardExcalidraw({
   /** Latest scene from onChange, flushed to Yjs on a timer. */
   const pendingRef = useRef<readonly OrderedExcalidrawElement[] | null>(null);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flushLocalRef = useRef<() => void>(() => {});
   const lastPresenterRef = useRef(0);
   /** Trailing send for the presenter camera: without it, a pan that stops
    *  inside the throttle window never delivers its final position and every
@@ -824,6 +876,9 @@ export function BoardExcalidraw({
     'select' | 'pen' | 'highlighter' | 'eraser' | 'rectangle' | 'text' | 'laser'
   >('select');
   const [activeColor, setActiveColor] = useState('#ffffff');
+  const [activeFontFamily, setActiveFontFamily] = useState<number>(FONT_FAMILY.Excalifont);
+  const [selectedTextCount, setSelectedTextCount] = useState(0);
+  const [selectedTextFontFamily, setSelectedTextFontFamily] = useState<number | null>(null);
   const [activeWeight, setActiveWeight] = useState(1);
   const [shapeFillColor, setShapeFillColor] = useState<string>('transparent');
   const shapeFillColorRef = useRef(shapeFillColor);
@@ -831,8 +886,16 @@ export function BoardExcalidraw({
   const [propertiesPopoverOpen, setPropertiesPopoverOpen] = useState(false);
   const [shapesPopoverOpen, setShapesPopoverOpen] = useState(false);
   const [boardTitle, setBoardTitle] = useState('System Architecture');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(3);
+  const boardTitleRef = useRef(boardTitle);
+  boardTitleRef.current = boardTitle;
+  const [boardPages, setBoardPages] = useState<BoardPage[]>([
+    { id: DEFAULT_PAGE_ID, title: 'Page 1' },
+  ]);
+  const boardPagesRef = useRef(boardPages);
+  boardPagesRef.current = boardPages;
+  const [activeBoardPageId, setActiveBoardPageId] = useState(DEFAULT_PAGE_ID);
+  const activeBoardPageIdRef = useRef(activeBoardPageId);
+  activeBoardPageIdRef.current = activeBoardPageId;
 
   const openInsertStudio = useCallback((tab?: InsertStudioTab) => {
     if (tab) setInsertStudioTab(tab);
@@ -855,7 +918,7 @@ export function BoardExcalidraw({
       const editor = apiRef.current;
       if (!editor) return;
       const chalkColor =
-        !activeColor || activeColor === '#27272a' || activeColor === '#000000' || activeColor === '#1e1e1e'
+        !activeColor || activeColor === '#27272a' || activeColor === '#1e1e1e'
           ? '#ffffff'
           : activeColor;
 
@@ -920,7 +983,7 @@ export function BoardExcalidraw({
             currentItemOpacity: 100,
             currentItemStrokeColor: chalkColor,
             currentItemFontSize: 28,
-            currentItemFontFamily: 2,
+            currentItemFontFamily: activeFontFamily,
             currentItemTextAlign: 'left',
           },
         });
@@ -932,7 +995,7 @@ export function BoardExcalidraw({
         setShapesPopoverOpen(false);
       }
     },
-    [activeWeight, activeColor],
+    [activeWeight, activeColor, activeFontFamily],
   );
 
   const setStrokeColor = useCallback(
@@ -1144,19 +1207,6 @@ export function BoardExcalidraw({
     window.setTimeout(() => setBoardMsg(null), 2600);
   }, []);
 
-  const prevPage = useCallback(() => setCurrentPage((p) => Math.max(1, p - 1)), []);
-  const nextPage = useCallback(
-    () => setCurrentPage((p) => Math.min(totalPages, p + 1)),
-    [totalPages],
-  );
-  const addPage = useCallback(() => {
-    setTotalPages((t) => {
-      const next = t + 1;
-      setCurrentPage(next);
-      return next;
-    });
-    flash('Added page');
-  }, [flash]);
   /** The instructor's playback position for a shared video. Ephemeral, so it
    *  rides awareness alongside the cursors rather than the persisted doc. */
   const [videoState, setVideoState] = useState<VideoState | null>(null);
@@ -1257,9 +1307,17 @@ export function BoardExcalidraw({
   const applyRemoteElements = useCallback((incoming: ExcalidrawElement[]) => {
     const editor = apiRef.current;
     if (!editor || incoming.length === 0) return;
+    const activePageId = activeBoardPageIdRef.current;
+    for (const element of incoming) {
+      syncedVersionsRef.current.set(element.id, element.version);
+    }
+    const visibleIncoming = incoming.filter(
+      (element) => elementPageId(element) === activePageId,
+    );
+    if (visibleIncoming.length === 0) return;
     // restoreElements repairs bindings and drops anything malformed before it
     // can reach the scene.
-    const remote = restoreElements(incoming, null, {
+    const remote = restoreElements(visibleIncoming, null, {
       refreshDimensions: false,
       repairBindings: true,
     }) as unknown as RemoteExcalidrawElement[];
@@ -1432,6 +1490,7 @@ export function BoardExcalidraw({
     const doc = new Y.Doc();
     const elements = doc.getMap<ExcalidrawElement>(ELEMENTS_KEY);
     const files = doc.getMap<SharedBoardFile>(FILES_KEY);
+    const pageState = doc.getMap<BoardPagesState>(PAGES_KEY);
     const awareness = new Awareness(doc);
     // Captured for the cleanup below: these Maps outlive any single render, so
     // reading them at teardown time would trip the ref-in-cleanup lint rule.
@@ -1441,6 +1500,7 @@ export function BoardExcalidraw({
     docRef.current = doc;
     elementsRef.current = elements;
     filesRef.current = files;
+    pageStateMapRef.current = pageState;
     awarenessRef.current = awareness;
 
     const socket: BoardSocket = io(`${API_URL}/board`, {
@@ -1479,8 +1539,40 @@ export function BoardExcalidraw({
       }
       applyRemoteElements(changed);
     };
+    const onPageState = () => {
+      const value = pageState.get(PAGE_STATE_ID);
+      if (!isBoardPagesState(value)) return;
+      const pages = value.pages;
+      const activePageId = pages.some((page) => page.id === value.activePageId)
+        ? value.activePageId
+        : pages[0].id;
+      boardPagesRef.current = pages;
+      setBoardPages(pages);
+      boardTitleRef.current = value.title;
+      setBoardTitle(value.title);
+      if (activeBoardPageIdRef.current === activePageId) return;
+
+      flushLocalRef.current();
+      activeBoardPageIdRef.current = activePageId;
+      setActiveBoardPageId(activePageId);
+      const visible = [...elements.values()].filter(
+        (element): element is ExcalidrawElement =>
+          isSharedElement(element) && elementPageId(element) === activePageId,
+      );
+      for (const element of visible) {
+        syncedVersionsRef.current.set(element.id, element.version);
+      }
+      const editor = apiRef.current;
+      editor?.history.clear();
+      editor?.updateScene({
+        elements: visible,
+        appState: { selectedElementIds: {} },
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+    };
     elements.observe(onElements);
     files.observe(hydrateFiles);
+    pageState.observe(onPageState);
 
     // doc -> socket: forward only local edits (remote updates carry a different
     // origin and must not echo back).
@@ -1548,6 +1640,14 @@ export function BoardExcalidraw({
       const update = boardBytes(packet.update);
       if (!update) return;
       Y.applyUpdate(doc, update, 'remote');
+      if (!pageState.has(PAGE_STATE_ID) && canDraw) {
+        const initialState: BoardPagesState = {
+          pages: [{ id: DEFAULT_PAGE_ID, title: 'Page 1' }],
+          activePageId: DEFAULT_PAGE_ID,
+          title: boardTitleRef.current,
+        };
+        doc.transact(() => pageState.set(PAGE_STATE_ID, initialState), LOCAL);
+      }
       joined = true;
       clearJoinTimer();
       // The editor may not have mounted yet; the api-ready effect below
@@ -1616,6 +1716,7 @@ export function BoardExcalidraw({
       if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
       elements.unobserve(onElements);
       files.unobserve(hydrateFiles);
+      pageState.unobserve(onPageState);
       doc.off('update', onDocUpdate);
       awareness.off('update', onAwarenessUpdate);
       awareness.off('change', renderCollaborators);
@@ -1626,6 +1727,7 @@ export function BoardExcalidraw({
       docRef.current = null;
       elementsRef.current = null;
       filesRef.current = null;
+      pageStateMapRef.current = null;
       awarenessRef.current = null;
       socketRef.current = null;
       syncedVersions.clear();
@@ -1719,6 +1821,136 @@ export function BoardExcalidraw({
       }
     }, LOCAL);
   }, []);
+  flushLocalRef.current = flushLocal;
+
+  const persistBoardPageState = useCallback((patch: Partial<BoardPagesState> = {}) => {
+    const doc = docRef.current;
+    const pageState = pageStateMapRef.current;
+    if (!doc || !pageState) return;
+    const existing = pageState.get(PAGE_STATE_ID);
+    const next: BoardPagesState = {
+      ...(isBoardPagesState(existing) ? existing : {
+        pages: boardPagesRef.current,
+        activePageId: activeBoardPageIdRef.current,
+        title: boardTitleRef.current,
+      }),
+      pages: boardPagesRef.current,
+      activePageId: activeBoardPageIdRef.current,
+      title: boardTitleRef.current,
+      ...patch,
+    };
+    doc.transact(() => pageState.set(PAGE_STATE_ID, next), LOCAL);
+  }, []);
+
+  const switchBoardPage = useCallback((pageId: string) => {
+    if (!boardPagesRef.current.some((page) => page.id === pageId)) return;
+    if (activeBoardPageIdRef.current === pageId) return;
+    flushLocalRef.current();
+    activeBoardPageIdRef.current = pageId;
+    setActiveBoardPageId(pageId);
+    const elements = elementsRef.current;
+    const visible = elements
+      ? [...elements.values()].filter(
+          (element): element is ExcalidrawElement =>
+            isSharedElement(element) && elementPageId(element) === pageId,
+        )
+      : [];
+    for (const element of visible) {
+      syncedVersionsRef.current.set(element.id, element.version);
+    }
+    const editor = apiRef.current;
+    editor?.history.clear();
+    editor?.updateScene({
+      elements: visible,
+      appState: { selectedElementIds: {} },
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+    persistBoardPageState({ activePageId: pageId });
+  }, [persistBoardPageState]);
+
+  const currentPageIndex = Math.max(
+    0,
+    boardPages.findIndex((page) => page.id === activeBoardPageId),
+  );
+
+  const setTextFont = useCallback((fontFamily: number) => {
+    setActiveFontFamily(fontFamily);
+    const editor = apiRef.current;
+    if (!editor) return;
+
+    const elements = editor.getSceneElements();
+    const selectedIds = editor.getAppState().selectedElementIds;
+    const selectedTextIds = Object.keys(selectedIds).filter(
+      (id) => selectedIds[id] && elements.some((element) => element.id === id && element.type === 'text'),
+    );
+    const updates = new Map<string, ExcalidrawElement>();
+    const next = elements.map((element) => {
+      if (element.type !== 'text' || !selectedTextIds.includes(element.id)) return element;
+      const updated = {
+        ...element,
+        fontFamily,
+        version: element.version + 1,
+        versionNonce: Math.floor(Math.random() * 2 ** 31),
+        updated: Date.now(),
+      };
+      updates.set(updated.id, updated);
+      return updated;
+    });
+
+    editor.updateScene({
+      ...(updates.size ? { elements: next } : {}),
+      appState: {
+        currentItemFontFamily: fontFamily,
+      },
+      captureUpdate: updates.size ? CaptureUpdateAction.IMMEDIATELY : CaptureUpdateAction.NEVER,
+    });
+
+    const map = elementsRef.current;
+    const doc = docRef.current;
+    if (updates.size && doc && map) {
+      doc.transact(() => {
+        for (const [id, element] of updates) map.set(id, element);
+      }, LOCAL);
+    }
+    setPropertiesPopoverOpen(false);
+  }, []);
+  const currentPage = currentPageIndex + 1;
+  const totalPages = boardPages.length;
+  const prevPage = useCallback(() => {
+    const index = boardPagesRef.current.findIndex(
+      (page) => page.id === activeBoardPageIdRef.current,
+    );
+    if (index > 0) switchBoardPage(boardPagesRef.current[index - 1].id);
+  }, [switchBoardPage]);
+  const nextPage = useCallback(() => {
+    const index = boardPagesRef.current.findIndex(
+      (page) => page.id === activeBoardPageIdRef.current,
+    );
+    if (index >= 0 && index < boardPagesRef.current.length - 1) {
+      switchBoardPage(boardPagesRef.current[index + 1].id);
+    }
+  }, [switchBoardPage]);
+  const addPage = useCallback(() => {
+    flushLocalRef.current();
+    const page: BoardPage = {
+      id: crypto.randomUUID(),
+      title: `Page ${boardPagesRef.current.length + 1}`,
+    };
+    const pages = [...boardPagesRef.current, page];
+    boardPagesRef.current = pages;
+    setBoardPages(pages);
+    activeBoardPageIdRef.current = page.id;
+    setActiveBoardPageId(page.id);
+    const editor = apiRef.current;
+    editor?.history.clear();
+    editor?.updateScene({
+      elements: [],
+      appState: { selectedElementIds: {} },
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+    persistBoardPageState({ pages, activePageId: page.id });
+    flash('Added page');
+  }, [flash, persistBoardPageState]);
 
   /** Upload any image the local user just added, and share only its URL. */
   const shareNewFiles = useCallback(
@@ -1837,7 +2069,18 @@ export function BoardExcalidraw({
       if (!editor) return;
 
       if (canEdit) {
-        pendingRef.current = scene;
+        const pageId = activeBoardPageIdRef.current;
+        pendingRef.current = scene.map((element) => {
+          if (elementPageId(element) === pageId) return element;
+          const customData =
+            element.customData && typeof element.customData === 'object'
+              ? (element.customData as Record<string, unknown>)
+              : {};
+          return {
+            ...element,
+            customData: { ...customData, livetichPageId: pageId },
+          };
+        });
         if (!flushTimerRef.current) {
           flushTimerRef.current = setTimeout(flushLocal, SYNC_INTERVAL_MS);
         }
@@ -1849,6 +2092,19 @@ export function BoardExcalidraw({
 
       const state = editor.getAppState();
       const currentSelected = state.selectedElementIds;
+      const selectedTextElements = scene.filter(
+        (element) => currentSelected?.[element.id] && element.type === 'text',
+      );
+      const selectedFontFamilies = new Set(
+        selectedTextElements.map((element) => (element.type === 'text' ? element.fontFamily : null)),
+      );
+      setSelectedTextCount(selectedTextElements.length);
+      setSelectedTextFontFamily(
+        selectedFontFamilies.size === 1 ? selectedFontFamilies.values().next().value ?? null : null,
+      );
+      if (selectedFontFamilies.size === 1) {
+        setActiveFontFamily(selectedFontFamilies.values().next().value ?? FONT_FAMILY.Excalifont);
+      }
       if (currentSelected && Object.keys(currentSelected).some((id) => currentSelected[id])) {
         lastSelectedIdsRef.current = { ...currentSelected };
       }
@@ -2366,7 +2622,7 @@ export function BoardExcalidraw({
     setActiveShape(key);
 
     const strokeColor =
-      !activeColor || activeColor === '#27272a' || activeColor === '#000000' || activeColor === '#1e1e1e'
+      !activeColor || activeColor === '#27272a' || activeColor === '#1e1e1e'
         ? '#ffffff'
         : activeColor;
     const strokeWidth = activeWeight || 2;
@@ -3296,6 +3552,7 @@ export function BoardExcalidraw({
             viewBackgroundColor: '#10131c',
             currentItemStrokeWidth: activeWeight,
             currentItemStrokeColor: activeColor,
+            currentItemFontFamily: activeFontFamily,
           },
         }}
         viewModeEnabled={!canEdit}
@@ -3994,7 +4251,12 @@ export function BoardExcalidraw({
               type="text"
               className="doc-title-input"
               value={boardTitle}
+              readOnly={!canDraw}
               onChange={(e) => setBoardTitle(e.target.value)}
+              onBlur={() => {
+                boardTitleRef.current = boardTitle;
+                persistBoardPageState({ title: boardTitle });
+              }}
               title="Click to rename board"
             />
             <div className="page-stepper">
@@ -4002,6 +4264,7 @@ export function BoardExcalidraw({
                 type="button"
                 className="page-nav-btn"
                 onClick={prevPage}
+                disabled={!canDraw || !ready || currentPageIndex === 0}
                 title="Previous page"
               >
                 ‹
@@ -4021,6 +4284,7 @@ export function BoardExcalidraw({
                 type="button"
                 className="page-nav-btn"
                 onClick={nextPage}
+                disabled={!canDraw || !ready || currentPageIndex >= totalPages - 1}
                 title="Next page"
               >
                 ›
@@ -4030,8 +4294,9 @@ export function BoardExcalidraw({
                   type="button"
                   className="page-nav-btn"
                   onClick={addPage}
+                  disabled={!ready}
                   title="Add blank page"
-                  style={{ color: 'var(--accent)', fontWeight: 800 }}
+                  style={{ color: 'var(--accent)', fontWeight: 800, opacity: ready ? 1 : 0.5 }}
                 >
                   +
                 </button>
@@ -4280,8 +4545,28 @@ export function BoardExcalidraw({
                 e.preventDefault();
               }}
             >
+              {(activeToolState === 'text' || selectedTextCount > 0) && (
+                <div className="chalkboard-font-control">
+                  <label htmlFor="chalkboard-font-family">Text font</label>
+                  <select
+                    id="chalkboard-font-family"
+                    value={selectedTextCount > 1 && selectedTextFontFamily === null ? '' : selectedTextFontFamily ?? activeFontFamily}
+                    onChange={(event) => setTextFont(Number(event.currentTarget.value))}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onMouseDown={(event) => event.stopPropagation()}
+                    aria-label="Choose chalkboard text font"
+                  >
+                    {selectedTextCount > 1 && selectedTextFontFamily === null && (
+                      <option value="">Mixed fonts</option>
+                    )}
+                    {CHALKBOARD_FONTS.map(({ label, family }) => (
+                      <option key={family} value={family}>{label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="pop-row-label">
-                <span>{activeToolState === 'text' ? 'Text Color' : 'Color Palette'}</span>
+                <span>{activeToolState === 'text' || selectedTextCount > 0 ? 'Text Color' : 'Color Palette'}</span>
                 <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--accent)' }}>
                   {activeColor.toUpperCase()}
                 </span>
@@ -4298,7 +4583,7 @@ export function BoardExcalidraw({
                     onClick={(e) => {
                       e.stopPropagation();
                       setStrokeColor(col);
-                      if (activeToolState === 'text') setPropertiesPopoverOpen(false);
+                      setPropertiesPopoverOpen(false);
                     }}
                     onPointerDown={(e) => e.stopPropagation()}
                     onMouseDown={(e) => {
@@ -4433,7 +4718,10 @@ export function BoardExcalidraw({
             <button
               type="button"
               className={cn('tool-icon-btn desktop-only-tool', activeToolState === 'text' && 'active')}
-              onClick={() => selectTool('text')}
+              onClick={() => {
+                selectTool('text');
+                setPropertiesPopoverOpen(true);
+              }}
               title="Text Typography (T)"
             >
               <svg className="icon" viewBox="0 0 24 24"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
