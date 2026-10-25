@@ -64,6 +64,7 @@ import {
   PiGear,
   PiFile,
   PiArrowsOutSimple,
+  PiArrowsInSimple,
   PiDatabase,
   PiCube,
   PiGitBranch,
@@ -326,10 +327,26 @@ export function CodeBoard({
   const hostRef = useRef<HTMLDivElement>(null);
   const [lang, setLang] = useState<string>(DEFAULT_LANG);
   const [activeTab, setActiveTab] = useState<BottomTab>('editor');
+  const [isFocusMode, setIsFocusMode] = useState(false);
   const [previewReloadSignal, setPreviewReloadSignal] = useState(0);
   const previewReloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [showTerminalDrawer, setShowTerminalDrawer] = useState<boolean>(true);
   const [showFileTree, setShowFileTree] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (!isFocusMode) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsFocusMode(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isFocusMode]);
 
   const [tree, setTree] = useState<CodeFileTreeNode[]>([]);
   const [openFiles, setOpenFiles] = useState<string[]>([]);
@@ -2115,7 +2132,13 @@ export function CodeBoard({
   };
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0d1117] shadow-2xl">
+    <div
+      className={`flex h-full w-full flex-col overflow-hidden border border-white/10 bg-[#0d1117] shadow-2xl ${
+        isFocusMode
+          ? 'fixed inset-0 z-[100] h-[100dvh] w-screen rounded-none border-0'
+          : 'rounded-2xl'
+      }`}
+    >
       {/* Top Header Bar */}
       <div className="flex h-11 items-center justify-between border-b border-white/8 bg-[#161b22] px-3 gap-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -2212,6 +2235,17 @@ export function CodeBoard({
 
         {/* Right Info: Font Zoom, Permission pill & IDE deep links */}
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsFocusMode((current) => !current)}
+            aria-label={isFocusMode ? 'Exit editor focus mode' : 'Expand editor'}
+            aria-pressed={isFocusMode}
+            title={isFocusMode ? 'Exit editor focus mode (Esc)' : 'Expand editor'}
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/8 bg-white/5 text-neutral-300 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+          >
+            {isFocusMode ? <PiArrowsInSimple size={15} /> : <PiArrowsOutSimple size={15} />}
+          </button>
+
           {/* Per-user Font Size Zoom Controls */}
           <div className="flex items-center rounded-lg bg-black/40 border border-white/8 px-1 py-0.5 text-xs text-neutral-300">
             <button
@@ -2463,7 +2497,7 @@ export function CodeBoard({
       ) : activeTab === 'terminal' ? (
         <TerminalView sessionId={sessionId} canEdit={isWritable} />
       ) : (
-        /* Editor Mode (with optional Split Terminal) */
+        /* Editor Mode */
         <div className="flex flex-1 overflow-hidden relative">
           {/* Mobile Backdrop for Sidebar */}
           {showFileTree && (
@@ -2725,9 +2759,7 @@ export function CodeBoard({
                     }
                   }
                 }}
-                className={`overflow-hidden transition-all duration-200 relative ${
-                  showTerminalDrawer ? 'flex-1' : 'h-full'
-                }`}
+                className="relative h-full flex-1 overflow-hidden transition-all duration-200"
               >
                 <div ref={hostRef} className="h-full w-full" />
 
@@ -2838,13 +2870,6 @@ export function CodeBoard({
                   </button>
                 </div>
               )}
-
-            {/* Collapsible Bottom Terminal Split Drawer */}
-            {showTerminalDrawer && (
-              <div className="h-48 border-t border-white/8 bg-[#090c10]">
-                <TerminalView sessionId={sessionId} canEdit={isWritable} />
-              </div>
-            )}
           </div>
         </div>
       )}
