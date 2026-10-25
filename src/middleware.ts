@@ -12,6 +12,7 @@ const OPEN_PATHS = new Set([
   '/forgot-password',
   '/reset-password',
   '/verify-email',
+  '/extension-captcha',
   '/privacy',
   '/terms',
   '/cookies',
