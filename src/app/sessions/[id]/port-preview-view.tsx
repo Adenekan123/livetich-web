@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { API_URL } from '@/lib/api';
 import { getRealtimeToken, clearRealtimeToken } from '@/lib/client-token';
@@ -22,6 +22,22 @@ type TunnelSocket = Socket<TunnelServerToClientEvents, TunnelClientToServerEvent
 
 type ViewportMode = 'desktop' | 'tablet' | 'mobile';
 
+async function requestPreviewToken(sessionId: string, port: number): Promise<string | null> {
+  try {
+    const response = await fetch('/api/preview-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      body: JSON.stringify({ sessionId, port }),
+    });
+    if (!response.ok) return null;
+    const result = (await response.json()) as { token?: string };
+    return result.token ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function PortPreviewView({
   sessionId,
   reloadSignal = 0,
@@ -34,18 +50,42 @@ export function PortPreviewView({
   const [activePort, setActivePort] = useState<number | null>(null);
   const [viewport, setViewport] = useState<ViewportMode>('desktop');
   const [reloadKey, setReloadKey] = useState<number>(0);
-  const [token, setToken] = useState<string>('');
+  const [previewToken, setPreviewToken] = useState<{
+    sessionId: string;
+    port: number;
+    token: string;
+  } | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const lastReloadSignalRef = useRef(reloadSignal);
+
+  const refreshPreview = useCallback(async (reload = false) => {
+    if (!activePort) return null;
+    const token = await requestPreviewToken(sessionId, activePort);
+    if (!token) {
+      setPreviewToken(null);
+      return null;
+    }
+    setPreviewToken({ sessionId, port: activePort, token });
+    if (reload) setReloadKey((key) => key + 1);
+    return token;
+  }, [activePort, sessionId]);
 
   useEffect(() => {
     if (lastReloadSignalRef.current === reloadSignal) return;
     lastReloadSignalRef.current = reloadSignal;
-    setReloadKey((key) => key + 1);
-  }, [reloadSignal]);
+    void refreshPreview(true);
+  }, [reloadSignal, refreshPreview]);
 
   useEffect(() => {
-    void getRealtimeToken().then((t) => setToken(t ?? ''));
+    if (!activePort) return;
+    let cancelled = false;
+    void requestPreviewToken(sessionId, activePort).then((token) => {
+      if (!cancelled && token) setPreviewToken({ sessionId, port: activePort, token });
+    });
+    return () => { cancelled = true; };
+  }, [activePort, sessionId]);
+
+  useEffect(() => {
 
     const socket: TunnelSocket = io(`${API_URL}/tunnel`, {
       auth: (cb) =>
@@ -108,7 +148,12 @@ export function PortPreviewView({
           ? activePortInfo.previewUrl
           : `${API_URL}/proxy/${sessionId}/${activePortInfo.port}/`;
         const url = new URL(base, window.location.href);
-        if (token) url.searchParams.set('token', token);
+        if (
+          previewToken?.sessionId === sessionId &&
+          previewToken.port === activePortInfo.port
+        ) {
+          url.searchParams.set('token', previewToken.token);
+        }
         return url.toString();
       })()
     : '';
@@ -182,7 +227,7 @@ export function PortPreviewView({
           </div>
 
           <button
-            onClick={() => setReloadKey((k) => k + 1)}
+            onClick={() => void refreshPreview(true)}
             title="Reload web preview"
             className="rounded-lg p-1.5 text-neutral-400 hover:bg-white/5 hover:text-white transition"
           >
@@ -191,7 +236,22 @@ export function PortPreviewView({
 
           {previewUrl && (
             <button
-              onClick={() => window.open(previewUrl, '_blank')}
+              onClick={async () => {
+                const popup = window.open('about:blank', '_blank');
+                if (!popup || !activePortInfo) return;
+                popup.opener = null;
+                const freshToken = await refreshPreview();
+                if (!freshToken) {
+                  popup.close();
+                  return;
+                }
+                const url = new URL(
+                  activePortInfo.previewUrl ?? `${API_URL}/proxy/${sessionId}/${activePortInfo.port}/`,
+                  window.location.href,
+                );
+                url.searchParams.set('token', freshToken);
+                popup.location.replace(url.toString());
+              }}
               title="Open in new window"
               className="rounded-lg p-1.5 text-neutral-400 hover:bg-white/5 hover:text-white transition"
             >
