@@ -55,6 +55,7 @@ export function PortPreviewView({
     port: number;
     token: string;
   } | null>(null);
+  const [loadedPreviewKey, setLoadedPreviewKey] = useState('');
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const lastReloadSignalRef = useRef(reloadSignal);
 
@@ -156,6 +157,9 @@ export function PortPreviewView({
         }
         return url.toString();
       })()
+    : '';
+  const previewKey = previewUrl
+    ? `${sessionId}:${activePort}:${reloadKey}:${previewUrl}`
     : '';
 
   const viewportWidthClass =
@@ -264,14 +268,28 @@ export function PortPreviewView({
       {/* Frame Preview Stage */}
       <div className="flex flex-1 items-center justify-center overflow-auto bg-[#090c10] p-3">
         {activePort ? (
-          <iframe
-            key={`${activePort}-${reloadKey}`}
-            ref={iframeRef}
-            src={previewUrl}
-            title={activePortInfo?.label ?? `Port ${activePort}`}
-            className={`${viewportWidthClass} border-0 bg-white`}
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-          />
+          <div className={`${viewportWidthClass} relative shrink-0 overflow-hidden`}>
+            <iframe
+              key={previewKey}
+              ref={iframeRef}
+              src={previewUrl}
+              title={activePortInfo?.label ?? `Port ${activePort}`}
+              onLoad={() => setLoadedPreviewKey(previewKey)}
+              className="h-full w-full border-0 bg-white"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+            />
+            {previewKey !== loadedPreviewKey && (
+              <div
+                role="status"
+                aria-live="polite"
+                className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white text-center text-neutral-600"
+              >
+                <span className="h-7 w-7 animate-spin rounded-full border-2 border-neutral-200 border-t-emerald-600" />
+                <span className="text-sm font-medium">Loading your preview…</span>
+                <span className="text-xs text-neutral-500">Connecting to port {activePort}</span>
+              </div>
+            )}
+          </div>
         ) : (
           <div className="flex flex-col items-center justify-center p-8 text-center text-neutral-500">
             <PiGlobe size={42} className="mb-3 opacity-40 text-emerald-400" />
